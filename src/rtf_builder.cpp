@@ -303,10 +303,86 @@ void RtfBuilder::leave_block(MD_BLOCKTYPE type, void* detail) {
     }
 }
 
-// --------------- span handlers (stubs — Task 5 fills these in) ---------------
+// --------------- span handlers ---------------
 
-void RtfBuilder::enter_span(MD_SPANTYPE type, void* detail) {}
-void RtfBuilder::leave_span(MD_SPANTYPE type, void* detail) {}
+void RtfBuilder::enter_span(MD_SPANTYPE type, void* detail) {
+    switch (type) {
+    case MD_SPAN_STRONG:
+        emit("{\\b ");
+        break;
+
+    case MD_SPAN_EM:
+        emit("{\\i ");
+        break;
+
+    case MD_SPAN_DEL:
+        emit("{\\strike ");
+        break;
+
+    case MD_SPAN_CODE: {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "{\\f1\\fs%d\\highlight5 ", config_.code_size * 2);
+        emit(buf);
+        break;
+    }
+
+    case MD_SPAN_A: {
+        auto* a = static_cast<MD_SPAN_A_DETAIL*>(detail);
+        pending_link_url_.assign(a->href.text, a->href.size);
+        pending_link_start_ = char_count_;
+        emit("{\\cf3\\ul ");
+        break;
+    }
+
+    case MD_SPAN_IMG: {
+        in_image_ = true;
+        pending_image_alt_.clear();
+        break;
+    }
+
+    default:
+        break;
+    }
+}
+
+void RtfBuilder::leave_span(MD_SPANTYPE type, void* detail) {
+    switch (type) {
+    case MD_SPAN_STRONG:
+        emit("\\b0}");
+        break;
+
+    case MD_SPAN_EM:
+        emit("\\i0}");
+        break;
+
+    case MD_SPAN_DEL:
+        emit("\\strike0}");
+        break;
+
+    case MD_SPAN_CODE:
+        emit("\\highlight0}");
+        break;
+
+    case MD_SPAN_A:
+        emit("\\ul0}");
+        links_.push_back({pending_link_start_, char_count_, pending_link_url_});
+        pending_link_url_.clear();
+        break;
+
+    case MD_SPAN_IMG: {
+        in_image_ = false;
+        std::string placeholder = "[Image: " + pending_image_alt_ + "]";
+        emit("{\\i ");
+        emit_text(placeholder.c_str(), placeholder.size());
+        emit("\\i0}");
+        pending_image_alt_.clear();
+        break;
+    }
+
+    default:
+        break;
+    }
+}
 
 // --------------- text handler ---------------
 

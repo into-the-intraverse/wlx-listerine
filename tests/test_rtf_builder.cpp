@@ -110,3 +110,50 @@ TEST_CASE("Task list renders checkbox characters") {
     CHECK(rtf.find("todo") != std::string::npos);
     CHECK(rtf.find("done") != std::string::npos);
 }
+
+TEST_CASE("Bold text uses \\b") {
+    RtfBuilder b(cfg(), false);
+    auto rtf = b.build("**bold**", 8);
+    CHECK(rtf.find("\\b ") != std::string::npos);
+    CHECK(rtf.find("\\b0") != std::string::npos);
+    CHECK(rtf.find("bold") != std::string::npos);
+}
+
+TEST_CASE("Italic text uses \\i") {
+    RtfBuilder b(cfg(), false);
+    auto rtf = b.build("*italic*", 8);
+    CHECK(rtf.find("\\i ") != std::string::npos);
+    CHECK(rtf.find("\\i0") != std::string::npos);
+}
+
+TEST_CASE("Strikethrough uses \\strike") {
+    RtfBuilder b(cfg(), false);
+    auto rtf = b.build("~~del~~", 7);
+    CHECK(rtf.find("\\strike ") != std::string::npos);
+    CHECK(rtf.find("\\strike0") != std::string::npos);
+}
+
+TEST_CASE("Inline code uses monospace font and highlight") {
+    RtfBuilder b(cfg(), false);
+    auto rtf = b.build("`code`", 6);
+    CHECK(rtf.find("\\f1") != std::string::npos);
+    CHECK(rtf.find("\\highlight5") != std::string::npos);
+}
+
+TEST_CASE("Link stores URL and uses link color") {
+    RtfBuilder b(cfg(), false);
+    auto rtf = b.build("[click](https://example.com)", 28);
+    CHECK(rtf.find("\\cf3") != std::string::npos);   // link color
+    CHECK(rtf.find("\\ul") != std::string::npos);     // underline
+    CHECK(rtf.find("click") != std::string::npos);
+    auto& links = b.links();
+    REQUIRE(links.size() == 1);
+    CHECK(links[0].url == "https://example.com");
+    CHECK(links[0].char_start < links[0].char_end);
+}
+
+TEST_CASE("Image renders as alt text in brackets") {
+    RtfBuilder b(cfg(), false);
+    auto rtf = b.build("![photo](img.png)", 17);
+    CHECK(rtf.find("[Image: photo]") != std::string::npos);
+}
