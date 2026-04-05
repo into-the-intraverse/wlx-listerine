@@ -2,10 +2,18 @@
 #include <toml++/toml.hpp>
 #include <fstream>
 
+uint32_t parse_hex_color(const std::string& hex, uint32_t fallback) {
+    try {
+        std::string h = hex;
+        if (!h.empty() && h[0] == '#') h = h.substr(1);
+        return static_cast<uint32_t>(std::stoul(h, nullptr, 16));
+    } catch (...) {
+        return fallback;
+    }
+}
+
 uint32_t parse_hex_color(const std::string& hex) {
-    std::string h = hex;
-    if (!h.empty() && h[0] == '#') h = h.substr(1);
-    return static_cast<uint32_t>(std::stoul(h, nullptr, 16));
+    return parse_hex_color(hex, 0);
 }
 
 Config default_config() {
@@ -26,7 +34,7 @@ Config default_config() {
 static ColorScheme read_colors(const toml::table& tbl, const ColorScheme& defaults) {
     ColorScheme cs = defaults;
     auto c = [&](const char* key, uint32_t& out) {
-        if (auto v = tbl[key].value<std::string>()) out = parse_hex_color(*v);
+        if (auto v = tbl[key].value<std::string>()) out = parse_hex_color(*v, out);
     };
     c("background", cs.background);
     c("text", cs.text);

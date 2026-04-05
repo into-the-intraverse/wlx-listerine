@@ -135,7 +135,9 @@ static LRESULT CALLBACK parent_subclass(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
                     for (auto& link : wd->links) {
                         if (static_cast<LONG>(link.char_start) <= start &&
                             end <= static_cast<LONG>(link.char_end)) {
-                            std::wstring wurl(link.url.begin(), link.url.end());
+                            int wlen = MultiByteToWideChar(CP_UTF8, 0, link.url.c_str(), -1, nullptr, 0);
+                            std::wstring wurl(wlen - 1, L'\0');
+                            MultiByteToWideChar(CP_UTF8, 0, link.url.c_str(), -1, wurl.data(), wlen);
                             ShellExecuteW(nullptr, L"open", wurl.c_str(),
                                           nullptr, nullptr, SW_SHOW);
                             return 1;
@@ -256,7 +258,8 @@ int __stdcall ListSearchTextW(HWND ListWin, WCHAR* SearchString, int SearchParam
     ft.lpstrText = SearchString;
 
     if (SearchParameter & lcs_backwards) {
-        ft.chrg.cpMin = (SearchParameter & lcs_findfirst) ? -1 : sel.cpMin;
+        LONG textLen = static_cast<LONG>(SendMessageW(ListWin, WM_GETTEXTLENGTH, 0, 0));
+        ft.chrg.cpMin = (SearchParameter & lcs_findfirst) ? textLen : sel.cpMin;
         ft.chrg.cpMax = 0;
     } else {
         flags |= FR_DOWN;

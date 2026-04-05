@@ -22,6 +22,7 @@ target_link_libraries(wlx-mini-markdown PRIVATE md4c::md4c tomlplusplus::tomlplu
 set_target_properties(wlx-mini-markdown PROPERTIES
     SUFFIX ".wlx64"
     PREFIX ""
+    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
 )
 
 # --- Tests ---

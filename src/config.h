@@ -27,3 +27,4 @@ struct Config {
 Config default_config();
 Config load_config(const std::string& path);
 uint32_t parse_hex_color(const std::string& hex);
+uint32_t parse_hex_color(const std::string& hex, uint32_t fallback);
