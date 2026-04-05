@@ -1,0 +1,25 @@
+[options]
+extensions = ["md", "markdown", "mdown", "mkd", "mkdn"]
+detect_string = 'EXT="MD" | EXT="MARKDOWN"'
+
+[fonts]
+body = "Segoe UI"
+body_size = 11
+code = "Consolas"
+code_size = 10
+
+[colors.light]
+background = "#FFFFFF"
+text = "#24292E"
+heading = "#24292E"
+code_background = "#F6F8FA"
+blockquote = "#6A737D"
+link = "#0366D6"
+
+[colors.dark]
+background = "#1E1E1E"
+text = "#D4D4D4"
+heading = "#E0E0E0"
+code_background = "#2D2D2D"
+blockquote = "#9E9E9E"
+link = "#58A6FF"
