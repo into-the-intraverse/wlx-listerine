@@ -17,7 +17,7 @@ add_library(wlx-mini-markdown SHARED
 )
 
 target_include_directories(wlx-mini-markdown PRIVATE include src)
-target_link_libraries(wlx-mini-markdown PRIVATE md4c::md4c tomlplusplus::tomlplusplus)
+target_link_libraries(wlx-mini-markdown PRIVATE md4c::md4c tomlplusplus::tomlplusplus comctl32 shell32)
 
 set_target_properties(wlx-mini-markdown PROPERTIES
     SUFFIX ".wlx64"
