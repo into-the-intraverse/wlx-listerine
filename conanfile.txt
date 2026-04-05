@@ -1,0 +1,11 @@
+[requires]
+md4c/0.5.2
+tomlplusplus/3.4.0
+doctest/2.4.11
+
+[generators]
+CMakeToolchain
+CMakeDeps
+
+[options]
+md4c/*:shared=False
