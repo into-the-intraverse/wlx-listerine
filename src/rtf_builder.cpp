@@ -103,30 +103,203 @@ int RtfBuilder::cb_text(MD_TEXTTYPE t, const MD_CHAR* text, MD_SIZE sz, void* ud
     static_cast<RtfBuilder*>(ud)->on_text(t, text, sz); return 0;
 }
 
-// --------------- block handlers (paragraph only for now — Task 4 adds the rest) ---------------
+// --------------- block handlers ---------------
+
+static const int kHeadingSizes[] = {56, 48, 40, 32, 28, 24}; // H1-H6 in half-points
 
 void RtfBuilder::enter_block(MD_BLOCKTYPE type, void* detail) {
     switch (type) {
-    case MD_BLOCK_DOC: break;
+    case MD_BLOCK_DOC:
+        break;
+
+    case MD_BLOCK_H: {
+        auto* h = static_cast<MD_BLOCK_H_DETAIL*>(detail);
+        int level = h->level; // 1-6
+        int fs = (level >= 1 && level <= 6) ? kHeadingSizes[level - 1] : 24;
+        emit("\\pard\\sb200\\sa100");
+        if (level <= 2)
+            emit("\\brdrb\\brdrs\\brdrw10\\brdrcf1");
+        char buf[64];
+        snprintf(buf, sizeof(buf), "\\f0\\fs%d\\b\\cf2 ", fs);
+        emit(buf);
+        break;
+    }
+
     case MD_BLOCK_P:
         if (in_table_) break;
         emit("\\pard\\sa200 ");
         emit_default_fmt();
         emit(" ");
         break;
-    default: break;
+
+    case MD_BLOCK_UL:
+        list_ordered_.push_back(false);
+        list_counter_.push_back(0);
+        list_nesting_++;
+        break;
+
+    case MD_BLOCK_OL: {
+        auto* ol = static_cast<MD_BLOCK_OL_DETAIL*>(detail);
+        list_ordered_.push_back(true);
+        list_counter_.push_back(static_cast<int>(ol->start));
+        list_nesting_++;
+        break;
+    }
+
+    case MD_BLOCK_LI: {
+        int indent = list_nesting_ * 360;
+        char buf[128];
+        snprintf(buf, sizeof(buf), "\\pard\\fi-360\\li%d\\sa100 ", indent);
+        emit(buf);
+        emit_default_fmt();
+
+        auto* li = static_cast<MD_BLOCK_LI_DETAIL*>(detail);
+        if (li->is_task) {
+            if (li->task_mark == 'x' || li->task_mark == 'X') {
+                emit(" \\u9745? ");  // ballot box with check
+            } else {
+                emit(" \\u9744? ");  // ballot box
+            }
+            char_count_ += 2;
+        } else if (!list_ordered_.empty() && list_ordered_.back()) {
+            int& counter = list_counter_.back();
+            char nbuf[16];
+            int nlen = snprintf(nbuf, sizeof(nbuf), " %d. ", counter);
+            emit(nbuf);
+            char_count_ += nlen - 1; // exclude leading space that's formatting
+            counter++;
+        } else {
+            emit(" \\u8226  ");  // bullet
+            char_count_ += 2;
+        }
+        break;
+    }
+
+    case MD_BLOCK_CODE: {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "\\pard\\li200\\ri200\\sa100\\f1\\fs%d\\highlight5\\cf1 ",
+                 config_.code_size * 2);
+        emit(buf);
+        in_code_block_ = true;
+        break;
+    }
+
+    case MD_BLOCK_QUOTE:
+        emit("\\pard\\li720\\brdrbar\\brdrs\\brdrw20\\brdrcf4\\sa200 ");
+        emit_default_fmt();
+        emit("\\cf4 ");
+        break;
+
+    case MD_BLOCK_HR:
+        emit("\\pard\\brdrb\\brdrs\\brdrw10\\brdrcf1\\sa200 \\par\n");
+        char_count_++;
+        break;
+
+    case MD_BLOCK_TABLE: {
+        auto* tbl = static_cast<MD_BLOCK_TABLE_DETAIL*>(detail);
+        table_col_count_ = static_cast<int>(tbl->col_count);
+        in_table_ = true;
+        break;
+    }
+
+    case MD_BLOCK_THEAD:
+        in_table_header_ = true;
+        break;
+
+    case MD_BLOCK_TBODY:
+        in_table_header_ = false;
+        break;
+
+    case MD_BLOCK_TR: {
+        table_col_ = 0;
+        emit("\\trowd\\trgaph108");
+        int col_width = 9000 / (table_col_count_ > 0 ? table_col_count_ : 1);
+        char buf[32];
+        for (int i = 0; i < table_col_count_; i++) {
+            snprintf(buf, sizeof(buf), "\\cellx%d", col_width * (i + 1));
+            emit(buf);
+        }
+        emit("\n");
+        break;
+    }
+
+    case MD_BLOCK_TH:
+    case MD_BLOCK_TD:
+        emit("\\pard\\intbl ");
+        emit_default_fmt();
+        if (in_table_header_) emit("\\b");
+        emit(" ");
+        break;
+
+    default:
+        break;
     }
 }
 
 void RtfBuilder::leave_block(MD_BLOCKTYPE type, void* detail) {
     switch (type) {
-    case MD_BLOCK_DOC: break;
+    case MD_BLOCK_DOC:
+        break;
+
+    case MD_BLOCK_H:
+        emit("\\b0\\par\n");
+        char_count_++;
+        break;
+
     case MD_BLOCK_P:
         if (in_table_) break;
         emit("\\par\n");
         char_count_++;
         break;
-    default: break;
+
+    case MD_BLOCK_UL:
+    case MD_BLOCK_OL:
+        if (!list_ordered_.empty()) list_ordered_.pop_back();
+        if (!list_counter_.empty()) list_counter_.pop_back();
+        list_nesting_--;
+        break;
+
+    case MD_BLOCK_LI:
+        emit("\\par\n");
+        char_count_++;
+        break;
+
+    case MD_BLOCK_CODE:
+        emit("\\highlight0\\par\n");
+        char_count_++;
+        in_code_block_ = false;
+        break;
+
+    case MD_BLOCK_QUOTE:
+        emit("\\par\n");
+        char_count_++;
+        break;
+
+    case MD_BLOCK_HR:
+        break;
+
+    case MD_BLOCK_TH:
+    case MD_BLOCK_TD:
+        emit("\\cell\n");
+        char_count_++;
+        table_col_++;
+        break;
+
+    case MD_BLOCK_TR:
+        emit("\\row\n");
+        char_count_++;
+        break;
+
+    case MD_BLOCK_TABLE:
+        in_table_ = false;
+        break;
+
+    case MD_BLOCK_THEAD:
+    case MD_BLOCK_TBODY:
+        break;
+
+    default:
+        break;
     }
 }
 

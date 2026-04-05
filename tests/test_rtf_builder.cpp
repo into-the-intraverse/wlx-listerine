@@ -49,3 +49,64 @@ TEST_CASE("non-ASCII UTF-8 emits RTF unicode escapes") {
     auto rtf = b.build("\xC3\xA9", 2);
     CHECK(rtf.find("\\u233?") != std::string::npos);
 }
+
+TEST_CASE("H1 renders with large bold font and bottom border") {
+    RtfBuilder b(cfg(), false);
+    auto rtf = b.build("# Title", 7);
+    CHECK(rtf.find("\\fs56") != std::string::npos);  // 28pt
+    CHECK(rtf.find("\\b") != std::string::npos);
+    CHECK(rtf.find("\\cf2") != std::string::npos);   // heading color
+    CHECK(rtf.find("\\brdrb") != std::string::npos);  // bottom border
+    CHECK(rtf.find("Title") != std::string::npos);
+}
+
+TEST_CASE("H3 renders with medium font") {
+    RtfBuilder b(cfg(), false);
+    auto rtf = b.build("### Sub", 7);
+    CHECK(rtf.find("\\fs40") != std::string::npos);  // 20pt
+}
+
+TEST_CASE("Bullet list renders with bullet char and indent") {
+    RtfBuilder b(cfg(), false);
+    auto rtf = b.build("- item1\n- item2", 15);
+    CHECK(rtf.find("\\li360") != std::string::npos);
+    CHECK(rtf.find("item1") != std::string::npos);
+    CHECK(rtf.find("item2") != std::string::npos);
+}
+
+TEST_CASE("Ordered list renders with number") {
+    RtfBuilder b(cfg(), false);
+    auto rtf = b.build("1. first\n2. second", 18);
+    CHECK(rtf.find("\\li360") != std::string::npos);
+    CHECK(rtf.find("1.") != std::string::npos);
+    CHECK(rtf.find("first") != std::string::npos);
+}
+
+TEST_CASE("Code block uses monospace font and highlight") {
+    RtfBuilder b(cfg(), false);
+    auto rtf = b.build("```\ncode here\n```", 17);
+    CHECK(rtf.find("\\f1") != std::string::npos);    // Consolas
+    CHECK(rtf.find("\\highlight5") != std::string::npos);
+    CHECK(rtf.find("code here") != std::string::npos);
+}
+
+TEST_CASE("Blockquote uses indent and blockquote color") {
+    RtfBuilder b(cfg(), false);
+    auto rtf = b.build("> quoted", 8);
+    CHECK(rtf.find("\\li720") != std::string::npos);
+    CHECK(rtf.find("\\cf4") != std::string::npos);   // blockquote color
+    CHECK(rtf.find("quoted") != std::string::npos);
+}
+
+TEST_CASE("Horizontal rule renders as bordered paragraph") {
+    RtfBuilder b(cfg(), false);
+    auto rtf = b.build("---", 3);
+    CHECK(rtf.find("\\brdrb\\brdrs") != std::string::npos);
+}
+
+TEST_CASE("Task list renders checkbox characters") {
+    RtfBuilder b(cfg(), false);
+    auto rtf = b.build("- [ ] todo\n- [x] done", 21);
+    CHECK(rtf.find("todo") != std::string::npos);
+    CHECK(rtf.find("done") != std::string::npos);
+}
