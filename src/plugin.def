@@ -1,10 +1,8 @@
 LIBRARY "wlx-mini-markdown"
 EXPORTS
-    ListLoad
-    ListLoadNext
+    ListLoadW
+    ListLoadNextW
     ListCloseWindow
     ListGetDetectString
-    ListSearchText
-    ListSearchTextW
-    ListPrint
     ListSendCommand
+    ListSetDefaultParams

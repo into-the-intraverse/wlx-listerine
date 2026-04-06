@@ -1,25 +1,46 @@
-[options]
+version = 2
+
+[general]
 extensions = ["md", "markdown", "mdown", "mkd", "mkdn"]
 detect_string = 'EXT="MD" | EXT="MARKDOWN"'
 
 [fonts]
 body = "Segoe UI"
-body_size = 11
-code = "Consolas"
-code_size = 10
+body_size = 14.0
+code = "Cascadia Code"
+code_size = 13.0
+emoji = "Segoe UI Emoji"
+
+[spacing]
+paragraph = 12.0
+heading_above = 24.0
+heading_below = 12.0
+list_indent = 24.0
+quote_indent = 16.0
+quote_border_width = 3.0
+code_padding = 8.0
+line_height_factor = 1.5
 
 [colors.light]
 background = "#FFFFFF"
-text = "#24292E"
-heading = "#24292E"
-code_background = "#F6F8FA"
-blockquote = "#6A737D"
-link = "#0366D6"
+text = "#1F2328"
+heading = "#1F2328"
+muted = "#57606A"
+link = "#0969DA"
+link_hover = "#0550AE"
+code_bg = "#F6F8FA"
+quote_border = "#D0D7DE"
+rule = "#D8DEE4"
+selection = "#DDEBFF"
 
 [colors.dark]
-background = "#1E1E1E"
-text = "#D4D4D4"
-heading = "#E0E0E0"
-code_background = "#2D2D2D"
-blockquote = "#9E9E9E"
+background = "#0D1117"
+text = "#E6EDF3"
+heading = "#E6EDF3"
+muted = "#8B949E"
 link = "#58A6FF"
+link_hover = "#79C0FF"
+code_bg = "#161B22"
+quote_border = "#30363D"
+rule = "#30363D"
+selection = "#1F3B5B"
