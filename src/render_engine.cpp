@@ -30,21 +30,100 @@ HRESULT RenderEngine::create_device_resources(HWND hwnd) {
     D2D1_RENDER_TARGET_PROPERTIES rtProps = D2D1::RenderTargetProperties();
     D2D1_HWND_RENDER_TARGET_PROPERTIES hwndProps = D2D1::HwndRenderTargetProperties(hwnd, size);
 
-    HRESULT hr = d2d_factory_->CreateHwndRenderTarget(rtProps, hwndProps, rt_.GetAddressOf());
+    ComPtr<ID2D1HwndRenderTarget> hwnd_rt;
+    HRESULT hr = d2d_factory_->CreateHwndRenderTarget(rtProps, hwndProps, hwnd_rt.GetAddressOf());
+    if (SUCCEEDED(hr)) {
+        rt_ = hwnd_rt;
+        is_hwnd_target_ = true;
+    }
     needs_recreate_ = false;
     return hr;
 }
 
+HRESULT RenderEngine::create_bitmap_resources(IWICImagingFactory* wic_factory, int width, int height) {
+    if (rt_) return S_OK;
+
+    width_ = static_cast<UINT>(width);
+    height_ = static_cast<UINT>(height);
+
+    HRESULT hr = wic_factory->CreateBitmap(
+        width_, height_,
+        GUID_WICPixelFormat32bppPBGRA,
+        WICBitmapCacheOnDemand,
+        wic_bitmap_.GetAddressOf());
+    if (FAILED(hr)) return hr;
+
+    D2D1_RENDER_TARGET_PROPERTIES rtProps = D2D1::RenderTargetProperties(
+        D2D1_RENDER_TARGET_TYPE_SOFTWARE,
+        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+
+    hr = d2d_factory_->CreateWicBitmapRenderTarget(
+        wic_bitmap_.Get(), rtProps, rt_.GetAddressOf());
+    if (FAILED(hr)) {
+        wic_bitmap_.Reset();
+        return hr;
+    }
+
+    is_hwnd_target_ = false;
+    needs_recreate_ = false;
+    return hr;
+}
+
+HRESULT RenderEngine::save_to_png(IWICImagingFactory* wic_factory, const wchar_t* path) {
+    if (!wic_bitmap_) return E_FAIL;
+
+    ComPtr<IWICStream> stream;
+    HRESULT hr = wic_factory->CreateStream(stream.GetAddressOf());
+    if (FAILED(hr)) return hr;
+
+    hr = stream->InitializeFromFilename(path, GENERIC_WRITE);
+    if (FAILED(hr)) return hr;
+
+    ComPtr<IWICBitmapEncoder> encoder;
+    hr = wic_factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, encoder.GetAddressOf());
+    if (FAILED(hr)) return hr;
+
+    hr = encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache);
+    if (FAILED(hr)) return hr;
+
+    ComPtr<IWICBitmapFrameEncode> frame;
+    hr = encoder->CreateNewFrame(frame.GetAddressOf(), nullptr);
+    if (FAILED(hr)) return hr;
+
+    hr = frame->Initialize(nullptr);
+    if (FAILED(hr)) return hr;
+
+    hr = frame->SetSize(width_, height_);
+    if (FAILED(hr)) return hr;
+
+    WICPixelFormatGUID format = GUID_WICPixelFormat32bppPBGRA;
+    hr = frame->SetPixelFormat(&format);
+    if (FAILED(hr)) return hr;
+
+    hr = frame->WriteSource(wic_bitmap_.Get(), nullptr);
+    if (FAILED(hr)) return hr;
+
+    hr = frame->Commit();
+    if (FAILED(hr)) return hr;
+
+    return encoder->Commit();
+}
+
 void RenderEngine::discard_device_resources() {
     rt_.Reset();
+    wic_bitmap_.Reset();
     brush_cache_.clear();
+    is_hwnd_target_ = false;
 }
 
 void RenderEngine::resize(UINT width, UINT height) {
     width_ = width;
     height_ = height;
-    if (rt_) {
-        rt_->Resize(D2D1::SizeU(width, height));
+    if (rt_ && is_hwnd_target_) {
+        ComPtr<ID2D1HwndRenderTarget> hwnd_rt;
+        if (SUCCEEDED(rt_.As(&hwnd_rt))) {
+            hwnd_rt->Resize(D2D1::SizeU(width, height));
+        }
     }
 }
 

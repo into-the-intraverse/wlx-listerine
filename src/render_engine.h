@@ -5,9 +5,9 @@
 
 #include <d2d1.h>
 #include <dwrite.h>
+#include <wincodec.h>
 #include <wrl/client.h>
 
-#include <optional>
 #include <unordered_map>
 
 using Microsoft::WRL::ComPtr;
@@ -18,6 +18,8 @@ public:
                  const ThemeService& theme, bool dark_mode);
 
     HRESULT create_device_resources(HWND hwnd);
+    HRESULT create_bitmap_resources(IWICImagingFactory* wic_factory, int width, int height);
+    HRESULT save_to_png(IWICImagingFactory* wic_factory, const wchar_t* path);
     void discard_device_resources();
     void resize(UINT width, UINT height);
 
@@ -42,7 +44,9 @@ private:
     const ThemeService& theme_;
     bool dark_mode_;
 
-    ComPtr<ID2D1HwndRenderTarget> rt_;
+    ComPtr<ID2D1RenderTarget> rt_;
+    ComPtr<IWICBitmap> wic_bitmap_;
+    bool is_hwnd_target_ = false;
     std::unordered_map<uint32_t, ComPtr<ID2D1SolidColorBrush>> brush_cache_;
 
     // Cached text format for bullet rendering
