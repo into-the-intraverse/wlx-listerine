@@ -53,6 +53,7 @@ add_executable(screenshot_tool
 target_link_libraries(screenshot_tool PRIVATE
     wlx-core
     windowscodecs
+    ole32
 )
 
 # --- Tests ---
