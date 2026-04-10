@@ -3,6 +3,7 @@
 #endif
 
 #include <windows.h>
+#include <psapi.h>
 #include <d2d1.h>
 #include <dwrite.h>
 #include <wincodec.h>
@@ -32,7 +33,61 @@ struct Options {
     float scroll = 0;
     bool full = false;
     bool dark = false;
+    bool bench = false;
 };
+
+// ---------- high-resolution timer ----------
+
+static double timer_freq() {
+    LARGE_INTEGER f;
+    QueryPerformanceFrequency(&f);
+    return static_cast<double>(f.QuadPart);
+}
+
+static double now_ms() {
+    static double freq = timer_freq();
+    LARGE_INTEGER t;
+    QueryPerformanceCounter(&t);
+    return static_cast<double>(t.QuadPart) / freq * 1000.0;
+}
+
+// ---------- memory stats ----------
+
+static size_t estimate_document_memory(const Document& doc) {
+    size_t bytes = sizeof(Document);
+    for (auto& block : doc.blocks) {
+        bytes += sizeof(BlockNode);
+        for (auto& inl : block.inlines)
+            bytes += sizeof(InlineNode) + inl.text.size() * sizeof(wchar_t);
+        for (auto& child : block.children) {
+            bytes += sizeof(BlockNode);
+            for (auto& inl : child.inlines)
+                bytes += sizeof(InlineNode) + inl.text.size() * sizeof(wchar_t);
+        }
+    }
+    return bytes;
+}
+
+static size_t estimate_layout_memory(const LayoutDocument& layout) {
+    size_t bytes = sizeof(LayoutDocument);
+    for (auto& block : layout.blocks) {
+        bytes += sizeof(LayoutBlock);
+        for (auto& run : block.text_runs)
+            bytes += sizeof(TextRun) + run.text.size() * sizeof(wchar_t);
+        bytes += block.spans.size() * sizeof(InteractiveSpan);
+    }
+    bytes += layout.anchors.size() * sizeof(AnchorEntry);
+    return bytes;
+}
+
+static size_t process_working_set() {
+    PROCESS_MEMORY_COUNTERS pmc = {};
+    pmc.cb = sizeof(pmc);
+    GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
+    return pmc.WorkingSetSize;
+}
+
+// ---------- args ----------
 
 static void print_usage() {
     std::fprintf(stderr,
@@ -43,7 +98,8 @@ static void print_usage() {
         "  --full           Render entire document\n"
         "  --scroll <px>    Scroll offset in viewport mode (default: 0)\n"
         "  --config <path>  TOML config path (default: config/wlx-listerine-md.toml)\n"
-        "  --dark           Force dark mode\n");
+        "  --dark           Force dark mode\n"
+        "  --bench          Print timing and memory stats\n");
 }
 
 static std::wstring to_wstring(const char* s) {
@@ -72,6 +128,8 @@ static bool parse_args(int argc, char* argv[], Options& opts) {
             opts.full = true;
         } else if (std::strcmp(argv[i], "--dark") == 0) {
             opts.dark = true;
+        } else if (std::strcmp(argv[i], "--bench") == 0) {
+            opts.bench = true;
         } else {
             std::fprintf(stderr, "Unknown option: %s\n", argv[i]);
             return false;
@@ -114,11 +172,15 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    size_t mem_before = opts.bench ? process_working_set() : 0;
+
     // run_pipeline returns the output path on success, or an empty string on
     // failure (error already printed to stderr).  All COM objects are created
     // and destroyed inside the lambda so that every Release() call happens
     // before CoUninitialize() below.
     auto run_pipeline = [&]() -> std::wstring {
+        double t0 = now_ms();
+
         ComPtr<ID2D1Factory> d2d_factory;
         HRESULT hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED,
                                        d2d_factory.GetAddressOf());
@@ -143,9 +205,13 @@ int main(int argc, char* argv[]) {
             return {};
         }
 
+        double t_factories = now_ms();
+
         // Load theme config
         ThemeService theme;
         theme.load(opts.config_path);
+
+        double t_theme = now_ms();
 
         // Read and parse markdown
         FileService file_service;
@@ -155,13 +221,19 @@ int main(int argc, char* argv[]) {
             return {};
         }
 
+        double t_read = now_ms();
+
         MarkdownParser parser;
         auto doc = parser.parse(content->raw_utf8.c_str(), content->raw_utf8.size());
+
+        double t_parse = now_ms();
 
         // Layout
         LayoutEngine layout_engine(dwrite_factory.Get(), theme, opts.dark);
         float viewport_width = static_cast<float>(opts.width);
         auto layout = layout_engine.layout(doc, viewport_width);
+
+        double t_layout = now_ms();
 
         // Determine bitmap dimensions
         int bmp_width = opts.width;
@@ -184,6 +256,8 @@ int main(int argc, char* argv[]) {
             return {};
         }
 
+        double t_target = now_ms();
+
         // Paint
         renderer.paint(layout, scroll_y);
         if (renderer.needs_recreate()) {
@@ -191,11 +265,60 @@ int main(int argc, char* argv[]) {
             return {};
         }
 
+        double t_paint = now_ms();
+
         // Save PNG
         hr = renderer.save_to_png(wic_factory.Get(), out_path.c_str());
         if (FAILED(hr)) {
             std::fprintf(stderr, "Failed to save PNG: 0x%08lx\n", hr);
             return {};
+        }
+
+        double t_save = now_ms();
+
+        if (opts.bench) {
+            size_t mem_after = process_working_set();
+
+            std::fprintf(stderr, "\n--- Benchmark ---\n");
+            std::fprintf(stderr, "File:       %ls\n", opts.input_path.c_str());
+            std::fprintf(stderr, "Size:       %zu bytes UTF-8\n", content->raw_utf8.size());
+            std::fprintf(stderr, "Viewport:   %d x %d\n", bmp_width, bmp_height);
+            std::fprintf(stderr, "\n");
+
+            std::fprintf(stderr, "Timing:\n");
+            std::fprintf(stderr, "  factories  %6.2f ms\n", t_factories - t0);
+            std::fprintf(stderr, "  theme      %6.2f ms\n", t_theme - t_factories);
+            std::fprintf(stderr, "  file read  %6.2f ms\n", t_read - t_theme);
+            std::fprintf(stderr, "  parse      %6.2f ms\n", t_parse - t_read);
+            std::fprintf(stderr, "  layout     %6.2f ms\n", t_layout - t_parse);
+            std::fprintf(stderr, "  target     %6.2f ms\n", t_target - t_layout);
+            std::fprintf(stderr, "  paint      %6.2f ms\n", t_paint - t_target);
+            std::fprintf(stderr, "  save png   %6.2f ms\n", t_save - t_paint);
+            std::fprintf(stderr, "  ─────────────────\n");
+            std::fprintf(stderr, "  TOTAL      %6.2f ms\n", t_save - t0);
+            std::fprintf(stderr, "\n");
+
+            // In the real plugin, factories are created once and reused.
+            // The "hot path" is read + parse + layout + paint.
+            double hot = (t_read - t_theme) + (t_parse - t_read)
+                       + (t_layout - t_parse) + (t_paint - t_target);
+            std::fprintf(stderr, "  hot path   %6.2f ms  (read+parse+layout+paint)\n", hot);
+            std::fprintf(stderr, "\n");
+
+            std::fprintf(stderr, "Document:\n");
+            std::fprintf(stderr, "  AST blocks     %zu\n", doc.blocks.size());
+            std::fprintf(stderr, "  layout blocks  %zu\n", layout.blocks.size());
+            std::fprintf(stderr, "  total height   %.0f px\n", layout.total_height);
+            std::fprintf(stderr, "\n");
+
+            size_t doc_mem = estimate_document_memory(doc);
+            size_t lay_mem = estimate_layout_memory(layout);
+            std::fprintf(stderr, "Memory (estimates):\n");
+            std::fprintf(stderr, "  document AST   %6zu bytes\n", doc_mem);
+            std::fprintf(stderr, "  layout data    %6zu bytes\n", lay_mem);
+            std::fprintf(stderr, "  process delta  %+.0f KB\n",
+                         static_cast<double>(mem_after - mem_before) / 1024.0);
+            std::fprintf(stderr, "\n");
         }
 
         return out_path.wstring();
