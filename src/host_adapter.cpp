@@ -547,6 +547,38 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         float page = vs->renderer ? vs->renderer->dip_height() : 100.0f;
         float line = g_theme.fonts().body_size * g_theme.spacing().line_height_factor;
 
+        // Ctrl+C — copy selection
+        if (wp == 'C' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            if (vs->layout && vs->sel_anchor.valid() && vs->sel_anchor != vs->sel_active) {
+                auto lo = std::min(vs->sel_anchor, vs->sel_active);
+                auto hi = std::max(vs->sel_anchor, vs->sel_active);
+                auto text = extract_selected_text(*vs->layout, lo, hi);
+                copy_to_clipboard(hwnd, text);
+            }
+            return 0;
+        }
+
+        // Ctrl+A — select all
+        if (wp == 'A' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            if (vs->layout && !vs->layout->blocks.empty()) {
+                vs->sel_anchor = TextPosition{0, 0};
+                int last = static_cast<int>(vs->layout->blocks.size()) - 1;
+                vs->sel_active = TextPosition{last, block_text_length(vs->layout->blocks[last])};
+                vs->selecting = false;
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }
+            return 0;
+        }
+
+        // Escape — clear selection
+        if (wp == VK_ESCAPE) {
+            if (vs->sel_anchor.valid()) {
+                clear_selection(vs);
+                InvalidateRect(hwnd, nullptr, FALSE);
+                return 0;
+            }
+        }
+
         switch (wp) {
         case VK_UP:    handle_scroll(vs, -line); break;
         case VK_DOWN:  handle_scroll(vs, line); break;
@@ -724,13 +756,25 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
     auto* vs = it->second;
 
     switch (Command) {
-    case lc_copy:
-        // No text selection in this version
-        return LISTPLUGIN_ERROR;
+    case lc_copy: {
+        if (!vs->layout || !vs->sel_anchor.valid() || vs->sel_anchor == vs->sel_active)
+            return LISTPLUGIN_ERROR;
+        auto lo = std::min(vs->sel_anchor, vs->sel_active);
+        auto hi = std::max(vs->sel_anchor, vs->sel_active);
+        auto text = extract_selected_text(*vs->layout, lo, hi);
+        return copy_to_clipboard(vs->hwnd, text) ? LISTPLUGIN_OK : LISTPLUGIN_ERROR;
+    }
 
-    case lc_selectall:
-        // No text selection in this version
-        return LISTPLUGIN_ERROR;
+    case lc_selectall: {
+        if (!vs->layout || vs->layout->blocks.empty())
+            return LISTPLUGIN_ERROR;
+        vs->sel_anchor = TextPosition{0, 0};
+        int last = static_cast<int>(vs->layout->blocks.size()) - 1;
+        vs->sel_active = TextPosition{last, block_text_length(vs->layout->blocks[last])};
+        vs->selecting = false;
+        InvalidateRect(vs->hwnd, nullptr, FALSE);
+        return LISTPLUGIN_OK;
+    }
 
     case lc_newparams: {
         bool new_dark = (Parameter & lcp_darkmode) != 0;
