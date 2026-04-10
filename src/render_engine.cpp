@@ -384,7 +384,6 @@ void RenderEngine::paint_text_runs(const LayoutBlock& block, float offset_y) {
 
 void RenderEngine::paint_copy_button(const LayoutBlock& block, int block_index, float offset_y) {
     if (block.type != BlockType::CodeFence) return;
-    if (hovered_code_block_ != block_index && copied_code_block_ != block_index) return;
 
     const auto& colors = theme_.palette(dark_mode_);
     float btn_size = 24.0f;
@@ -393,6 +392,8 @@ void RenderEngine::paint_copy_button(const LayoutBlock& block, int block_index, 
     float by = block.rect.top + pad + offset_y;
 
     bool copied = (copied_code_block_ == block_index);
+    bool hovered = (hovered_code_block_ == block_index);
+    float icon_opacity = copied ? 1.0f : hovered ? 1.0f : 0.3f;
 
     // Button background
     uint32_t bg_color = copied ? colors.link : colors.code_bg;
@@ -405,6 +406,16 @@ void RenderEngine::paint_copy_button(const LayoutBlock& block, int block_index, 
     // Icon
     auto* icon_brush = get_brush(colors.text);
     if (!icon_brush) return;
+
+    // Apply opacity for non-hovered state
+    ComPtr<ID2D1SolidColorBrush> faded_brush;
+    ID2D1SolidColorBrush* draw_brush = icon_brush;
+    if (icon_opacity < 1.0f) {
+        auto color = ThemeService::to_d2d_color(colors.text);
+        color.a = icon_opacity;
+        if (SUCCEEDED(rt_->CreateSolidColorBrush(color, faded_brush.GetAddressOf())))
+            draw_brush = faded_brush.Get();
+    }
 
     float cx = bx + btn_size * 0.5f;
     float cy = by + btn_size * 0.5f;
@@ -426,7 +437,7 @@ void RenderEngine::paint_copy_button(const LayoutBlock& block, int block_index, 
                                          cx + s + 1.5f, cy + s - 1.0f);
         D2D1_RECT_F front = D2D1::RectF(cx - s - 1.5f, cy - s + 1.0f,
                                           cx + s - 1.5f, cy + s + 1.0f);
-        rt_->DrawRectangle(back, icon_brush, 1.0f);
-        rt_->DrawRectangle(front, icon_brush, 1.0f);
+        rt_->DrawRectangle(back, draw_brush, 1.0f);
+        rt_->DrawRectangle(front, draw_brush, 1.0f);
     }
 }

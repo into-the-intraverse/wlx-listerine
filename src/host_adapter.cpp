@@ -204,6 +204,8 @@ static TextPosition hit_test_position(const LayoutDocument& layout, float x, flo
         auto& block = layout.blocks[i];
         if (block.text_runs.empty()) continue;
         if (y < block.rect.top || y > block.rect.bottom) continue;
+        // For table cells (multiple blocks share the same row), also check x bounds
+        if (x < block.rect.left || x > block.rect.right) continue;
 
         auto& run = block.text_runs[0];
         if (!run.layout) continue;
