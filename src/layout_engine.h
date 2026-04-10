@@ -92,6 +92,9 @@ struct TextPosition {
     bool operator>=(const TextPosition& o) const { return !(*this < o); }
 };
 
+std::wstring extract_selected_text(const LayoutDocument& layout,
+                                   TextPosition start, TextPosition end);
+
 class LayoutEngine {
 public:
     LayoutEngine(IDWriteFactory* dwrite, const ThemeService& theme, bool dark_mode);

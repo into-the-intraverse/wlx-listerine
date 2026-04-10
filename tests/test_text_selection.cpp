@@ -1,7 +1,15 @@
 #include <doctest/doctest.h>
 #include "layout_engine.h"
+#include "markdown_parser.h"
+#include "theme_service.h"
 
+#include <d2d1.h>
+#include <dwrite.h>
+#include <wrl/client.h>
+#include <cstring>
 #include <algorithm>
+
+using Microsoft::WRL::ComPtr;
 
 TEST_CASE("TextPosition default is invalid") {
     TextPosition pos;
@@ -99,4 +107,111 @@ TEST_CASE("TextPosition works with std::min and std::max") {
 
     CHECK(std::min(c, d) == c);
     CHECK(std::max(c, d) == d);
+}
+
+// --- Helpers for extract_selected_text tests ---
+
+static ComPtr<IDWriteFactory> create_dwrite_factory() {
+    ComPtr<IDWriteFactory> factory;
+    DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+                        reinterpret_cast<IUnknown**>(factory.GetAddressOf()));
+    return factory;
+}
+
+static Document parse(const char* md) {
+    MarkdownParser p;
+    return p.parse(md, std::strlen(md));
+}
+
+static LayoutDocument do_layout(IDWriteFactory* factory, const Document& doc,
+                                float width = 800.0f) {
+    ThemeService theme;
+    LayoutEngine engine(factory, theme, false);
+    return engine.layout(doc, width);
+}
+
+// --- extract_selected_text tests ---
+
+TEST_CASE("extract_selected_text - single block partial") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    auto doc = parse("Hello World");
+    auto layout = do_layout(factory.Get(), doc);
+    REQUIRE(!layout.blocks.empty());
+
+    TextPosition start{0, 2};
+    TextPosition end{0, 7};
+    auto text = extract_selected_text(layout, start, end);
+    CHECK(text == L"llo W");
+}
+
+TEST_CASE("extract_selected_text - full block") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    auto doc = parse("Hello World");
+    auto layout = do_layout(factory.Get(), doc);
+
+    int para_idx = -1;
+    for (int i = 0; i < static_cast<int>(layout.blocks.size()); i++) {
+        if (layout.blocks[i].type == BlockType::Paragraph) { para_idx = i; break; }
+    }
+    REQUIRE(para_idx >= 0);
+
+    auto& blk = layout.blocks[para_idx];
+    int last_char = 0;
+    for (auto& run : blk.text_runs) last_char += static_cast<int>(run.text.size());
+
+    TextPosition start{para_idx, 0};
+    TextPosition end{para_idx, last_char};
+    auto text = extract_selected_text(layout, start, end);
+    CHECK(text == L"Hello World");
+}
+
+TEST_CASE("extract_selected_text - cross block") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    auto doc = parse("First paragraph\n\nSecond paragraph");
+    auto layout = do_layout(factory.Get(), doc);
+
+    int first_para = -1, last_para = -1;
+    for (int i = 0; i < static_cast<int>(layout.blocks.size()); i++) {
+        if (layout.blocks[i].type == BlockType::Paragraph) {
+            if (first_para < 0) first_para = i;
+            last_para = i;
+        }
+    }
+    REQUIRE(first_para >= 0);
+    REQUIRE(last_para > first_para);
+
+    TextPosition start{first_para, 0};
+    int last_len = 0;
+    for (auto& run : layout.blocks[last_para].text_runs)
+        last_len += static_cast<int>(run.text.size());
+    TextPosition end{last_para, last_len};
+
+    auto text = extract_selected_text(layout, start, end);
+    CHECK(text.find(L"First paragraph") != std::wstring::npos);
+    CHECK(text.find(L"Second paragraph") != std::wstring::npos);
+    CHECK(text.find(L"\r\n") != std::wstring::npos);
+}
+
+TEST_CASE("extract_selected_text - invalid positions") {
+    LayoutDocument empty_layout;
+    TextPosition invalid{};
+    TextPosition valid{0, 0};
+    CHECK(extract_selected_text(empty_layout, invalid, valid).empty());
+    CHECK(extract_selected_text(empty_layout, valid, invalid).empty());
+}
+
+TEST_CASE("extract_selected_text - reversed range") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    auto doc = parse("Hello World");
+    auto layout = do_layout(factory.Get(), doc);
+
+    // Pass end before start — function should swap them
+    TextPosition start{0, 7};
+    TextPosition end{0, 2};
+    auto text = extract_selected_text(layout, start, end);
+    CHECK(text == L"llo W");
 }

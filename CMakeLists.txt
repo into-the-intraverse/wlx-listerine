@@ -16,6 +16,7 @@ add_library(wlx-core STATIC
     src/interaction_engine.cpp
     src/theme_service.cpp
     src/cache_service.cpp
+    src/text_selection.cpp
 )
 
 target_include_directories(wlx-core PUBLIC include src)
