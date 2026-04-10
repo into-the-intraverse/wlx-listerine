@@ -441,6 +441,7 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
     case WM_LBUTTONUP: {
         if (!vs || !vs->layout) break;
+        bool was_dragging = vs->selecting;
         vs->selecting = false;
         ReleaseCapture();
         KillTimer(hwnd, TIMER_AUTOSCROLL);
@@ -467,9 +468,11 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             }
         }
 
-        // Update final active position
-        auto pos = hit_test_position(*vs->layout, doc_x, doc_y);
-        if (pos.valid()) vs->sel_active = pos;
+        // Only update active position if we were dragging (not after double-click word select)
+        if (was_dragging) {
+            auto pos = hit_test_position(*vs->layout, doc_x, doc_y);
+            if (pos.valid()) vs->sel_active = pos;
+        }
 
         if (vs->sel_anchor == vs->sel_active) {
             // No drag — handle links
