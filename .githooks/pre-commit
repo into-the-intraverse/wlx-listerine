@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Only run visual tests when rendering-relevant files are staged
+RELEVANT="\.cpp$|\.h$|\.toml$|test_data/cases/.*\.md$"
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR || true)
+if [[ -z "$staged" ]] || ! echo "$staged" | grep -qE "$RELEVANT"; then
+    exit 0
+fi
+
+echo "[pre-commit] Visual-relevant files changed — running visual regression tests"
+
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+SCREENSHOT_TOOL="$ROOT_DIR/build/Release/screenshot_tool.exe"
+
+if [[ ! -f "$SCREENSHOT_TOOL" ]]; then
+    echo "[pre-commit] WARNING: screenshot_tool.exe not found — skipping visual tests"
+    echo "[pre-commit] Build first: cmake --build --preset conan-release"
+    exit 0
+fi
+
+"$ROOT_DIR/scripts/visual-test.sh"
