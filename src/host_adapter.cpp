@@ -655,31 +655,23 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {
         break;
 
     case DLL_PROCESS_DETACH:
-        // reserved != NULL means process is terminating.  COM Release() calls
-        // under the loader lock can deadlock if the target DLL's threads were
-        // already killed by ExitProcess.  Move all COM-holding objects to
-        // intentionally-leaked heap allocations so that static destructors
-        // find empty shells and skip Release() calls.  The OS reclaims
-        // everything when the process handle closes.
-        if (reserved != nullptr) {
-            (void)new ComPtr<ID2D1Factory>(std::move(g_d2d_factory));
-            (void)new ComPtr<IDWriteFactory>(std::move(g_dwrite_factory));
-            (void)new CacheService(std::move(g_cache));
-            break;
-        }
-
-        // FreeLibrary path: TC is unloading the plugin while the process continues.
-        // Release child COM objects before factories to avoid dangling internal refs.
-        for (auto& [hwnd, vs] : g_views)
-            delete vs;
+        // DLL_PROCESS_DETACH runs under the loader lock.  COM Release() calls
+        // here can deadlock (terminated threads hold locks, or DWrite shared
+        // factory cleanup waits on internal state).  This applies to BOTH the
+        // ExitProcess path (reserved != NULL) and the FreeLibrary path.
+        //
+        // Safe cleanup happens in ListCloseWindow (outside the loader lock).
+        // Here we just move COM-holding objects to leaked heap allocations so
+        // static destructors find empty shells.  The OS reclaims on exit;
+        // FreeLibrary callers accept the leak (plugin is unloading anyway).
+        (void)new ComPtr<ID2D1Factory>(std::move(g_d2d_factory));
+        (void)new ComPtr<IDWriteFactory>(std::move(g_dwrite_factory));
+        (void)new CacheService(std::move(g_cache));
+        // ViewState* raw pointers in g_views are intentionally leaked —
+        // their RenderEngine/LayoutDocument COM objects must not Release().
         g_views.clear();
 
-        g_cache.clear();
-
-        g_d2d_factory.Reset();
-        g_dwrite_factory.Reset();
-
-        if (g_window_class) {
+        if (reserved == nullptr && g_window_class) {
             UnregisterClassW(L"WlxListerineMdView", g_hModule);
             g_window_class = 0;
         }
