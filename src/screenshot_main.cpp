@@ -91,11 +91,13 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Build output path: test_data/<stem>.png or test_data/<stem>_dark.png
+    // Build output path as sibling of input: dir/foo.md -> dir/foo.png
     fs::path input(opts.input_path);
     std::wstring stem = input.stem().wstring();
     std::wstring out_name = stem + (opts.dark ? L"_dark.png" : L".png");
-    fs::path out_path = fs::path(L"test_data") / out_name;
+    fs::path out_path = input.parent_path().empty()
+        ? fs::path(out_name)
+        : input.parent_path() / out_name;
 
     // Ensure test_data directory exists
     std::error_code ec;
