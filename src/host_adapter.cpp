@@ -655,11 +655,18 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {
         break;
 
     case DLL_PROCESS_DETACH:
-        // reserved != NULL means process is terminating — other DLLs may already
-        // be unloaded, so calling COM Release() could deadlock or crash.  Let the
-        // OS reclaim everything.
-        if (reserved != nullptr)
+        // reserved != NULL means process is terminating.  COM Release() calls
+        // under the loader lock can deadlock if the target DLL's threads were
+        // already killed by ExitProcess.  Move all COM-holding objects to
+        // intentionally-leaked heap allocations so that static destructors
+        // find empty shells and skip Release() calls.  The OS reclaims
+        // everything when the process handle closes.
+        if (reserved != nullptr) {
+            (void)new ComPtr<ID2D1Factory>(std::move(g_d2d_factory));
+            (void)new ComPtr<IDWriteFactory>(std::move(g_dwrite_factory));
+            (void)new CacheService(std::move(g_cache));
             break;
+        }
 
         // FreeLibrary path: TC is unloading the plugin while the process continues.
         // Release child COM objects before factories to avoid dangling internal refs.
