@@ -95,6 +95,8 @@ struct TextPosition {
 std::wstring extract_selected_text(const LayoutDocument& layout,
                                    TextPosition start, TextPosition end);
 
+std::pair<int, int> find_word_boundaries(const std::wstring& text, int offset);
+
 class LayoutEngine {
 public:
     LayoutEngine(IDWriteFactory* dwrite, const ThemeService& theme, bool dark_mode);

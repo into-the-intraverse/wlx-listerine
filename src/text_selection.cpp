@@ -49,3 +49,31 @@ std::wstring extract_selected_text(const LayoutDocument& layout,
 
     return result;
 }
+
+std::pair<int, int> find_word_boundaries(const std::wstring& text, int offset) {
+    int len = static_cast<int>(text.size());
+    if (len == 0) return {0, 0};
+    offset = std::clamp(offset, 0, len - 1);
+
+    auto is_word_char = [](wchar_t c) {
+        return !iswspace(c) && !iswpunct(c);
+    };
+
+    bool on_word = is_word_char(text[offset]);
+
+    int start = offset;
+    int end = offset;
+
+    if (on_word) {
+        while (start > 0 && is_word_char(text[start - 1])) start--;
+        while (end < len && is_word_char(text[end])) end++;
+    } else {
+        auto same_class = [&](wchar_t c) {
+            return !is_word_char(c) && iswspace(c) == iswspace(text[offset]);
+        };
+        while (start > 0 && same_class(text[start - 1])) start--;
+        while (end < len && same_class(text[end])) end++;
+    }
+
+    return {start, end};
+}

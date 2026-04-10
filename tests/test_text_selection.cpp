@@ -215,3 +215,31 @@ TEST_CASE("extract_selected_text - reversed range") {
     auto text = extract_selected_text(layout, start, end);
     CHECK(text == L"llo W");
 }
+
+TEST_CASE("find_word_boundaries - middle of word") {
+    std::wstring text = L"Hello beautiful world";
+    auto [start, end] = find_word_boundaries(text, 8);
+    CHECK(start == 6);
+    CHECK(end == 15);
+}
+
+TEST_CASE("find_word_boundaries - start of text") {
+    std::wstring text = L"Hello world";
+    auto [start, end] = find_word_boundaries(text, 0);
+    CHECK(start == 0);
+    CHECK(end == 5);
+}
+
+TEST_CASE("find_word_boundaries - on whitespace") {
+    std::wstring text = L"Hello world";
+    auto [start, end] = find_word_boundaries(text, 5);
+    CHECK(start == 5);
+    CHECK(end == 6);
+}
+
+TEST_CASE("find_word_boundaries - end of text") {
+    std::wstring text = L"Hello";
+    auto [start, end] = find_word_boundaries(text, 4);
+    CHECK(start == 0);
+    CHECK(end == 5);
+}
