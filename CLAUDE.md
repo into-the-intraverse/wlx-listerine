@@ -54,6 +54,26 @@ HostAdapter (host_adapter.cpp)         WLX exports, WndProc, scroll, D2D/DWrite 
 
 86 tests via doctest in `tests/`. Coverage: document model construction, theme/config TOML parsing, file encoding detection, markdown-to-AST conversion (30+ cases), cache hit/miss/bucketing, layout engine block positioning with real IDWriteFactory.
 
+## Visual Regression Tests
+
+27 test cases in `test_data/cases/`. Compares `screenshot_tool` output against golden Chrome PNGs (`*_chrome.png`). Threshold: >= 95% pixel similarity = PASS.
+
+```bash
+# Run full visual regression suite (generate + compare)
+./scripts/visual-test.sh
+
+# Update ALL golden Chrome PNGs (after intentional visual changes)
+bun run update-goldens
+
+# Update a single golden
+bun run update-goldens -- 01_headings_atx
+```
+
+**Pre-commit hook:** Auto-runs when `.cpp`, `.h`, `.toml`, or test `.md` files are staged. Enable with:
+```bash
+git config core.hooksPath .githooks
+```
+
 ## Configuration
 
 `config/wlx-mini-markdown.toml` (schema v2). Sections: `[general]` (extensions, detect_string), `[fonts]` (body, code, emoji + sizes), `[spacing]` (paragraph, heading, list, quote, code, line height), `[colors.light]` and `[colors.dark]` (10 colors each: background, text, heading, muted, link, link_hover, code_bg, quote_border, rule, selection).
