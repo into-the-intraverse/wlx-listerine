@@ -76,6 +76,7 @@ add_executable(tests
     tests/test_markdown_parser.cpp
     tests/test_cache_service.cpp
     tests/test_layout_engine.cpp
+    tests/test_text_selection.cpp
 )
 
 target_link_libraries(tests PRIVATE
