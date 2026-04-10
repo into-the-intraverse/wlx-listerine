@@ -146,6 +146,11 @@ static void do_layout(ViewState* vs) {
 static void load_document(ViewState* vs, const wchar_t* path) {
     vs->file_path = path;
     vs->scroll_y = 0;
+    vs->sel_anchor = TextPosition{};
+    vs->sel_active = TextPosition{};
+    vs->selecting = false;
+    vs->hovered_code_block = -1;
+    vs->copied_code_block = -1;
 
     auto content = g_file_service.read(path);
     if (!content) return;
