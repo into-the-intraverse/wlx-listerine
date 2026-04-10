@@ -26,10 +26,10 @@ for md_file in "$CASES_DIR"/*.md; do
     name="$(basename "$md_file" .md)"
     if "$SCREENSHOT_TOOL" "$md_file" --full > /dev/null 2>&1; then
         echo "  OK   $name"
-        ((gen_ok++))
+        gen_ok=$((gen_ok + 1))
     else
         echo "  ERR  $name"
-        ((gen_fail++))
+        gen_fail=$((gen_fail + 1))
     fi
 done
 

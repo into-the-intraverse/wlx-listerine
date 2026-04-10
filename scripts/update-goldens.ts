@@ -26,6 +26,11 @@ function startServer(): Promise<ReturnType<typeof createServer>> {
           TEST_DATA,
           decodeURIComponent(url.pathname.slice(1))
         );
+        if (!filePath.startsWith(TEST_DATA)) {
+          res.writeHead(403);
+          res.end("Forbidden");
+          return;
+        }
         if (!existsSync(filePath)) {
           res.writeHead(404);
           res.end("Not found");

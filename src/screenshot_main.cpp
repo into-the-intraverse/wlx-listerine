@@ -99,7 +99,7 @@ int main(int argc, char* argv[]) {
         ? fs::path(out_name)
         : input.parent_path() / out_name;
 
-    // Ensure test_data directory exists
+    // Ensure output directory exists
     std::error_code ec;
     fs::create_directories(out_path.parent_path(), ec);
     if (ec) {
