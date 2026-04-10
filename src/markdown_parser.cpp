@@ -271,9 +271,14 @@ void MarkdownParser::enter_span(MD_SPANTYPE type, void* detail) {
         break;
     }
 
-    case MD_SPAN_IMG:
-        // no-op for V1 (images deferred to V3)
+    case MD_SPAN_IMG: {
+        // Render placeholder icon for images
+        InlineNode icon;
+        icon.type = InlineType::Text;
+        icon.text = L"\U0001F5BC ";  // 🖼 FRAME WITH PICTURE
+        add_inline(std::move(icon));
         break;
+    }
 
     default:
         break;
