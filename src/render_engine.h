@@ -23,7 +23,8 @@ public:
     void discard_device_resources();
     void resize(UINT width, UINT height);
 
-    void paint(const LayoutDocument& layout, float scroll_y);
+    void paint(const LayoutDocument& layout, float scroll_y,
+               TextPosition sel_start = {}, TextPosition sel_end = {});
 
     void set_dark_mode(bool dark);
     void set_hovered_span(int index) { hovered_span_ = index; }
@@ -45,6 +46,8 @@ private:
     void paint_block_decoration(const LayoutBlock& block, float offset_y);
     void paint_bullet(const LayoutBlock& block, float offset_y);
     void paint_text_runs(const LayoutBlock& block, float offset_y);
+    void paint_selection_highlight(const LayoutBlock& block, int block_index,
+                                   float offset_y, TextPosition sel_start, TextPosition sel_end);
 
     ID2D1Factory* d2d_factory_;
     IDWriteFactory* dwrite_factory_;

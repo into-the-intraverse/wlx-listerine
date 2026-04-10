@@ -1,5 +1,7 @@
 #include "render_engine.h"
 
+#include <algorithm>
+
 RenderEngine::RenderEngine(ID2D1Factory* d2d_factory, IDWriteFactory* dwrite_factory,
                            const ThemeService& theme, bool dark_mode)
     : d2d_factory_(d2d_factory)
@@ -173,7 +175,8 @@ ID2D1SolidColorBrush* RenderEngine::get_brush(uint32_t color) {
     return ptr;
 }
 
-void RenderEngine::paint(const LayoutDocument& layout, float scroll_y) {
+void RenderEngine::paint(const LayoutDocument& layout, float scroll_y,
+                          TextPosition sel_start, TextPosition sel_end) {
     if (!rt_) return;
 
     const auto& colors = theme_.palette(dark_mode_);
@@ -182,10 +185,14 @@ void RenderEngine::paint(const LayoutDocument& layout, float scroll_y) {
     rt_->BeginDraw();
     rt_->Clear(ThemeService::to_d2d_color(colors.background));
 
+    if (sel_start.valid() && sel_end.valid() && sel_end < sel_start)
+        std::swap(sel_start, sel_end);
+
     // Apply scroll transform
     rt_->SetTransform(D2D1::Matrix3x2F::Translation(0, -scroll_y));
 
-    for (auto& block : layout.blocks) {
+    for (int block_idx = 0; block_idx < static_cast<int>(layout.blocks.size()); block_idx++) {
+        auto& block = layout.blocks[block_idx];
         // Visibility culling
         float block_top = block.rect.top - scroll_y;
         float block_bottom = block.rect.bottom - scroll_y;
@@ -193,6 +200,7 @@ void RenderEngine::paint(const LayoutDocument& layout, float scroll_y) {
         if (block_top > viewport_h) continue;
 
         paint_block_background(block, 0);
+        paint_selection_highlight(block, block_idx, 0, sel_start, sel_end);
         paint_block_decoration(block, 0);
         paint_bullet(block, 0);
         paint_text_runs(block, 0);
@@ -204,6 +212,64 @@ void RenderEngine::paint(const LayoutDocument& layout, float scroll_y) {
     if (hr == D2DERR_RECREATE_TARGET) {
         discard_device_resources();
         needs_recreate_ = true;
+    }
+}
+
+void RenderEngine::paint_selection_highlight(const LayoutBlock& block, int block_index,
+                                              float offset_y, TextPosition sel_start,
+                                              TextPosition sel_end) {
+    if (!sel_start.valid() || !sel_end.valid()) return;
+    if (sel_start == sel_end) return;
+    if (block_index < sel_start.block_index || block_index > sel_end.block_index) return;
+
+    const auto& colors = theme_.palette(dark_mode_);
+    auto* brush = get_brush(colors.selection);
+    if (!brush) return;
+
+    bool fully_inside = (block_index > sel_start.block_index && block_index < sel_end.block_index);
+
+    if (fully_inside || block.text_runs.empty()) {
+        D2D1_RECT_F r = block.rect;
+        r.top += offset_y;
+        r.bottom += offset_y;
+        rt_->FillRectangle(r, brush);
+        return;
+    }
+
+    auto& run = block.text_runs[0];
+    if (!run.layout) return;
+
+    int text_len = 0;
+    for (auto& tr : block.text_runs) text_len += static_cast<int>(tr.text.size());
+
+    int from = 0;
+    int to = text_len;
+
+    if (block_index == sel_start.block_index)
+        from = std::clamp(sel_start.char_offset, 0, text_len);
+    if (block_index == sel_end.block_index)
+        to = std::clamp(sel_end.char_offset, 0, text_len);
+
+    if (from >= to) return;
+
+    UINT32 range_start = static_cast<UINT32>(from);
+    UINT32 range_len = static_cast<UINT32>(to - from);
+
+    UINT32 count = 0;
+    run.layout->HitTestTextRange(range_start, range_len, run.rect.left, run.rect.top + offset_y,
+                                  nullptr, 0, &count);
+    if (count == 0) return;
+
+    std::vector<DWRITE_HIT_TEST_METRICS> metrics(count);
+    run.layout->HitTestTextRange(range_start, range_len, run.rect.left, run.rect.top + offset_y,
+                                  metrics.data(), count, &count);
+
+    for (UINT32 i = 0; i < count; i++) {
+        D2D1_RECT_F r = D2D1::RectF(
+            metrics[i].left, metrics[i].top,
+            metrics[i].left + metrics[i].width,
+            metrics[i].top + metrics[i].height);
+        rt_->FillRectangle(r, brush);
     }
 }
 
