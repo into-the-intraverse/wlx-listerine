@@ -1,0 +1,64 @@
+name: Visual Regression Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install Conan
+        run: |
+          pip install conan
+          conan profile detect
+
+      - name: Install C++ dependencies
+        run: conan install . --output-folder=build --build=missing -s build_type=Release
+
+      - name: Configure CMake
+        run: cmake --preset conan-default
+
+      - name: Build
+        run: cmake --build --preset conan-release
+
+      - name: Run unit tests
+        run: ./build/Release/tests.exe
+
+      - name: Install Cascadia Code font
+        shell: pwsh
+        run: |
+          $url = "https://github.com/microsoft/cascadia-code/releases/download/v2404.23/CascadiaCode-2404.23.zip"
+          Invoke-WebRequest -Uri $url -OutFile cascadia.zip
+          Expand-Archive cascadia.zip -DestinationPath cascadia
+          $shell = New-Object -ComObject Shell.Application
+          $fonts = $shell.Namespace(0x14)
+          Get-ChildItem cascadia/ttf/static/*.ttf | ForEach-Object {
+              Copy-Item $_.FullName "$env:LOCALAPPDATA\Microsoft\Windows\Fonts\" -Force
+              New-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts" `
+                  -Name $_.BaseName -Value $_.FullName -PropertyType String -Force | Out-Null
+          }
+
+      - name: Run visual regression tests
+        shell: bash
+        run: ./scripts/visual-test.sh
+
+      - name: Upload diff artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-diffs
+          path: test_data/cases/*_diff.png
+          retention-days: 14
