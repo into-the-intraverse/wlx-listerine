@@ -382,9 +382,23 @@ void LayoutEngine::layout_list_item(const BlockNode& node, float& y, float left,
         bullet = L"\u2022 ";
     }
 
+    // For loose lists, node.inlines is empty and content is in child Paragraphs.
+    // Use the first child paragraph's inlines for the bullet line.
+    const std::vector<InlineNode>* first_inlines = &node.inlines;
+    size_t first_child_skip = 0;
+    if (node.inlines.empty()) {
+        for (size_t i = 0; i < node.children.size(); i++) {
+            if (node.children[i].type == BlockType::Paragraph) {
+                first_inlines = &node.children[i].inlines;
+                first_child_skip = i + 1;
+                break;
+            }
+        }
+    }
+
     // Layout inline content
     float max_width = right - indent;
-    auto tlr = create_text_layout(node.inlines, max_width, colors_.text);
+    auto tlr = create_text_layout(*first_inlines, max_width, colors_.text);
 
     float item_height = tlr.layout ? tlr.height : fonts_.body_size;
 
@@ -417,8 +431,9 @@ void LayoutEngine::layout_list_item(const BlockNode& node, float& y, float left,
     y += item_height + spacing_.paragraph_spacing * 0.5f;
     result_.blocks.push_back(std::move(lb));
 
-    // Layout children (nested lists)
-    for (auto& child : node.children) {
+    // Layout children (nested lists and continuation paragraphs)
+    for (size_t i = (first_child_skip > 0 ? first_child_skip : 0); i < node.children.size(); i++) {
+        auto& child = node.children[i];
         if (child.type == BlockType::List)
             layout_list(child, y, left, right, list_depth + 1);
         else if (child.type == BlockType::Paragraph)
