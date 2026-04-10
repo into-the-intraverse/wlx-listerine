@@ -2,5 +2,7 @@ build/
 CMakeUserPresets.json
 *.user
 
-# Generated screenshots
+# Generated screenshots (our tool output)
 test_data/*.png
+test_data/cases/*.png
+!test_data/cases/*_chrome.png
