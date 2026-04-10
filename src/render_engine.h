@@ -28,6 +28,8 @@ public:
 
     void set_dark_mode(bool dark);
     void set_hovered_span(int index) { hovered_span_ = index; }
+    void set_hovered_code_block(int index) { hovered_code_block_ = index; }
+    void set_copied_code_block(int index) { copied_code_block_ = index; }
 
     bool needs_recreate() const { return needs_recreate_; }
     UINT width() const { return width_; }
@@ -48,6 +50,7 @@ private:
     void paint_text_runs(const LayoutBlock& block, float offset_y);
     void paint_selection_highlight(const LayoutBlock& block, int block_index,
                                    float offset_y, TextPosition sel_start, TextPosition sel_end);
+    void paint_copy_button(const LayoutBlock& block, int block_index, float offset_y);
 
     ID2D1Factory* d2d_factory_;
     IDWriteFactory* dwrite_factory_;
@@ -63,6 +66,8 @@ private:
     ComPtr<IDWriteTextFormat> bullet_format_;
 
     int hovered_span_ = -1;
+    int hovered_code_block_ = -1;
+    int copied_code_block_ = -1;
     bool needs_recreate_ = false;
     UINT width_ = 0;
     UINT height_ = 0;

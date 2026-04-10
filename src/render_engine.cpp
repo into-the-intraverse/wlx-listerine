@@ -204,6 +204,7 @@ void RenderEngine::paint(const LayoutDocument& layout, float scroll_y,
         paint_block_decoration(block, 0);
         paint_bullet(block, 0);
         paint_text_runs(block, 0);
+        paint_copy_button(block, block_idx, 0);
     }
 
     rt_->SetTransform(D2D1::Matrix3x2F::Identity());
@@ -378,5 +379,54 @@ void RenderEngine::paint_text_runs(const LayoutBlock& block, float offset_y) {
         rt_->DrawTextLayout(
             origin, run.layout.Get(), brush,
             D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
+    }
+}
+
+void RenderEngine::paint_copy_button(const LayoutBlock& block, int block_index, float offset_y) {
+    if (block.type != BlockType::CodeFence) return;
+    if (hovered_code_block_ != block_index && copied_code_block_ != block_index) return;
+
+    const auto& colors = theme_.palette(dark_mode_);
+    float btn_size = 24.0f;
+    float pad = 6.0f;
+    float bx = block.rect.right - btn_size - pad;
+    float by = block.rect.top + pad + offset_y;
+
+    bool copied = (copied_code_block_ == block_index);
+
+    // Button background
+    uint32_t bg_color = copied ? colors.link : colors.code_bg;
+    auto* bg_brush = get_brush(bg_color);
+    if (bg_brush) {
+        D2D1_ROUNDED_RECT rr = {D2D1::RectF(bx, by, bx + btn_size, by + btn_size), 4.0f, 4.0f};
+        rt_->FillRoundedRectangle(rr, bg_brush);
+    }
+
+    // Icon
+    auto* icon_brush = get_brush(colors.text);
+    if (!icon_brush) return;
+
+    float cx = bx + btn_size * 0.5f;
+    float cy = by + btn_size * 0.5f;
+
+    if (copied) {
+        // Checkmark
+        auto* white_brush = get_brush(colors.background);
+        if (white_brush) {
+            D2D1_POINT_2F p1 = {cx - 5.0f, cy};
+            D2D1_POINT_2F p2 = {cx - 1.5f, cy + 4.0f};
+            D2D1_POINT_2F p3 = {cx + 5.0f, cy - 3.5f};
+            rt_->DrawLine(p1, p2, white_brush, 1.5f);
+            rt_->DrawLine(p2, p3, white_brush, 1.5f);
+        }
+    } else {
+        // Copy icon — two overlapping rectangles
+        float s = 5.0f;
+        D2D1_RECT_F back = D2D1::RectF(cx - s + 1.5f, cy - s - 1.0f,
+                                         cx + s + 1.5f, cy + s - 1.0f);
+        D2D1_RECT_F front = D2D1::RectF(cx - s - 1.5f, cy - s + 1.0f,
+                                          cx + s - 1.5f, cy + s + 1.0f);
+        rt_->DrawRectangle(back, icon_brush, 1.0f);
+        rt_->DrawRectangle(front, icon_brush, 1.0f);
     }
 }

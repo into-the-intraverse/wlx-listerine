@@ -291,6 +291,8 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (vs && vs->renderer && vs->layout) {
             if (vs->renderer->needs_recreate())
                 vs->renderer->create_device_resources(hwnd);
+            vs->renderer->set_hovered_code_block(vs->hovered_code_block);
+            vs->renderer->set_copied_code_block(vs->copied_code_block);
             auto sel_lo = std::min(vs->sel_anchor, vs->sel_active);
             auto sel_hi = std::max(vs->sel_anchor, vs->sel_active);
             vs->renderer->paint(*vs->layout, vs->scroll_y, sel_lo, sel_hi);
