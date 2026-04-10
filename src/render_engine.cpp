@@ -248,6 +248,15 @@ void RenderEngine::paint_text_runs(const LayoutBlock& block, float offset_y) {
         auto* brush = get_brush(run.color);
         if (!brush) continue;
 
+        // Apply per-range color overrides (e.g., link color)
+        for (auto& cr : run.color_ranges) {
+            auto* cr_brush = get_brush(cr.color);
+            if (cr_brush) {
+                DWRITE_TEXT_RANGE range = {cr.start, cr.length};
+                run.layout->SetDrawingEffect(cr_brush, range);
+            }
+        }
+
         D2D1_POINT_2F origin = D2D1::Point2F(run.rect.left, run.rect.top + offset_y);
 
         rt_->DrawTextLayout(

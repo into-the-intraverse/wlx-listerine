@@ -155,8 +155,10 @@ LayoutEngine::TextLayoutResult LayoutEngine::create_text_layout(
             layout->SetFontFamilyName(fonts_.code_family.c_str(), drange);
             layout->SetFontSize(fonts_.code_size, drange);
         }
-        if (r.node->link.has_value())
+        if (r.node->link.has_value()) {
             layout->SetUnderline(TRUE, drange);
+            result.color_ranges.push_back({drange.startPosition, drange.length, colors_.link});
+        }
     }
 
     // Measure
@@ -323,6 +325,7 @@ void LayoutEngine::layout_paragraph(const BlockNode& node, float& y, float left,
     run.rect = lb.rect;
     run.layout = tlr.layout;
     run.color = colors_.text;
+    run.color_ranges = std::move(tlr.color_ranges);
     lb.text_runs.push_back(std::move(run));
 
     // Offset interactive span rects to document coordinates
@@ -387,6 +390,7 @@ void LayoutEngine::layout_list_item(const BlockNode& node, float& y, float left,
         run.rect = D2D1::RectF(indent, y, right, y + tlr.height);
         run.layout = tlr.layout;
         run.color = colors_.text;
+        run.color_ranges = std::move(tlr.color_ranges);
         lb.text_runs.push_back(std::move(run));
 
         for (auto& s : tlr.spans) {
@@ -568,6 +572,7 @@ void LayoutEngine::layout_table(const BlockNode& node, float& y, float left, flo
                                        cell_y + tlr.height);
                 run.layout = tlr.layout;
                 run.color = colors_.text;
+                run.color_ranges = std::move(tlr.color_ranges);
                 lb.text_runs.push_back(std::move(run));
             }
 

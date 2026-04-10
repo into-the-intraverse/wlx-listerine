@@ -13,12 +13,19 @@
 
 using Microsoft::WRL::ComPtr;
 
+struct ColorRange {
+    uint32_t start = 0;
+    uint32_t length = 0;
+    uint32_t color = 0;
+};
+
 struct TextRun {
     std::wstring text;
     D2D1_RECT_F rect = {};
     ComPtr<IDWriteTextLayout> layout;
     uint32_t color = 0;
     bool is_code = false;
+    std::vector<ColorRange> color_ranges;  // per-range color overrides (links, etc.)
 };
 
 struct InteractiveSpan {
@@ -86,6 +93,7 @@ private:
         ComPtr<IDWriteTextLayout> layout;
         std::wstring full_text;
         std::vector<InteractiveSpan> spans;
+        std::vector<ColorRange> color_ranges;
         float width = 0;
         float height = 0;
     };
