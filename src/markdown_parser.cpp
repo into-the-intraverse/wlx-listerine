@@ -305,12 +305,44 @@ static std::wstring decode_entity(const char* text, size_t size) {
     // text includes the leading '&' and trailing ';'
     std::string entity(text, size);
 
-    if (entity == "&amp;")   return L"&";
-    if (entity == "&lt;")    return L"<";
-    if (entity == "&gt;")    return L">";
-    if (entity == "&quot;")  return L"\"";
-    if (entity == "&apos;")  return L"'";
-    if (entity == "&nbsp;")  return L"\u00A0";
+    if (entity == "&amp;")    return L"&";
+    if (entity == "&lt;")     return L"<";
+    if (entity == "&gt;")     return L">";
+    if (entity == "&quot;")   return L"\"";
+    if (entity == "&apos;")   return L"'";
+    if (entity == "&nbsp;")   return L"\u00A0";
+    if (entity == "&copy;")   return L"\u00A9";
+    if (entity == "&reg;")    return L"\u00AE";
+    if (entity == "&trade;")  return L"\u2122";
+    if (entity == "&mdash;")  return L"\u2014";
+    if (entity == "&ndash;")  return L"\u2013";
+    if (entity == "&laquo;")  return L"\u00AB";
+    if (entity == "&raquo;")  return L"\u00BB";
+    if (entity == "&lsquo;")  return L"\u2018";
+    if (entity == "&rsquo;")  return L"\u2019";
+    if (entity == "&ldquo;")  return L"\u201C";
+    if (entity == "&rdquo;")  return L"\u201D";
+    if (entity == "&bull;")   return L"\u2022";
+    if (entity == "&hellip;") return L"\u2026";
+    if (entity == "&rarr;")   return L"\u2192";
+    if (entity == "&larr;")   return L"\u2190";
+    if (entity == "&uarr;")   return L"\u2191";
+    if (entity == "&darr;")   return L"\u2193";
+    if (entity == "&times;")  return L"\u00D7";
+    if (entity == "&divide;") return L"\u00F7";
+    if (entity == "&plusmn;") return L"\u00B1";
+    if (entity == "&infin;")  return L"\u221E";
+    if (entity == "&ne;")     return L"\u2260";
+    if (entity == "&le;")     return L"\u2264";
+    if (entity == "&ge;")     return L"\u2265";
+    if (entity == "&deg;")    return L"\u00B0";
+    if (entity == "&micro;")  return L"\u00B5";
+    if (entity == "&para;")   return L"\u00B6";
+    if (entity == "&sect;")   return L"\u00A7";
+    if (entity == "&cent;")   return L"\u00A2";
+    if (entity == "&pound;")  return L"\u00A3";
+    if (entity == "&euro;")   return L"\u20AC";
+    if (entity == "&yen;")    return L"\u00A5";
 
     // Numeric entities: &#nnnn; or &#xhhhh;
     if (size >= 4 && text[0] == '&' && text[1] == '#') {
