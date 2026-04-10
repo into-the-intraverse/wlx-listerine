@@ -101,7 +101,7 @@ class LayoutEngine {
 public:
     LayoutEngine(IDWriteFactory* dwrite, const ThemeService& theme, bool dark_mode);
 
-    LayoutDocument layout(const Document& doc, float viewport_width);
+    LayoutDocument layout(const Document& doc, float viewport_width, bool wrap_code = false);
 
 private:
     void layout_blocks(const std::vector<BlockNode>& blocks, float& y,
@@ -149,4 +149,5 @@ private:
     // Cached text formats
     ComPtr<IDWriteTextFormat> body_format_;
     ComPtr<IDWriteTextFormat> code_format_;
+    bool wrap_code_ = false;
 };

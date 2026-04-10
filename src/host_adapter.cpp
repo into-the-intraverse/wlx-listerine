@@ -35,6 +35,7 @@ struct ViewState {
     HWND hwnd = nullptr;
     HWND parent = nullptr;
     bool dark_mode = false;
+    bool wrap_text = false;
     std::wstring file_path;
 
     std::shared_ptr<Document> document;
@@ -138,7 +139,7 @@ static void do_layout(ViewState* vs) {
     lk.theme_hash = g_theme.theme_hash();
 
     LayoutEngine engine(g_dwrite_factory.Get(), g_theme, vs->dark_mode);
-    auto layout = std::make_shared<LayoutDocument>(engine.layout(*vs->document, viewport_width));
+    auto layout = std::make_shared<LayoutDocument>(engine.layout(*vs->document, viewport_width, vs->wrap_text));
 
     vs->layout = layout;
     vs->interaction = std::make_unique<InteractionEngine>(*vs->layout);
@@ -693,6 +694,7 @@ HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
     ensure_window_class();
 
     bool dark = (ShowFlags & lcp_darkmode) != 0;
+    bool wrap = (ShowFlags & lcp_wraptext) != 0;
 
     RECT rc;
     GetClientRect(ParentWin, &rc);
@@ -711,6 +713,7 @@ HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
     vs->hwnd = hwnd;
     vs->parent = ParentWin;
     vs->dark_mode = dark;
+    vs->wrap_text = wrap;
 
     SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(vs));
     g_views[hwnd] = vs;
@@ -733,12 +736,14 @@ int __stdcall ListLoadNextW(HWND ParentWin, HWND PluginWin, wchar_t* FileToLoad,
 
     auto* vs = it->second;
     bool new_dark = (ShowFlags & lcp_darkmode) != 0;
+    bool new_wrap = (ShowFlags & lcp_wraptext) != 0;
 
     if (new_dark != vs->dark_mode) {
         vs->dark_mode = new_dark;
         vs->renderer->set_dark_mode(new_dark);
         apply_dark_mode(vs->hwnd, new_dark);
     }
+    vs->wrap_text = new_wrap;
 
     load_document(vs, FileToLoad);
     InvalidateRect(vs->hwnd, nullptr, FALSE);
@@ -794,9 +799,18 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
 
     case lc_newparams: {
         bool new_dark = (Parameter & lcp_darkmode) != 0;
+        bool new_wrap = (Parameter & lcp_wraptext) != 0;
+        bool need_relayout = false;
         if (new_dark != vs->dark_mode) {
             vs->dark_mode = new_dark;
             vs->renderer->set_dark_mode(new_dark);
+            need_relayout = true;
+        }
+        if (new_wrap != vs->wrap_text) {
+            vs->wrap_text = new_wrap;
+            need_relayout = true;
+        }
+        if (need_relayout) {
             do_layout(vs);
             InvalidateRect(vs->hwnd, nullptr, FALSE);
         }

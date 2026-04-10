@@ -207,9 +207,10 @@ LayoutEngine::TextLayoutResult LayoutEngine::create_text_layout(
 
 // ---------- layout entry point ----------
 
-LayoutDocument LayoutEngine::layout(const Document& doc, float viewport_width) {
+LayoutDocument LayoutEngine::layout(const Document& doc, float viewport_width, bool wrap_code) {
     result_ = LayoutDocument{};
     result_.viewport_width = viewport_width;
+    wrap_code_ = wrap_code;
 
     float content_padding = 16.0f;
     float y = content_padding;
@@ -509,6 +510,10 @@ void LayoutEngine::layout_code_fence(const BlockNode& node, float& y, float left
                               code_format_.Get(), max_width, 100000.0f,
                               text_layout.GetAddressOf());
     if (!text_layout) return;
+
+    // Override wrapping per layout call (code_format_ default is NO_WRAP)
+    if (wrap_code_)
+        text_layout->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
 
     DWRITE_TEXT_METRICS metrics;
     text_layout->GetMetrics(&metrics);
