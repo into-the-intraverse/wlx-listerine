@@ -248,6 +248,24 @@ void RenderEngine::paint_text_runs(const LayoutBlock& block, float offset_y) {
         auto* brush = get_brush(run.color);
         if (!brush) continue;
 
+        // Draw inline code backgrounds
+        if (!run.code_bg_rects.empty()) {
+            auto* code_bg_brush = get_brush(theme_.palette(dark_mode_).code_bg);
+            if (code_bg_brush) {
+                for (auto& bg : run.code_bg_rects) {
+                    D2D1_ROUNDED_RECT rr;
+                    rr.rect = D2D1::RectF(
+                        run.rect.left + bg.rect.left,
+                        run.rect.top + offset_y + bg.rect.top,
+                        run.rect.left + bg.rect.right,
+                        run.rect.top + offset_y + bg.rect.bottom);
+                    rr.radiusX = 3.0f;
+                    rr.radiusY = 3.0f;
+                    rt_->FillRoundedRectangle(rr, code_bg_brush);
+                }
+            }
+        }
+
         // Apply per-range color overrides (e.g., link color)
         for (auto& cr : run.color_ranges) {
             auto* cr_brush = get_brush(cr.color);

@@ -168,9 +168,11 @@ LayoutEngine::TextLayoutResult LayoutEngine::create_text_layout(
     result.width = metrics.width;
     result.height = metrics.height;
 
-    // Collect interactive spans for links
+    // Collect interactive spans for links and background rects for inline code
     for (auto& r : ranges) {
-        if (!r.node->link.has_value()) continue;
+        bool is_link = r.node->link.has_value();
+        bool is_code = r.node->code;
+        if (!is_link && !is_code) continue;
 
         UINT32 hit_count = 0;
         layout->HitTestTextRange(
@@ -184,10 +186,18 @@ LayoutEngine::TextLayoutResult LayoutEngine::create_text_layout(
                 0, 0, hits.data(), hit_count, &hit_count);
 
             for (auto& h : hits) {
-                InteractiveSpan span;
-                span.target = *r.node->link;
-                span.rect = D2D1::RectF(h.left, h.top, h.left + h.width, h.top + h.height);
-                result.spans.push_back(std::move(span));
+                if (is_link) {
+                    InteractiveSpan span;
+                    span.target = *r.node->link;
+                    span.rect = D2D1::RectF(h.left, h.top, h.left + h.width, h.top + h.height);
+                    result.spans.push_back(std::move(span));
+                }
+                if (is_code) {
+                    float pad = 2.0f;
+                    CodeBgRect bg;
+                    bg.rect = D2D1::RectF(h.left - pad, h.top, h.left + h.width + pad, h.top + h.height);
+                    result.code_bg_rects.push_back(bg);
+                }
             }
         }
     }
@@ -326,6 +336,7 @@ void LayoutEngine::layout_paragraph(const BlockNode& node, float& y, float left,
     run.layout = tlr.layout;
     run.color = colors_.text;
     run.color_ranges = std::move(tlr.color_ranges);
+    run.code_bg_rects = std::move(tlr.code_bg_rects);
     lb.text_runs.push_back(std::move(run));
 
     // Offset interactive span rects to document coordinates
@@ -391,6 +402,7 @@ void LayoutEngine::layout_list_item(const BlockNode& node, float& y, float left,
         run.layout = tlr.layout;
         run.color = colors_.text;
         run.color_ranges = std::move(tlr.color_ranges);
+        run.code_bg_rects = std::move(tlr.code_bg_rects);
         lb.text_runs.push_back(std::move(run));
 
         for (auto& s : tlr.spans) {
@@ -573,6 +585,7 @@ void LayoutEngine::layout_table(const BlockNode& node, float& y, float left, flo
                 run.layout = tlr.layout;
                 run.color = colors_.text;
                 run.color_ranges = std::move(tlr.color_ranges);
+                run.code_bg_rects = std::move(tlr.code_bg_rects);
                 lb.text_runs.push_back(std::move(run));
             }
 

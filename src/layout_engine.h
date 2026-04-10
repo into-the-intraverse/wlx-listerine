@@ -19,13 +19,18 @@ struct ColorRange {
     uint32_t color = 0;
 };
 
+struct CodeBgRect {
+    D2D1_RECT_F rect = {};  // relative to text run origin
+};
+
 struct TextRun {
     std::wstring text;
     D2D1_RECT_F rect = {};
     ComPtr<IDWriteTextLayout> layout;
     uint32_t color = 0;
     bool is_code = false;
-    std::vector<ColorRange> color_ranges;  // per-range color overrides (links, etc.)
+    std::vector<ColorRange> color_ranges;
+    std::vector<CodeBgRect> code_bg_rects;
 };
 
 struct InteractiveSpan {
@@ -94,6 +99,7 @@ private:
         std::wstring full_text;
         std::vector<InteractiveSpan> spans;
         std::vector<ColorRange> color_ranges;
+        std::vector<CodeBgRect> code_bg_rects;
         float width = 0;
         float height = 0;
     };
