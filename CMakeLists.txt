@@ -34,6 +34,7 @@ find_package(tree-sitter REQUIRED)
 
 add_library(colorizer-core STATIC
     src/colorizer/colorizer.cpp
+    src/colorizer/theme_loader.cpp
 )
 
 target_include_directories(colorizer-core PUBLIC src/colorizer src)
@@ -105,6 +106,7 @@ target_link_libraries(tests PRIVATE
 add_executable(colorizer-tests
     tests/test_main.cpp
     tests/test_colorizer.cpp
+    tests/test_colorizer_theme.cpp
 )
 
 target_link_libraries(colorizer-tests PRIVATE

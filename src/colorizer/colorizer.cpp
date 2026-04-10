@@ -1,8 +1,8 @@
 #include "colorizer.h"
+#include "theme_loader.h"
 
 // Forward-declared types need to be complete before unique_ptr destructor runs.
 struct GrammarRegistry {};
-struct ThemeLoader {};
 
 Colorizer::Colorizer(const std::wstring& grammar_dir, const std::wstring& theme_dir) {
     // Will be populated in subsequent tasks
