@@ -87,6 +87,8 @@ struct BlockNode {
 
     // TableCell
     bool is_header = false;
+    enum class CellAlign { Default, Left, Center, Right };
+    CellAlign cell_align = CellAlign::Default;
 
     SourceRange source;
 };

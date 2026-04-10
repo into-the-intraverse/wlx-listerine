@@ -202,14 +202,24 @@ void MarkdownParser::enter_block(MD_BLOCKTYPE type, void* detail) {
         push_block(BlockType::TableRow);
         break;
 
-    case MD_BLOCK_TH:
+    case MD_BLOCK_TH: {
         push_block(BlockType::TableCell);
         block_stack_.back()->is_header = true;
+        auto* td = static_cast<MD_BLOCK_TD_DETAIL*>(detail);
+        if (td->align == MD_ALIGN_CENTER) block_stack_.back()->cell_align = BlockNode::CellAlign::Center;
+        else if (td->align == MD_ALIGN_RIGHT) block_stack_.back()->cell_align = BlockNode::CellAlign::Right;
+        else if (td->align == MD_ALIGN_LEFT) block_stack_.back()->cell_align = BlockNode::CellAlign::Left;
         break;
+    }
 
-    case MD_BLOCK_TD:
+    case MD_BLOCK_TD: {
         push_block(BlockType::TableCell);
+        auto* td = static_cast<MD_BLOCK_TD_DETAIL*>(detail);
+        if (td->align == MD_ALIGN_CENTER) block_stack_.back()->cell_align = BlockNode::CellAlign::Center;
+        else if (td->align == MD_ALIGN_RIGHT) block_stack_.back()->cell_align = BlockNode::CellAlign::Right;
+        else if (td->align == MD_ALIGN_LEFT) block_stack_.back()->cell_align = BlockNode::CellAlign::Left;
         break;
+    }
 
     default:
         break;

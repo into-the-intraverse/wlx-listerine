@@ -553,6 +553,14 @@ void LayoutEngine::layout_table(const BlockNode& node, float& y, float left, flo
                 tlr.height = m.height;
             }
 
+            // Apply column alignment
+            if (tlr.layout) {
+                if (cell.cell_align == BlockNode::CellAlign::Center)
+                    tlr.layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                else if (cell.cell_align == BlockNode::CellAlign::Right)
+                    tlr.layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
+            }
+
             if (tlr.height > row_height) row_height = tlr.height;
             cell_layouts.push_back(std::move(tlr));
             col++;
