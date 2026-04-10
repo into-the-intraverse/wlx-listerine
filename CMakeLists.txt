@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(wlx-mini-markdown LANGUAGES CXX)
+project(wlx-listerine LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -29,20 +29,29 @@ target_link_libraries(wlx-core
 )
 
 # --- Plugin DLL ---
-add_library(wlx-mini-markdown SHARED
+add_library(wlx-listerine-md SHARED
     src/host_adapter.cpp
     src/plugin.def
     src/resource.rc
 )
 
-target_link_libraries(wlx-mini-markdown PRIVATE
+target_link_libraries(wlx-listerine-md PRIVATE
     wlx-core
     shell32
+    dwmapi
 )
 
-set_target_properties(wlx-mini-markdown PROPERTIES
+set_target_properties(wlx-listerine-md PROPERTIES
     SUFFIX ".wlx64"
     PREFIX ""
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/output"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/output"
+)
+
+add_custom_command(TARGET wlx-listerine-md POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/config/wlx-listerine-md.toml"
+        "${CMAKE_SOURCE_DIR}/output/wlx-listerine-md.toml"
 )
 
 # --- Screenshot tool ---

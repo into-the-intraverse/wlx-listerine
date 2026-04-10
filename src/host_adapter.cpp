@@ -11,6 +11,7 @@
 #include <windows.h>
 #include <windowsx.h>
 #include <shellapi.h>
+#include <dwmapi.h>
 #include <d2d1.h>
 #include <dwrite.h>
 #include <wrl/client.h>
@@ -60,6 +61,17 @@ static std::string g_default_ini_path;
 
 // ---------- helpers ----------
 
+// DWMWA_USE_IMMERSIVE_DARK_MODE (value 20) — available since Win10 20H1.
+// Older SDKs may not define it.
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
+
+static void apply_dark_mode(HWND hwnd, bool dark) {
+    BOOL value = dark ? TRUE : FALSE;
+    DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &value, sizeof(value));
+}
+
 static std::wstring get_module_dir() {
     wchar_t path[MAX_PATH];
     GetModuleFileNameW(g_hModule, path, MAX_PATH);
@@ -80,7 +92,7 @@ static void ensure_factories() {
 
 static void ensure_theme() {
     if (!g_theme_loaded) {
-        std::wstring cfg_path = get_module_dir() + L"wlx-mini-markdown.toml";
+        std::wstring cfg_path = get_module_dir() + L"wlx-listerine-md.toml";
         g_theme.load(cfg_path);
         g_theme_loaded = true;
     }
@@ -340,7 +352,7 @@ static void ensure_window_class() {
     wc.lpfnWndProc = ViewWndProc;
     wc.hInstance = g_hModule;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    wc.lpszClassName = L"WlxMiniMarkdownView";
+    wc.lpszClassName = L"WlxListerineMdView";
     g_window_class = RegisterClassExW(&wc);
 }
 
@@ -372,7 +384,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {
         g_dwrite_factory.Reset();
 
         if (g_window_class) {
-            UnregisterClassW(L"WlxMiniMarkdownView", g_hModule);
+            UnregisterClassW(L"WlxListerineMdView", g_hModule);
             g_window_class = 0;
         }
         break;
@@ -398,12 +410,14 @@ HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
     GetClientRect(ParentWin, &rc);
 
     HWND hwnd = CreateWindowExW(
-        0, L"WlxMiniMarkdownView", L"",
+        0, L"WlxListerineMdView", L"",
         WS_CHILD | WS_VISIBLE | WS_VSCROLL,
         0, 0, rc.right, rc.bottom,
         ParentWin, nullptr, g_hModule, nullptr);
 
     if (!hwnd) return nullptr;
+
+    apply_dark_mode(hwnd, dark);
 
     auto* vs = new ViewState{};
     vs->hwnd = hwnd;
@@ -435,6 +449,7 @@ int __stdcall ListLoadNextW(HWND ParentWin, HWND PluginWin, wchar_t* FileToLoad,
     if (new_dark != vs->dark_mode) {
         vs->dark_mode = new_dark;
         vs->renderer->set_dark_mode(new_dark);
+        apply_dark_mode(vs->hwnd, new_dark);
     }
 
     load_document(vs, FileToLoad);
