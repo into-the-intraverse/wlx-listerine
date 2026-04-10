@@ -30,6 +30,9 @@ public:
     bool supports(const std::string& language) const;
     std::vector<std::string> available_languages() const;
 
+    void set_language_theme(const std::string& language, const std::string& theme_name);
+    ThemeLoader& theme_loader() { return *theme_loader_; }
+
 private:
     std::unique_ptr<GrammarRegistry> grammar_registry_;
     std::unique_ptr<ThemeLoader> theme_loader_;
