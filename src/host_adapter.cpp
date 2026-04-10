@@ -44,6 +44,13 @@ struct ViewState {
     float scroll_y = 0;
     float max_scroll_y = 0;
     int hovered_span = -1;
+
+    // Selection
+    TextPosition sel_anchor;
+    TextPosition sel_active;
+    bool selecting = false;
+    int hovered_code_block = -1;
+    int copied_code_block = -1;
 };
 
 // ---------- globals ----------
@@ -182,6 +189,98 @@ static void handle_scroll(ViewState* vs, float delta) {
     }
 }
 
+static constexpr UINT_PTR TIMER_AUTOSCROLL = 1;
+static constexpr UINT_PTR TIMER_COPY_FEEDBACK = 2;
+
+static TextPosition hit_test_position(const LayoutDocument& layout, float x, float y) {
+    int block_count = static_cast<int>(layout.blocks.size());
+
+    for (int i = 0; i < block_count; i++) {
+        auto& block = layout.blocks[i];
+        if (block.text_runs.empty()) continue;
+        if (y < block.rect.top || y > block.rect.bottom) continue;
+
+        auto& run = block.text_runs[0];
+        if (!run.layout) continue;
+
+        float local_x = x - run.rect.left;
+        float local_y = y - run.rect.top;
+        BOOL is_trailing = FALSE;
+        BOOL is_inside = FALSE;
+        DWRITE_HIT_TEST_METRICS htm = {};
+        run.layout->HitTestPoint(local_x, local_y, &is_trailing, &is_inside, &htm);
+
+        int offset = static_cast<int>(htm.textPosition);
+        if (is_trailing) offset++;
+        return TextPosition{i, offset};
+    }
+
+    // Snap to nearest block boundary
+    int closest = -1;
+    float closest_dist = 1e9f;
+    for (int i = 0; i < block_count; i++) {
+        auto& block = layout.blocks[i];
+        if (block.text_runs.empty()) continue;
+        float mid = (block.rect.top + block.rect.bottom) * 0.5f;
+        float dist = std::abs(y - mid);
+        if (dist < closest_dist) {
+            closest_dist = dist;
+            closest = i;
+        }
+    }
+
+    if (closest >= 0) {
+        auto& block = layout.blocks[closest];
+        if (y < (block.rect.top + block.rect.bottom) * 0.5f) {
+            return TextPosition{closest, 0};
+        } else {
+            int len = 0;
+            for (auto& run : block.text_runs) len += static_cast<int>(run.text.size());
+            return TextPosition{closest, len};
+        }
+    }
+    return TextPosition{};
+}
+
+static int block_text_length(const LayoutBlock& block) {
+    int len = 0;
+    for (auto& run : block.text_runs) len += static_cast<int>(run.text.size());
+    return len;
+}
+
+static bool copy_to_clipboard(HWND hwnd, const std::wstring& text) {
+    if (text.empty()) return false;
+    if (!OpenClipboard(hwnd)) return false;
+    EmptyClipboard();
+    size_t bytes = (text.size() + 1) * sizeof(wchar_t);
+    HGLOBAL hg = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (hg) {
+        void* p = GlobalLock(hg);
+        if (p) {
+            memcpy(p, text.c_str(), bytes);
+            GlobalUnlock(hg);
+            SetClipboardData(CF_UNICODETEXT, hg);
+        }
+    }
+    CloseClipboard();
+    return true;
+}
+
+static bool is_in_copy_button(const LayoutBlock& block, float x, float y) {
+    if (block.type != BlockType::CodeFence) return false;
+    float btn_size = 24.0f;
+    float pad = 6.0f;
+    float bx = block.rect.right - btn_size - pad;
+    float by = block.rect.top + pad;
+    return x >= bx && x <= bx + btn_size && y >= by && y <= by + btn_size;
+}
+
+static void clear_selection(ViewState* vs) {
+    vs->sel_anchor = TextPosition{};
+    vs->sel_active = TextPosition{};
+    vs->selecting = false;
+}
+
 static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto* vs = reinterpret_cast<ViewState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
 
@@ -245,57 +344,200 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
 
     case WM_MOUSEMOVE: {
-        if (!vs || !vs->interaction) break;
-        float mx = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(GET_X_LPARAM(lp)))
+        if (!vs) break;
+        float px = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(GET_X_LPARAM(lp)))
                                 : static_cast<float>(GET_X_LPARAM(lp));
-        float my = (vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(GET_Y_LPARAM(lp)))
-                                 : static_cast<float>(GET_Y_LPARAM(lp))) + vs->scroll_y;
-        auto hit = vs->interaction->hit_test(mx, my);
+        float py = vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(GET_Y_LPARAM(lp)))
+                                : static_cast<float>(GET_Y_LPARAM(lp));
+        float doc_x = px;
+        float doc_y = py + vs->scroll_y;
 
-        int new_hover = hit.hit ? hit.span_index : -1;
-        if (new_hover != vs->hovered_span) {
-            vs->hovered_span = new_hover;
-            SetCursor(LoadCursorW(nullptr, hit.hit ? IDC_HAND : IDC_ARROW));
-            InvalidateRect(hwnd, nullptr, FALSE);
+        if (vs->selecting && vs->layout) {
+            auto pos = hit_test_position(*vs->layout, doc_x, doc_y);
+            if (pos.valid() && pos != vs->sel_active) {
+                vs->sel_active = pos;
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }
+            float viewport_h = vs->renderer ? vs->renderer->dip_height() : 100.0f;
+            if (py < 0 || py > viewport_h)
+                SetTimer(hwnd, TIMER_AUTOSCROLL, 50, nullptr);
+            else
+                KillTimer(hwnd, TIMER_AUTOSCROLL);
+        } else if (vs->layout) {
+            // Link hover
+            if (vs->interaction) {
+                auto hit = vs->interaction->hit_test(doc_x, doc_y);
+                int new_hover = hit.hit ? hit.span_index : -1;
+                if (new_hover != vs->hovered_span) {
+                    vs->hovered_span = new_hover;
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                }
+            }
+            // Code block copy button hover
+            int new_code_hover = -1;
+            for (int i = 0; i < static_cast<int>(vs->layout->blocks.size()); i++) {
+                if (is_in_copy_button(vs->layout->blocks[i], doc_x, doc_y)) {
+                    new_code_hover = i;
+                    break;
+                }
+            }
+            if (new_code_hover != vs->hovered_code_block) {
+                vs->hovered_code_block = new_code_hover;
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }
+            // Cursor
+            if (vs->hovered_span >= 0)
+                SetCursor(LoadCursorW(nullptr, IDC_HAND));
+            else if (new_code_hover >= 0)
+                SetCursor(LoadCursorW(nullptr, IDC_ARROW));
+            else {
+                bool over_text = false;
+                for (auto& block : vs->layout->blocks) {
+                    if (block.text_runs.empty()) continue;
+                    if (doc_y >= block.rect.top && doc_y <= block.rect.bottom &&
+                        doc_x >= block.rect.left && doc_x <= block.rect.right) {
+                        over_text = true;
+                        break;
+                    }
+                }
+                SetCursor(LoadCursorW(nullptr, over_text ? IDC_IBEAM : IDC_ARROW));
+            }
         }
         return 0;
     }
 
-    case WM_LBUTTONUP: {
-        if (!vs || !vs->interaction) break;
-        float mx = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(GET_X_LPARAM(lp)))
+    case WM_LBUTTONDOWN: {
+        if (!vs || !vs->layout) break;
+        SetFocus(hwnd);
+        float px = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(GET_X_LPARAM(lp)))
                                 : static_cast<float>(GET_X_LPARAM(lp));
-        float my = (vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(GET_Y_LPARAM(lp)))
-                                 : static_cast<float>(GET_Y_LPARAM(lp))) + vs->scroll_y;
-        auto hit = vs->interaction->hit_test(mx, my);
+        float py = vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(GET_Y_LPARAM(lp)))
+                                : static_cast<float>(GET_Y_LPARAM(lp));
+        float doc_y = py + vs->scroll_y;
 
-        if (hit.hit) {
-            auto action = vs->interaction->resolve(hit.target);
-            switch (action.action) {
-            case InteractionEngine::Action::ScrollToAnchor:
-                vs->scroll_y = std::clamp(action.scroll_y, 0.0f, vs->max_scroll_y);
-                update_scrollbar(vs);
+        auto pos = hit_test_position(*vs->layout, px, doc_y);
+        if (pos.valid()) {
+            vs->sel_anchor = pos;
+            vs->sel_active = pos;
+            vs->selecting = true;
+            SetCapture(hwnd);
+        } else {
+            clear_selection(vs);
+        }
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+    }
+
+    case WM_LBUTTONUP: {
+        if (!vs || !vs->layout) break;
+        bool was_selecting = vs->selecting;
+        vs->selecting = false;
+        ReleaseCapture();
+        KillTimer(hwnd, TIMER_AUTOSCROLL);
+
+        float px = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(GET_X_LPARAM(lp)))
+                                : static_cast<float>(GET_X_LPARAM(lp));
+        float py = vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(GET_Y_LPARAM(lp)))
+                                : static_cast<float>(GET_Y_LPARAM(lp));
+        float doc_x = px;
+        float doc_y = py + vs->scroll_y;
+
+        // Code block copy button takes priority
+        for (int i = 0; i < static_cast<int>(vs->layout->blocks.size()); i++) {
+            auto& block = vs->layout->blocks[i];
+            if (is_in_copy_button(block, doc_x, doc_y)) {
+                std::wstring code_text;
+                for (auto& run : block.text_runs) code_text += run.text;
+                copy_to_clipboard(hwnd, code_text);
+                vs->copied_code_block = i;
+                SetTimer(hwnd, TIMER_COPY_FEEDBACK, 1000, nullptr);
+                clear_selection(vs);
                 InvalidateRect(hwnd, nullptr, FALSE);
-                break;
-            case InteractionEngine::Action::OpenExternal:
-                ShellExecuteW(nullptr, L"open", action.target.c_str(),
-                              nullptr, nullptr, SW_SHOW);
-                break;
-            case InteractionEngine::Action::ReloadDocument:
-                // Resolve relative path
-                if (!vs->file_path.empty()) {
-                    std::wstring dir = vs->file_path;
-                    auto pos = dir.find_last_of(L"\\/");
-                    if (pos != std::wstring::npos)
-                        dir = dir.substr(0, pos + 1);
-                    std::wstring full = dir + action.target;
-                    load_document(vs, full.c_str());
-                    InvalidateRect(hwnd, nullptr, FALSE);
-                }
-                break;
-            default:
-                break;
+                return 0;
             }
+        }
+
+        // Update final active position
+        auto pos = hit_test_position(*vs->layout, doc_x, doc_y);
+        if (pos.valid()) vs->sel_active = pos;
+
+        if (vs->sel_anchor == vs->sel_active) {
+            // No drag — handle links
+            clear_selection(vs);
+            if (vs->interaction) {
+                auto hit = vs->interaction->hit_test(doc_x, doc_y);
+                if (hit.hit) {
+                    auto action = vs->interaction->resolve(hit.target);
+                    switch (action.action) {
+                    case InteractionEngine::Action::ScrollToAnchor:
+                        vs->scroll_y = std::clamp(action.scroll_y, 0.0f, vs->max_scroll_y);
+                        update_scrollbar(vs);
+                        break;
+                    case InteractionEngine::Action::OpenExternal:
+                        ShellExecuteW(nullptr, L"open", action.target.c_str(),
+                                      nullptr, nullptr, SW_SHOW);
+                        break;
+                    case InteractionEngine::Action::ReloadDocument:
+                        if (!vs->file_path.empty()) {
+                            std::wstring dir = vs->file_path;
+                            auto fpos = dir.find_last_of(L"\\/");
+                            if (fpos != std::wstring::npos) dir = dir.substr(0, fpos + 1);
+                            load_document(vs, (dir + action.target).c_str());
+                        }
+                        break;
+                    default: break;
+                    }
+                }
+            }
+        }
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+    }
+
+    case WM_LBUTTONDBLCLK: {
+        if (!vs || !vs->layout) break;
+        float px = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(GET_X_LPARAM(lp)))
+                                : static_cast<float>(GET_X_LPARAM(lp));
+        float py = vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(GET_Y_LPARAM(lp)))
+                                : static_cast<float>(GET_Y_LPARAM(lp));
+        float doc_y = py + vs->scroll_y;
+
+        auto pos = hit_test_position(*vs->layout, px, doc_y);
+        if (pos.valid()) {
+            auto& block = vs->layout->blocks[pos.block_index];
+            std::wstring full;
+            for (auto& run : block.text_runs) full += run.text;
+            auto [ws, we] = find_word_boundaries(full, pos.char_offset);
+            vs->sel_anchor = TextPosition{pos.block_index, ws};
+            vs->sel_active = TextPosition{pos.block_index, we};
+            vs->selecting = false;
+        }
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+    }
+
+    case WM_TIMER: {
+        if (wp == TIMER_AUTOSCROLL && vs && vs->selecting) {
+            float line = g_theme.fonts().body_size * g_theme.spacing().line_height_factor;
+            POINT pt;
+            GetCursorPos(&pt);
+            ScreenToClient(hwnd, &pt);
+            float client_y = vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(pt.y))
+                                          : static_cast<float>(pt.y);
+            handle_scroll(vs, client_y < 0 ? -line : line);
+
+            if (vs->layout) {
+                float doc_x = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(pt.x))
+                                           : static_cast<float>(pt.x);
+                float doc_y = client_y + vs->scroll_y;
+                auto pos = hit_test_position(*vs->layout, doc_x, doc_y);
+                if (pos.valid()) vs->sel_active = pos;
+            }
+            InvalidateRect(hwnd, nullptr, FALSE);
+        } else if (wp == TIMER_COPY_FEEDBACK && vs) {
+            KillTimer(hwnd, TIMER_COPY_FEEDBACK);
+            vs->copied_code_block = -1;
+            InvalidateRect(hwnd, nullptr, FALSE);
         }
         return 0;
     }
@@ -325,10 +567,8 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
 
     case WM_SETCURSOR:
-        if (vs && vs->hovered_span >= 0) {
-            SetCursor(LoadCursorW(nullptr, IDC_HAND));
+        if (LOWORD(lp) == HTCLIENT)
             return TRUE;
-        }
         break;
 
     case WM_ERASEBKGND:
@@ -348,7 +588,7 @@ static void ensure_window_class() {
 
     WNDCLASSEXW wc = {};
     wc.cbSize = sizeof(wc);
-    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
     wc.lpfnWndProc = ViewWndProc;
     wc.hInstance = g_hModule;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
