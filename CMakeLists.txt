@@ -29,6 +29,21 @@ target_link_libraries(wlx-core
         tomlplusplus::tomlplusplus
 )
 
+# --- Colorizer core static library ---
+find_package(tree-sitter REQUIRED)
+
+add_library(colorizer-core STATIC
+    src/colorizer/colorizer.cpp
+)
+
+target_include_directories(colorizer-core PUBLIC src/colorizer src)
+target_link_libraries(colorizer-core
+    PUBLIC
+        tree-sitter::tree-sitter
+    PRIVATE
+        tomlplusplus::tomlplusplus
+)
+
 # --- Plugin DLL ---
 add_library(wlx-listerine-md SHARED
     src/host_adapter.cpp
@@ -83,5 +98,16 @@ add_executable(tests
 
 target_link_libraries(tests PRIVATE
     wlx-core
+    doctest::doctest
+)
+
+# --- Colorizer tests ---
+add_executable(colorizer-tests
+    tests/test_main.cpp
+    tests/test_colorizer.cpp
+)
+
+target_link_libraries(colorizer-tests PRIVATE
+    colorizer-core
     doctest::doctest
 )
