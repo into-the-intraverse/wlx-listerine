@@ -105,10 +105,17 @@ def main():
         results.append((name, similarity, status))
         print(f"  {status}  {similarity:5.1f}%  {name}")
 
-    if results:
-        avg = sum(s for _, s, _ in results) / len(results)
-        passes = sum(1 for _, _, st in results if st == "PASS")
-        print(f"\n  {passes}/{len(results)} pass (>= 95% similar), avg similarity: {avg:.1f}%")
+    if not results:
+        print("\n  No cases compared — nothing to validate")
+        sys.exit(2)
+
+    avg = sum(s for _, s, _ in results) / len(results)
+    passes = sum(1 for _, _, st in results if st == "PASS")
+    fails = sum(1 for _, _, st in results if st == "FAIL")
+    print(f"\n  {passes}/{len(results)} pass (>= 95% similar), avg similarity: {avg:.1f}%")
+
+    if fails > 0:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
