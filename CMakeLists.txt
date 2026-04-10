@@ -44,8 +44,8 @@ target_link_libraries(wlx-listerine-md PRIVATE
 set_target_properties(wlx-listerine-md PROPERTIES
     SUFFIX ".wlx64"
     PREFIX ""
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/output"
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/output"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/output"
+    LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/output"
 )
 
 add_custom_command(TARGET wlx-listerine-md POST_BUILD

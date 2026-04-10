@@ -26,7 +26,7 @@ namespace fs = std::filesystem;
 
 struct Options {
     std::wstring input_path;
-    std::wstring config_path = L"config/wlx-mini-markdown.toml";
+    std::wstring config_path = L"config/wlx-listerine-md.toml";
     int width = 800;
     int height = 600;
     float scroll = 0;
@@ -42,7 +42,7 @@ static void print_usage() {
         "  --height <px>    Viewport height (default: 600)\n"
         "  --full           Render entire document\n"
         "  --scroll <px>    Scroll offset in viewport mode (default: 0)\n"
-        "  --config <path>  TOML config path (default: config/wlx-mini-markdown.toml)\n"
+        "  --config <path>  TOML config path (default: config/wlx-listerine-md.toml)\n"
         "  --dark           Force dark mode\n");
 }
 

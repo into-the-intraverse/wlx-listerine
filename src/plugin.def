@@ -1,4 +1,4 @@
-LIBRARY "wlx-mini-markdown"
+LIBRARY "wlx-listerine-md"
 EXPORTS
     ListLoadW
     ListLoadNextW

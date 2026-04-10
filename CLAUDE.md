@@ -4,7 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Total Commander WLX lister plugin that renders Markdown via DirectWrite/Direct2D. C++17, 64-bit only, Win11 target. Outputs `wlx-mini-markdown.wlx64`.
+**wlx-listerine** — Total Commander WLX lister plugins. Minimalistic, native Direct2D/DirectWrite rendering. C++17, 64-bit only, Win11 target.
+
+### Plugins
+
+- **wlx-listerine-md** (`wlx-listerine-md.wlx64`) — Markdown renderer
 
 ## Build
 
@@ -44,7 +48,7 @@ HostAdapter (host_adapter.cpp)         WLX exports, WndProc, scroll, D2D/DWrite 
 
 ## Key conventions
 
-- Custom window class `WlxMiniMarkdownView` with DirectWrite/Direct2D rendering
+- Custom window class `WlxListerineMdView` with DirectWrite/Direct2D rendering
 - `ComPtr<T>` (from `<wrl/client.h>`) for all COM pointers
 - D2D/DWrite factories are global singletons, created on first ListLoadW, released in DLL_PROCESS_DETACH
 - `NOMINMAX` must be defined before any Windows header inclusion
@@ -76,4 +80,4 @@ git config core.hooksPath .githooks
 
 ## Configuration
 
-`config/wlx-mini-markdown.toml` (schema v2). Sections: `[general]` (extensions, detect_string), `[fonts]` (body, code, emoji + sizes), `[spacing]` (paragraph, heading, list, quote, code, line height), `[colors.light]` and `[colors.dark]` (10 colors each: background, text, heading, muted, link, link_hover, code_bg, quote_border, rule, selection).
+`config/wlx-listerine-md.toml` (schema v2). Sections: `[general]` (extensions, detect_string), `[fonts]` (body, code, emoji + sizes), `[spacing]` (paragraph, heading, list, quote, code, line height), `[colors.light]` and `[colors.dark]` (10 colors each: background, text, heading, muted, link, link_hover, code_bg, quote_border, rule, selection).
