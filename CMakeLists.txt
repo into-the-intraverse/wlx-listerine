@@ -37,6 +37,7 @@ add_library(colorizer-core STATIC
     src/colorizer/theme_loader.cpp
     src/colorizer/grammar_registry.cpp
     src/colorizer/scope_mapper.cpp
+    src/colorizer/tokenizer.cpp
 )
 
 target_include_directories(colorizer-core PUBLIC src/colorizer src)
@@ -111,6 +112,7 @@ add_executable(colorizer-tests
     tests/test_colorizer_theme.cpp
     tests/test_colorizer_grammar.cpp
     tests/test_colorizer_scope.cpp
+    tests/test_colorizer_tokenizer.cpp
 )
 
 target_link_libraries(colorizer-tests PRIVATE
