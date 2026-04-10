@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "devDependencies": {
+    "playwright": "^1.52.0"
+  },
+  "scripts": {
+    "update-goldens": "bun run scripts/update-goldens.ts",
+    "update-golden": "bun run scripts/update-goldens.ts"
+  }
+}

@@ -6,3 +6,5 @@ CMakeUserPresets.json
 test_data/*.png
 test_data/cases/*.png
 !test_data/cases/*_chrome.png
+node_modules/
+bun.lockb
