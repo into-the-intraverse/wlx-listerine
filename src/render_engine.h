@@ -32,6 +32,13 @@ public:
     UINT width() const { return width_; }
     UINT height() const { return height_; }
 
+    // DIP dimensions (account for DPI scaling)
+    float dip_width() const;
+    float dip_height() const;
+    // Convert pixel coordinate to DIP coordinate
+    float pixel_to_dip_x(float px) const;
+    float pixel_to_dip_y(float py) const;
+
 private:
     ID2D1SolidColorBrush* get_brush(uint32_t color);
     void paint_block_background(const LayoutBlock& block, float offset_y);

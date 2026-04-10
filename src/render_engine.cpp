@@ -127,6 +127,38 @@ void RenderEngine::resize(UINT width, UINT height) {
     }
 }
 
+float RenderEngine::dip_width() const {
+    if (rt_) {
+        D2D1_SIZE_F size = rt_->GetSize();
+        return size.width;
+    }
+    return static_cast<float>(width_);
+}
+
+float RenderEngine::dip_height() const {
+    if (rt_) {
+        D2D1_SIZE_F size = rt_->GetSize();
+        return size.height;
+    }
+    return static_cast<float>(height_);
+}
+
+float RenderEngine::pixel_to_dip_x(float px) const {
+    if (rt_ && width_ > 0) {
+        D2D1_SIZE_F size = rt_->GetSize();
+        return px * size.width / static_cast<float>(width_);
+    }
+    return px;
+}
+
+float RenderEngine::pixel_to_dip_y(float py) const {
+    if (rt_ && height_ > 0) {
+        D2D1_SIZE_F size = rt_->GetSize();
+        return py * size.height / static_cast<float>(height_);
+    }
+    return py;
+}
+
 ID2D1SolidColorBrush* RenderEngine::get_brush(uint32_t color) {
     auto it = brush_cache_.find(color);
     if (it != brush_cache_.end())
@@ -145,7 +177,7 @@ void RenderEngine::paint(const LayoutDocument& layout, float scroll_y) {
     if (!rt_) return;
 
     const auto& colors = theme_.palette(dark_mode_);
-    float viewport_h = static_cast<float>(height_);
+    float viewport_h = dip_height();
 
     rt_->BeginDraw();
     rt_->Clear(ThemeService::to_d2d_color(colors.background));

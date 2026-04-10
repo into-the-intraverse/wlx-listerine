@@ -89,7 +89,8 @@ static void ensure_theme() {
 static void update_scrollbar(ViewState* vs) {
     if (!vs->layout || !vs->hwnd) return;
 
-    float viewport_h = static_cast<float>(vs->renderer ? vs->renderer->height() : 1);
+    // Use DIP dimensions — layout and D2D coordinates are in DIPs, not physical pixels
+    float viewport_h = vs->renderer ? vs->renderer->dip_height() : 1.0f;
     vs->max_scroll_y = std::max(0.0f, vs->layout->total_height - viewport_h);
     vs->scroll_y = std::clamp(vs->scroll_y, 0.0f, vs->max_scroll_y);
 
@@ -106,9 +107,8 @@ static void update_scrollbar(ViewState* vs) {
 static void do_layout(ViewState* vs) {
     if (!vs->document || !g_dwrite_factory) return;
 
-    RECT rc;
-    GetClientRect(vs->hwnd, &rc);
-    float viewport_width = static_cast<float>(rc.right - rc.left);
+    // Use DIP width — IDWriteTextLayout measures in DIPs, not physical pixels
+    float viewport_width = vs->renderer ? vs->renderer->dip_width() : 1.0f;
 
     // Check layout cache
     LayoutCacheKey lk;
@@ -199,7 +199,7 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
     case WM_VSCROLL: {
         if (!vs) break;
-        float page = static_cast<float>(vs->renderer ? vs->renderer->height() : 100);
+        float page = vs->renderer ? vs->renderer->dip_height() : 100.0f;
         float line = g_theme.fonts().body_size * g_theme.spacing().line_height_factor;
 
         switch (LOWORD(wp)) {
@@ -234,8 +234,10 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
     case WM_MOUSEMOVE: {
         if (!vs || !vs->interaction) break;
-        float mx = static_cast<float>(GET_X_LPARAM(lp));
-        float my = static_cast<float>(GET_Y_LPARAM(lp)) + vs->scroll_y;
+        float mx = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(GET_X_LPARAM(lp)))
+                                : static_cast<float>(GET_X_LPARAM(lp));
+        float my = (vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(GET_Y_LPARAM(lp)))
+                                 : static_cast<float>(GET_Y_LPARAM(lp))) + vs->scroll_y;
         auto hit = vs->interaction->hit_test(mx, my);
 
         int new_hover = hit.hit ? hit.span_index : -1;
@@ -249,8 +251,10 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
     case WM_LBUTTONUP: {
         if (!vs || !vs->interaction) break;
-        float mx = static_cast<float>(GET_X_LPARAM(lp));
-        float my = static_cast<float>(GET_Y_LPARAM(lp)) + vs->scroll_y;
+        float mx = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(GET_X_LPARAM(lp)))
+                                : static_cast<float>(GET_X_LPARAM(lp));
+        float my = (vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(GET_Y_LPARAM(lp)))
+                                 : static_cast<float>(GET_Y_LPARAM(lp))) + vs->scroll_y;
         auto hit = vs->interaction->hit_test(mx, my);
 
         if (hit.hit) {
@@ -286,7 +290,7 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
     case WM_KEYDOWN: {
         if (!vs) break;
-        float page = static_cast<float>(vs->renderer ? vs->renderer->height() : 100);
+        float page = vs->renderer ? vs->renderer->dip_height() : 100.0f;
         float line = g_theme.fonts().body_size * g_theme.spacing().line_height_factor;
 
         switch (wp) {
@@ -342,7 +346,7 @@ static void ensure_window_class() {
 
 // ---------- DLL entry ----------
 
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID /*reserved*/) {
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {
     switch (reason) {
     case DLL_PROCESS_ATTACH:
         g_hModule = hModule;
@@ -350,11 +354,23 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID /*reserved*/) {
         break;
 
     case DLL_PROCESS_DETACH:
-        // Release factories
+        // reserved != NULL means process is terminating — other DLLs may already
+        // be unloaded, so calling COM Release() could deadlock or crash.  Let the
+        // OS reclaim everything.
+        if (reserved != nullptr)
+            break;
+
+        // FreeLibrary path: TC is unloading the plugin while the process continues.
+        // Release child COM objects before factories to avoid dangling internal refs.
+        for (auto& [hwnd, vs] : g_views)
+            delete vs;
+        g_views.clear();
+
+        g_cache.clear();
+
         g_d2d_factory.Reset();
         g_dwrite_factory.Reset();
 
-        // Unregister window class
         if (g_window_class) {
             UnregisterClassW(L"WlxMiniMarkdownView", g_hModule);
             g_window_class = 0;
