@@ -28,7 +28,7 @@ LayoutEngine::LayoutEngine(IDWriteFactory* dwrite, const ThemeService& theme, bo
         fonts_.code_size, L"", code_format_.GetAddressOf());
 
     if (body_format_) {
-        body_format_->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_PROPORTIONAL,
+        body_format_->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM,
                                      fonts_.body_size * spacing_.line_height_factor,
                                      fonts_.body_size * spacing_.line_height_factor * 0.8f);
         body_format_->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);

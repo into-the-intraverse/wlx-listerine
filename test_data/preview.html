@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Markdown Preview</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  /* Light theme (matches config/wlx-mini-markdown.toml [colors.light]) */
+  :root {
+    --bg: #FFFFFF;
+    --text: #1F2328;
+    --heading: #1F2328;
+    --muted: #57606A;
+    --link: #0969DA;
+    --link-hover: #0550AE;
+    --code-bg: #F6F8FA;
+    --quote-border: #D0D7DE;
+    --rule: #D8DEE4;
+    --font-body: "Segoe UI", Arial, sans-serif;
+    --font-code: "Cascadia Code", "Courier New", monospace;
+    --font-size: 14px;
+    --code-size: 13px;
+    --line-height: 1.5;
+  }
+
+  /* Dark theme (matches [colors.dark]) */
+  .dark {
+    --bg: #0D1117;
+    --text: #E6EDF3;
+    --heading: #E6EDF3;
+    --muted: #8B949E;
+    --link: #58A6FF;
+    --link-hover: #79C0FF;
+    --code-bg: #161B22;
+    --quote-border: #30363D;
+    --rule: #30363D;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    font-size: var(--font-size);
+    line-height: var(--line-height);
+    width: 800px;
+    padding: 0;
+  }
+
+  #content {
+    padding: 12px 16px;
+  }
+
+  h1, h2, h3, h4, h5, h6 { color: var(--heading); }
+  h1 { font-size: 2em; margin: 24px 0 12px; }
+  h2 { font-size: 1.5em; margin: 24px 0 12px; border-bottom: 1px solid var(--rule); padding-bottom: 4px; }
+  h3 { font-size: 1.25em; margin: 24px 0 12px; }
+  h4 { font-size: 1em; margin: 24px 0 12px; }
+  h5 { font-size: 0.875em; margin: 24px 0 12px; }
+  h6 { font-size: 0.85em; margin: 24px 0 12px; color: var(--muted); }
+
+  p { margin: 0 0 12px; }
+
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+
+  code {
+    font-family: var(--font-code);
+    font-size: var(--code-size);
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  pre {
+    background: var(--code-bg);
+    padding: 8px;
+    border-radius: 4px;
+    margin: 0 0 12px;
+    overflow-x: auto;
+  }
+
+  pre code {
+    background: none;
+    padding: 0;
+  }
+
+  blockquote {
+    border-left: 3px solid var(--quote-border);
+    padding-left: 16px;
+    color: var(--muted);
+    margin: 0 0 12px;
+  }
+
+  hr {
+    border: none;
+    border-top: 1px solid var(--rule);
+    margin: 12px 0;
+  }
+
+  ul, ol { padding-left: 24px; margin: 0 0 12px; }
+  li { margin: 4px 0; }
+
+  table {
+    border-collapse: collapse;
+    margin: 0 0 12px;
+    width: 100%;
+  }
+  th, td {
+    border-bottom: 1px solid var(--rule);
+    padding: 6px 12px;
+    text-align: left;
+  }
+  th { font-weight: 600; }
+
+  del { color: var(--muted); }
+
+  input[type="checkbox"] { margin-right: 6px; }
+</style>
+</head>
+<body>
+  <div id="content">Loading...</div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const file = params.get('file') || 'sample.md';
+    const dark = params.get('dark') === '1';
+
+    if (dark) document.body.classList.add('dark');
+
+    fetch(file)
+      .then(r => {
+        if (!r.ok) throw new Error(`Failed to load ${file}: ${r.status}`);
+        return r.text();
+      })
+      .then(md => {
+        document.getElementById('content').innerHTML = marked.parse(md);
+      })
+      .catch(err => {
+        document.getElementById('content').textContent = err.message;
+      });
+  </script>
+</body>
+</html>
