@@ -439,7 +439,6 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
     case WM_LBUTTONUP: {
         if (!vs || !vs->layout) break;
-        bool was_selecting = vs->selecting;
         vs->selecting = false;
         ReleaseCapture();
         KillTimer(hwnd, TIMER_AUTOSCROLL);
