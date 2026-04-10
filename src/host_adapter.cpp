@@ -12,6 +12,7 @@
 #include <windowsx.h>
 #include <shellapi.h>
 #include <dwmapi.h>
+#include <uxtheme.h>
 #include <d2d1.h>
 #include <dwrite.h>
 #include <wrl/client.h>
@@ -77,6 +78,8 @@ static std::string g_default_ini_path;
 static void apply_dark_mode(HWND hwnd, bool dark) {
     BOOL value = dark ? TRUE : FALSE;
     DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &value, sizeof(value));
+    // SetWindowTheme themes the scrollbar (DwmSetWindowAttribute only affects title bar)
+    SetWindowTheme(hwnd, dark ? L"DarkMode_Explorer" : L"Explorer", nullptr);
 }
 
 static std::wstring get_module_dir() {
@@ -637,6 +640,7 @@ static void ensure_window_class() {
     wc.lpfnWndProc = ViewWndProc;
     wc.hInstance = g_hModule;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.hbrBackground = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
     wc.lpszClassName = L"WlxListerineMdView";
     g_window_class = RegisterClassExW(&wc);
 }

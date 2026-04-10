@@ -40,6 +40,7 @@ target_link_libraries(wlx-listerine-md PRIVATE
     wlx-core
     shell32
     dwmapi
+    uxtheme
 )
 
 set_target_properties(wlx-listerine-md PROPERTIES
