@@ -42,6 +42,11 @@ struct ColorViewState {
 
     float scroll_y = 0;
     float max_scroll_y = 0;
+
+    // Selection
+    TextPosition sel_anchor;
+    TextPosition sel_active;
+    bool selecting = false;
 };
 
 // ---------- globals ----------
@@ -245,6 +250,89 @@ static void handle_scroll(ColorViewState* vs, float delta) {
     }
 }
 
+// ---------- selection helpers ----------
+
+static constexpr UINT_PTR TIMER_AUTOSCROLL = 1;
+
+static TextPosition hit_test_position(const LayoutDocument& layout, float x, float y) {
+    int block_count = static_cast<int>(layout.blocks.size());
+
+    for (int i = 0; i < block_count; i++) {
+        auto& block = layout.blocks[i];
+        if (block.text_runs.empty()) continue;
+        if (y < block.rect.top || y > block.rect.bottom) continue;
+        if (x < block.rect.left || x > block.rect.right) continue;
+
+        auto& run = block.text_runs[0];
+        if (!run.layout) continue;
+
+        float local_x = x - run.rect.left;
+        float local_y = y - run.rect.top;
+        BOOL is_trailing = FALSE;
+        BOOL is_inside = FALSE;
+        DWRITE_HIT_TEST_METRICS htm = {};
+        run.layout->HitTestPoint(local_x, local_y, &is_trailing, &is_inside, &htm);
+
+        int offset = static_cast<int>(htm.textPosition);
+        if (is_trailing) offset++;
+        return TextPosition{i, offset};
+    }
+
+    // Snap to nearest block
+    int closest = -1;
+    float closest_dist = 1e9f;
+    for (int i = 0; i < block_count; i++) {
+        auto& block = layout.blocks[i];
+        if (block.text_runs.empty()) continue;
+        float mid = (block.rect.top + block.rect.bottom) * 0.5f;
+        float dist = std::abs(y - mid);
+        if (dist < closest_dist) {
+            closest_dist = dist;
+            closest = i;
+        }
+    }
+
+    if (closest >= 0) {
+        auto& block = layout.blocks[closest];
+        if (y < (block.rect.top + block.rect.bottom) * 0.5f)
+            return TextPosition{closest, 0};
+        int len = 0;
+        for (auto& run : block.text_runs) len += static_cast<int>(run.text.size());
+        return TextPosition{closest, len};
+    }
+    return TextPosition{};
+}
+
+static int block_text_length(const LayoutBlock& block) {
+    int len = 0;
+    for (auto& run : block.text_runs) len += static_cast<int>(run.text.size());
+    return len;
+}
+
+static bool copy_to_clipboard(HWND hwnd, const std::wstring& text) {
+    if (text.empty()) return false;
+    if (!OpenClipboard(hwnd)) return false;
+    EmptyClipboard();
+    size_t bytes = (text.size() + 1) * sizeof(wchar_t);
+    HGLOBAL hg = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (hg) {
+        void* p = GlobalLock(hg);
+        if (p) {
+            memcpy(p, text.c_str(), bytes);
+            GlobalUnlock(hg);
+            SetClipboardData(CF_UNICODETEXT, hg);
+        }
+    }
+    CloseClipboard();
+    return true;
+}
+
+static void clear_selection(ColorViewState* vs) {
+    vs->sel_anchor = TextPosition{};
+    vs->sel_active = TextPosition{};
+    vs->selecting = false;
+}
+
 // ---------- WndProc ----------
 
 static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -257,7 +345,9 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         if (vs && vs->renderer && vs->layout) {
             if (vs->renderer->needs_recreate())
                 vs->renderer->create_device_resources(hwnd);
-            vs->renderer->paint(*vs->layout, vs->scroll_y);
+            auto sel_lo = std::min(vs->sel_anchor, vs->sel_active);
+            auto sel_hi = std::max(vs->sel_anchor, vs->sel_active);
+            vs->renderer->paint(*vs->layout, vs->scroll_y, sel_lo, sel_hi);
         }
         EndPaint(hwnd, &ps);
         return 0;
@@ -317,10 +407,174 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         return 0;
     }
 
+    case WM_MOUSEMOVE: {
+        if (!vs || !vs->layout) break;
+        if (vs->selecting) {
+            float px = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(GET_X_LPARAM(lp)))
+                                    : static_cast<float>(GET_X_LPARAM(lp));
+            float py = vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(GET_Y_LPARAM(lp)))
+                                    : static_cast<float>(GET_Y_LPARAM(lp));
+            float doc_x = px;
+            float doc_y = py + vs->scroll_y;
+
+            auto pos = hit_test_position(*vs->layout, doc_x, doc_y);
+            if (pos.valid() && pos != vs->sel_active) {
+                vs->sel_active = pos;
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }
+            float viewport_h = vs->renderer ? vs->renderer->dip_height() : 100.0f;
+            if (py < 0 || py > viewport_h)
+                SetTimer(hwnd, TIMER_AUTOSCROLL, 50, nullptr);
+            else
+                KillTimer(hwnd, TIMER_AUTOSCROLL);
+        } else {
+            // I-beam cursor over text
+            float px = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(GET_X_LPARAM(lp)))
+                                    : static_cast<float>(GET_X_LPARAM(lp));
+            float py = vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(GET_Y_LPARAM(lp)))
+                                    : static_cast<float>(GET_Y_LPARAM(lp));
+            float doc_y = py + vs->scroll_y;
+            bool over_text = false;
+            for (auto& block : vs->layout->blocks) {
+                if (block.text_runs.empty()) continue;
+                if (doc_y >= block.rect.top && doc_y <= block.rect.bottom &&
+                    px >= block.rect.left && px <= block.rect.right) {
+                    over_text = true;
+                    break;
+                }
+            }
+            SetCursor(LoadCursorW(nullptr, over_text ? IDC_IBEAM : IDC_ARROW));
+        }
+        return 0;
+    }
+
+    case WM_LBUTTONDOWN: {
+        if (!vs || !vs->layout) break;
+        SetFocus(hwnd);
+        float px = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(GET_X_LPARAM(lp)))
+                                : static_cast<float>(GET_X_LPARAM(lp));
+        float py = vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(GET_Y_LPARAM(lp)))
+                                : static_cast<float>(GET_Y_LPARAM(lp));
+        float doc_y = py + vs->scroll_y;
+
+        auto pos = hit_test_position(*vs->layout, px, doc_y);
+        if (pos.valid()) {
+            vs->sel_anchor = pos;
+            vs->sel_active = pos;
+            vs->selecting = true;
+            SetCapture(hwnd);
+        } else {
+            clear_selection(vs);
+        }
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+    }
+
+    case WM_LBUTTONUP: {
+        if (!vs || !vs->layout) break;
+        bool was_dragging = vs->selecting;
+        vs->selecting = false;
+        ReleaseCapture();
+        KillTimer(hwnd, TIMER_AUTOSCROLL);
+
+        if (was_dragging) {
+            float px = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(GET_X_LPARAM(lp)))
+                                    : static_cast<float>(GET_X_LPARAM(lp));
+            float py = vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(GET_Y_LPARAM(lp)))
+                                    : static_cast<float>(GET_Y_LPARAM(lp));
+            float doc_y = py + vs->scroll_y;
+            auto pos = hit_test_position(*vs->layout, px, doc_y);
+            if (pos.valid()) vs->sel_active = pos;
+        }
+
+        if (vs->sel_anchor == vs->sel_active)
+            clear_selection(vs);
+
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+    }
+
+    case WM_LBUTTONDBLCLK: {
+        if (!vs || !vs->layout) break;
+        float px = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(GET_X_LPARAM(lp)))
+                                : static_cast<float>(GET_X_LPARAM(lp));
+        float py = vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(GET_Y_LPARAM(lp)))
+                                : static_cast<float>(GET_Y_LPARAM(lp));
+        float doc_y = py + vs->scroll_y;
+
+        auto pos = hit_test_position(*vs->layout, px, doc_y);
+        if (pos.valid()) {
+            auto& block = vs->layout->blocks[pos.block_index];
+            std::wstring full;
+            for (auto& run : block.text_runs) full += run.text;
+            auto [ws, we] = find_word_boundaries(full, pos.char_offset);
+            vs->sel_anchor = TextPosition{pos.block_index, ws};
+            vs->sel_active = TextPosition{pos.block_index, we};
+            vs->selecting = false;
+        }
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+    }
+
+    case WM_TIMER: {
+        if (wp == TIMER_AUTOSCROLL && vs && vs->selecting) {
+            float line = g_theme.fonts().code_size * g_display_cfg.line_height_factor;
+            POINT pt;
+            GetCursorPos(&pt);
+            ScreenToClient(hwnd, &pt);
+            float client_y = vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(pt.y))
+                                          : static_cast<float>(pt.y);
+            handle_scroll(vs, client_y < 0 ? -line : line);
+
+            if (vs->layout) {
+                float doc_x = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(pt.x))
+                                           : static_cast<float>(pt.x);
+                float doc_y = client_y + vs->scroll_y;
+                auto pos = hit_test_position(*vs->layout, doc_x, doc_y);
+                if (pos.valid()) vs->sel_active = pos;
+            }
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        return 0;
+    }
+
     case WM_KEYDOWN: {
         if (!vs) break;
         float page = vs->renderer ? vs->renderer->dip_height() : 100.0f;
         float line = g_theme.fonts().code_size * g_display_cfg.line_height_factor;
+
+        // Ctrl+C — copy selection
+        if (wp == 'C' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            if (vs->layout && vs->sel_anchor.valid() && vs->sel_anchor != vs->sel_active) {
+                auto lo = std::min(vs->sel_anchor, vs->sel_active);
+                auto hi = std::max(vs->sel_anchor, vs->sel_active);
+                auto text = extract_selected_text(*vs->layout, lo, hi);
+                copy_to_clipboard(hwnd, text);
+            }
+            return 0;
+        }
+
+        // Ctrl+A — select all
+        if (wp == 'A' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            if (vs->layout && !vs->layout->blocks.empty()) {
+                vs->sel_anchor = TextPosition{0, 0};
+                int last = static_cast<int>(vs->layout->blocks.size()) - 1;
+                vs->sel_active = TextPosition{last, block_text_length(vs->layout->blocks[last])};
+                vs->selecting = false;
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }
+            return 0;
+        }
+
+        // Escape — clear selection
+        if (wp == VK_ESCAPE) {
+            if (vs->sel_anchor.valid()) {
+                clear_selection(vs);
+                InvalidateRect(hwnd, nullptr, FALSE);
+                return 0;
+            }
+        }
+
         switch (wp) {
         case VK_UP:    handle_scroll(vs, -line); break;
         case VK_DOWN:  handle_scroll(vs,  line); break;
@@ -364,7 +618,7 @@ static void ensure_window_class() {
 
     WNDCLASSEXW wc = {};
     wc.cbSize = sizeof(wc);
-    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
     wc.lpfnWndProc = ColorViewWndProc;
     wc.hInstance = g_hModule;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
@@ -485,11 +739,25 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
     auto* vs = it->second;
 
     switch (Command) {
-    case lc_copy:
-        return LISTPLUGIN_ERROR; // no text selection in v1
+    case lc_copy: {
+        if (!vs->layout || !vs->sel_anchor.valid() || vs->sel_anchor == vs->sel_active)
+            return LISTPLUGIN_ERROR;
+        auto lo = std::min(vs->sel_anchor, vs->sel_active);
+        auto hi = std::max(vs->sel_anchor, vs->sel_active);
+        auto text = extract_selected_text(*vs->layout, lo, hi);
+        return copy_to_clipboard(vs->hwnd, text) ? LISTPLUGIN_OK : LISTPLUGIN_ERROR;
+    }
 
-    case lc_selectall:
-        return LISTPLUGIN_ERROR; // no text selection in v1
+    case lc_selectall: {
+        if (!vs->layout || vs->layout->blocks.empty())
+            return LISTPLUGIN_ERROR;
+        vs->sel_anchor = TextPosition{0, 0};
+        int last = static_cast<int>(vs->layout->blocks.size()) - 1;
+        vs->sel_active = TextPosition{last, block_text_length(vs->layout->blocks[last])};
+        vs->selecting = false;
+        InvalidateRect(vs->hwnd, nullptr, FALSE);
+        return LISTPLUGIN_OK;
+    }
 
     case lc_newparams: {
         bool new_dark = (Parameter & lcp_darkmode) != 0;
