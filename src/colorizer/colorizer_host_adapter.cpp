@@ -27,6 +27,8 @@
 #include "colorizer.h"
 #include "colorizer_layout.h"
 
+#include <toml++/toml.hpp>
+
 using Microsoft::WRL::ComPtr;
 
 // ---------- per-window state ----------
@@ -151,12 +153,35 @@ static void ensure_theme() {
         g_theme.load(cfg_path);
         g_theme_loaded = true;
 
-        // Parse [display] section manually via TOML — ThemeService doesn't know about it.
-        // We re-read the file for the display block.
-        // Simpler: hardcode defaults then try to parse with toml++.
-        // Since we can't easily include toml here, we read the toml config via ThemeService
-        // for colors/fonts/spacing, and parse [display] separately.
-        // For now use the defaults from ColorizerDisplayConfig (already set at declaration).
+        // Parse [display] section — ThemeService doesn't know about it
+        try {
+            std::string utf8_path;
+            {
+                int len = WideCharToMultiByte(CP_UTF8, 0, cfg_path.c_str(),
+                    static_cast<int>(cfg_path.size()), nullptr, 0, nullptr, nullptr);
+                if (len > 0) {
+                    utf8_path.resize(static_cast<size_t>(len));
+                    WideCharToMultiByte(CP_UTF8, 0, cfg_path.c_str(),
+                        static_cast<int>(cfg_path.size()), utf8_path.data(), len, nullptr, nullptr);
+                }
+            }
+            auto tbl = toml::parse_file(utf8_path);
+            if (auto v = tbl["display"]["line_numbers"].value<bool>())
+                g_display_cfg.line_numbers = *v;
+            if (auto v = tbl["display"]["word_wrap"].value<bool>())
+                g_display_cfg.word_wrap = *v;
+            if (auto v = tbl["display"]["tab_width"].value<int64_t>())
+                g_display_cfg.tab_width = static_cast<int>(*v);
+            if (auto v = tbl["display"]["show_whitespace"].value<std::string>()) {
+                if (*v == "all") g_display_cfg.show_whitespace = ShowWhitespace::All;
+                else if (*v == "boundary") g_display_cfg.show_whitespace = ShowWhitespace::Boundary;
+                else g_display_cfg.show_whitespace = ShowWhitespace::None;
+            }
+            if (auto v = tbl["display"]["show_indent_guides"].value<bool>())
+                g_display_cfg.show_indent_guides = *v;
+        } catch (...) {
+            // Parse failure — use defaults
+        }
 
         // Initialize colorizer
         std::wstring base = get_module_dir();

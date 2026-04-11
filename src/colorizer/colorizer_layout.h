@@ -7,11 +7,15 @@
 #include <dwrite.h>
 #include <string>
 
+enum class ShowWhitespace { None, All, Boundary };
+
 struct ColorizerDisplayConfig {
     bool line_numbers = true;
     bool word_wrap = false;
     int tab_width = 4;
     float line_height_factor = 1.4f;
+    ShowWhitespace show_whitespace = ShowWhitespace::None;
+    bool show_indent_guides = false;
 };
 
 // Convert source code lines + color spans into a LayoutDocument the RenderEngine can paint.

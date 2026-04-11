@@ -202,8 +202,10 @@ void RenderEngine::paint(const LayoutDocument& layout, float scroll_y,
         paint_block_background(block, 0);
         paint_selection_highlight(block, block_idx, 0, sel_start, sel_end);
         paint_block_decoration(block, 0);
+        paint_indent_guides(block, 0);
         paint_bullet(block, 0);
         paint_text_runs(block, 0);
+        paint_whitespace_markers(block, 0);
         paint_copy_button(block, block_idx, 0);
     }
 
@@ -439,5 +441,71 @@ void RenderEngine::paint_copy_button(const LayoutBlock& block, int block_index, 
                                           cx + s - 1.5f, cy + s + 1.0f);
         rt_->DrawRectangle(back, draw_brush, 1.0f);
         rt_->DrawRectangle(front, draw_brush, 1.0f);
+    }
+}
+
+void RenderEngine::paint_whitespace_markers(const LayoutBlock& block, float offset_y) {
+    if (block.ws_markers.empty() || block.text_runs.empty()) return;
+
+    auto color = ThemeService::to_d2d_color(block.ws_marker_color);
+    color.a = 0.35f;
+    ComPtr<ID2D1SolidColorBrush> brush;
+    if (FAILED(rt_->CreateSolidColorBrush(color, brush.GetAddressOf())) || !brush)
+        return;
+
+    auto& run = block.text_runs[0];
+    float origin_x = run.rect.left;
+    float origin_y = run.rect.top + offset_y;
+    float font_size = theme_.fonts().code_size;
+
+    for (auto& wm : block.ws_markers) {
+        float cx = origin_x + wm.x;
+        float cy = origin_y + wm.y + font_size * 0.5f;
+
+        if (wm.is_tab) {
+            // Draw a small right arrow →
+            float arrow_len = font_size * 0.5f;
+            float arrow_h = font_size * 0.15f;
+            float ax = cx + font_size * 0.1f;
+
+            rt_->DrawLine(
+                D2D1::Point2F(ax, cy),
+                D2D1::Point2F(ax + arrow_len, cy),
+                brush.Get(), 1.0f);
+            rt_->DrawLine(
+                D2D1::Point2F(ax + arrow_len, cy),
+                D2D1::Point2F(ax + arrow_len - arrow_h, cy - arrow_h),
+                brush.Get(), 1.0f);
+            rt_->DrawLine(
+                D2D1::Point2F(ax + arrow_len, cy),
+                D2D1::Point2F(ax + arrow_len - arrow_h, cy + arrow_h),
+                brush.Get(), 1.0f);
+        } else {
+            // Draw a centered dot ·
+            float r = 1.2f;
+            float dx = cx + font_size * 0.35f;
+            D2D1_ELLIPSE ellipse = {{dx, cy}, r, r};
+            rt_->FillEllipse(ellipse, brush.Get());
+        }
+    }
+}
+
+void RenderEngine::paint_indent_guides(const LayoutBlock& block, float offset_y) {
+    if (block.indent_guides.empty()) return;
+
+    auto color = ThemeService::to_d2d_color(block.indent_guide_color);
+    color.a = 0.2f;
+    ComPtr<ID2D1SolidColorBrush> brush;
+    if (FAILED(rt_->CreateSolidColorBrush(color, brush.GetAddressOf())) || !brush)
+        return;
+
+    float top = block.rect.top + offset_y;
+    float bottom = block.rect.bottom + offset_y;
+
+    for (float gx : block.indent_guides) {
+        rt_->DrawLine(
+            D2D1::Point2F(gx, top),
+            D2D1::Point2F(gx, bottom),
+            brush.Get(), 1.0f);
     }
 }

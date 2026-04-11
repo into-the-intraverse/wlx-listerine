@@ -309,6 +309,78 @@ LayoutDocument layout_source(IDWriteFactory* dwrite,
         run.color_ranges  = std::move(color_ranges);
         lb.text_runs.push_back(std::move(run));
 
+        // Whitespace markers
+        if (display.show_whitespace != ShowWhitespace::None && text_layout && !orig_line.empty()) {
+            lb.ws_marker_color = palette.muted;
+
+            // Determine which characters to mark
+            // "All" = every space/tab, "Boundary" = only leading + trailing whitespace
+            int leading_end = 0;
+            int trailing_start = static_cast<int>(orig_line.size());
+            if (display.show_whitespace == ShowWhitespace::Boundary) {
+                while (leading_end < static_cast<int>(orig_line.size()) &&
+                       (orig_line[leading_end] == L' ' || orig_line[leading_end] == L'\t'))
+                    leading_end++;
+                while (trailing_start > 0 &&
+                       (orig_line[trailing_start - 1] == L' ' || orig_line[trailing_start - 1] == L'\t'))
+                    trailing_start--;
+            }
+
+            for (int ci = 0; ci < static_cast<int>(orig_line.size()); ci++) {
+                wchar_t ch = orig_line[ci];
+                if (ch != L' ' && ch != L'\t') continue;
+
+                bool in_boundary = (ci < leading_end || ci >= trailing_start);
+                if (display.show_whitespace == ShowWhitespace::Boundary && !in_boundary)
+                    continue;
+
+                // Get expanded position
+                int exp_pos = (ci < static_cast<int>(source_to_expanded.size()))
+                              ? source_to_expanded[ci] : static_cast<int>(expanded.size());
+
+                // Use HitTestTextPosition to find the x,y of this character
+                BOOL is_trailing = FALSE;
+                DWRITE_HIT_TEST_METRICS htm = {};
+                float px = 0, py = 0;
+                text_layout->HitTestTextPosition(
+                    static_cast<UINT32>(exp_pos), FALSE, &px, &py, &htm);
+
+                LayoutBlock::WhitespaceMarker wm;
+                wm.x = px;
+                wm.y = py;
+                wm.is_tab = (ch == L'\t');
+                lb.ws_markers.push_back(wm);
+            }
+        }
+
+        // Indent guides
+        if (display.show_indent_guides && text_layout) {
+            lb.indent_guide_color = palette.muted;
+
+            // Count leading whitespace columns in expanded text
+            int leading_cols = 0;
+            for (wchar_t c : expanded) {
+                if (c == L' ') leading_cols++;
+                else break;
+            }
+
+            // Draw a guide at each tab_width interval up to the indent level
+            float char_width = fonts.code_size * 0.6f; // approximate monospace char width
+            // Get actual char width via HitTestTextPosition if possible
+            if (!expanded.empty()) {
+                BOOL is_trailing = FALSE;
+                DWRITE_HIT_TEST_METRICS htm = {};
+                float px1 = 0, py1 = 0;
+                text_layout->HitTestTextPosition(0, FALSE, &px1, &py1, &htm);
+                if (htm.width > 0) char_width = htm.width;
+            }
+
+            for (int col = display.tab_width; col < leading_cols; col += display.tab_width) {
+                float guide_x = code_left + col * char_width;
+                lb.indent_guides.push_back(guide_x);
+            }
+        }
+
         // Line number bullet
         if (display.line_numbers && ln_fmt) {
             wchar_t ln_buf[16];

@@ -93,6 +93,7 @@ add_library(wlx-listerine-colorizer SHARED
 target_link_libraries(wlx-listerine-colorizer PRIVATE
     wlx-core
     colorizer-core
+    tomlplusplus::tomlplusplus
     shell32
     dwmapi
     uxtheme

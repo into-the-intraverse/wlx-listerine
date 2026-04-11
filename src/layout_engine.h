@@ -66,6 +66,19 @@ struct LayoutBlock {
     std::wstring bullet_text;
     D2D1_POINT_2F bullet_pos = {};
     uint32_t bullet_color = 0;
+
+    // Whitespace markers (positions relative to text run origin)
+    struct WhitespaceMarker {
+        float x = 0;         // x position relative to text run left
+        float y = 0;         // y position relative to text run top
+        bool is_tab = false;
+    };
+    std::vector<WhitespaceMarker> ws_markers;
+    uint32_t ws_marker_color = 0;
+
+    // Indent guides (x positions for vertical lines spanning this block)
+    std::vector<float> indent_guides;  // absolute x positions
+    uint32_t indent_guide_color = 0;
 };
 
 struct LayoutDocument {
