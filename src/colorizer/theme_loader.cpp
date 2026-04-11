@@ -21,6 +21,19 @@ SyntaxPalette SyntaxPalette::defaults(bool dark_mode) {
         pal.variable    = 0x001080;
         pal.punctuation = 0x000000;
         pal.plain       = 0x1F2328;
+        // New scopes (light)
+        pal.constant_builtin = 0x0000FF;
+        pal.function_builtin = 0x795E26;
+        pal.function_call    = 0x795E26;
+        pal.string_escape    = 0xEE0000;
+        pal.string_special   = 0x811F3F;
+        pal.boolean_lit      = 0x0000FF;
+        pal.tag              = 0x800000;
+        pal.tag_delimiter    = 0x800000;
+        pal.attribute        = 0xFF0000;
+        pal.constructor      = 0x267F99;
+        pal.property         = 0x001080;
+        pal.label            = 0x001080;
     } else {
         pal.keyword     = 0xC586C0;
         pal.keyword2    = 0x569CD6;
@@ -35,6 +48,19 @@ SyntaxPalette SyntaxPalette::defaults(bool dark_mode) {
         pal.variable    = 0x9CDCFE;
         pal.punctuation = 0xD4D4D4;
         pal.plain       = 0xD4D4D4;
+        // New scopes (dark)
+        pal.constant_builtin = 0x569CD6;
+        pal.function_builtin = 0xDCDCAA;
+        pal.function_call    = 0xDCDCAA;
+        pal.string_escape    = 0xD7BA7D;
+        pal.string_special   = 0xD16969;
+        pal.boolean_lit      = 0x569CD6;
+        pal.tag              = 0x569CD6;
+        pal.tag_delimiter    = 0x808080;
+        pal.attribute        = 0x9CDCFE;
+        pal.constructor      = 0x4EC9B0;
+        pal.property         = 0x9CDCFE;
+        pal.label            = 0x9CDCFE;
     }
     return pal;
 }
@@ -78,6 +104,19 @@ void ThemeLoader::load_theme_file(const std::string& theme_name) const {
             read("variable",    pal.variable);
             read("punctuation", pal.punctuation);
             read("plain",       pal.plain);
+            // New scopes
+            read("constant_builtin", pal.constant_builtin);
+            read("function_builtin", pal.function_builtin);
+            read("function_call",    pal.function_call);
+            read("string_escape",    pal.string_escape);
+            read("string_special",   pal.string_special);
+            read("boolean",          pal.boolean_lit);
+            read("tag",              pal.tag);
+            read("tag_delimiter",    pal.tag_delimiter);
+            read("attribute",        pal.attribute);
+            read("constructor",      pal.constructor);
+            read("property",         pal.property);
+            read("label",            pal.label);
         };
 
         read_palette("light", data.light);

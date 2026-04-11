@@ -418,24 +418,4 @@ Scope ScopeMapper::map(const std::string& language, const std::string& node_type
     return map(for_language(language), node_type);
 }
 
-// ---------------------------------------------------------------------------
-// scope_to_color
-// ---------------------------------------------------------------------------
-uint32_t scope_to_color(Scope scope, const SyntaxPalette& palette) {
-    switch (scope) {
-        case Scope::Keyword:      return palette.keyword;
-        case Scope::Keyword2:     return palette.keyword2;
-        case Scope::Function:     return palette.function;
-        case Scope::String:       return palette.string;
-        case Scope::Number:       return palette.number;
-        case Scope::Comment:      return palette.comment;
-        case Scope::Operator:     return palette.op;
-        case Scope::Type:         return palette.type;
-        case Scope::Preprocessor: return palette.preprocessor;
-        case Scope::Namespace:    return palette.ns;
-        case Scope::Variable:     return palette.variable;
-        case Scope::Punctuation:  return palette.punctuation;
-        case Scope::Plain:        return palette.plain;
-    }
-    return palette.plain;
-}
+// scope_to_color is now in scope.cpp

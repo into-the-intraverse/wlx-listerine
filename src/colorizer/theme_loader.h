@@ -19,6 +19,20 @@ struct SyntaxPalette {
     uint32_t punctuation = 0;
     uint32_t plain = 0;
 
+    // New scopes (query-based highlighting)
+    uint32_t constant_builtin = 0;
+    uint32_t function_builtin = 0;
+    uint32_t function_call = 0;
+    uint32_t string_escape = 0;
+    uint32_t string_special = 0;
+    uint32_t boolean_lit = 0;
+    uint32_t tag = 0;
+    uint32_t tag_delimiter = 0;
+    uint32_t attribute = 0;
+    uint32_t constructor = 0;
+    uint32_t property = 0;
+    uint32_t label = 0;
+
     static SyntaxPalette defaults(bool dark_mode);
 };
 
