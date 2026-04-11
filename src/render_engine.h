@@ -53,6 +53,7 @@ private:
     void paint_copy_button(const LayoutBlock& block, int block_index, float offset_y);
     void paint_whitespace_markers(const LayoutBlock& block, float offset_y);
     void paint_indent_guides(const LayoutBlock& block, float offset_y);
+    void paint_trailing_ws(const LayoutBlock& block, float offset_y);
 
     ID2D1Factory* d2d_factory_;
     IDWriteFactory* dwrite_factory_;

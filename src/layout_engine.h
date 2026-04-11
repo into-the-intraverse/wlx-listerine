@@ -79,6 +79,11 @@ struct LayoutBlock {
     // Indent guides (x positions for vertical lines spanning this block)
     std::vector<float> indent_guides;  // absolute x positions
     uint32_t indent_guide_color = 0;
+
+    // Trailing whitespace highlight
+    bool has_trailing_ws = false;
+    D2D1_RECT_F trailing_ws_rect = {};
+    uint32_t trailing_ws_color = 0;
 };
 
 struct LayoutDocument {

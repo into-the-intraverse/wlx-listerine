@@ -381,6 +381,35 @@ LayoutDocument layout_source(IDWriteFactory* dwrite,
             }
         }
 
+        // Trailing whitespace highlight
+        if (display.highlight_trailing && text_layout && !expanded.empty()) {
+            int trailing_start = static_cast<int>(expanded.size());
+            while (trailing_start > 0 && expanded[trailing_start - 1] == L' ')
+                trailing_start--;
+
+            if (trailing_start < static_cast<int>(expanded.size())) {
+                // Get rect from trailing_start to end of line
+                BOOL is_trailing_flag = FALSE;
+                DWRITE_HIT_TEST_METRICS htm_start = {};
+                float px_start = 0, py_start = 0;
+                text_layout->HitTestTextPosition(
+                    static_cast<UINT32>(trailing_start), FALSE,
+                    &px_start, &py_start, &htm_start);
+
+                DWRITE_HIT_TEST_METRICS htm_end = {};
+                float px_end = 0, py_end = 0;
+                text_layout->HitTestTextPosition(
+                    static_cast<UINT32>(expanded.size() - 1), TRUE,
+                    &px_end, &py_end, &htm_end);
+
+                lb.has_trailing_ws = true;
+                lb.trailing_ws_rect = D2D1::RectF(
+                    lb.rect.left + px_start, lb.rect.top,
+                    lb.rect.left + px_end, lb.rect.bottom);
+                lb.trailing_ws_color = 0xFF4444; // light red
+            }
+        }
+
         // Line number bullet
         if (display.line_numbers && ln_fmt) {
             wchar_t ln_buf[16];

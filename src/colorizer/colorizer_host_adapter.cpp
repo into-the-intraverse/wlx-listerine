@@ -179,6 +179,8 @@ static void ensure_theme() {
             }
             if (auto v = tbl["display"]["show_indent_guides"].value<bool>())
                 g_display_cfg.show_indent_guides = *v;
+            if (auto v = tbl["display"]["highlight_trailing"].value<bool>())
+                g_display_cfg.highlight_trailing = *v;
         } catch (...) {
             // Parse failure — use defaults
         }

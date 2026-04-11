@@ -16,6 +16,7 @@ struct ColorizerDisplayConfig {
     float line_height_factor = 1.4f;
     ShowWhitespace show_whitespace = ShowWhitespace::Boundary;
     bool show_indent_guides = true;
+    bool highlight_trailing = true;
 };
 
 // Convert source code lines + color spans into a LayoutDocument the RenderEngine can paint.

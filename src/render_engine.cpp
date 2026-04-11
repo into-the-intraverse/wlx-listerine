@@ -200,6 +200,7 @@ void RenderEngine::paint(const LayoutDocument& layout, float scroll_y,
         if (block_top > viewport_h) continue;
 
         paint_block_background(block, 0);
+        paint_trailing_ws(block, 0);
         paint_selection_highlight(block, block_idx, 0, sel_start, sel_end);
         paint_block_decoration(block, 0);
         paint_indent_guides(block, 0);
@@ -442,6 +443,21 @@ void RenderEngine::paint_copy_button(const LayoutBlock& block, int block_index, 
         rt_->DrawRectangle(back, draw_brush, 1.0f);
         rt_->DrawRectangle(front, draw_brush, 1.0f);
     }
+}
+
+void RenderEngine::paint_trailing_ws(const LayoutBlock& block, float offset_y) {
+    if (!block.has_trailing_ws) return;
+
+    auto color = ThemeService::to_d2d_color(block.trailing_ws_color);
+    color.a = 0.25f;
+    ComPtr<ID2D1SolidColorBrush> brush;
+    if (FAILED(rt_->CreateSolidColorBrush(color, brush.GetAddressOf())) || !brush)
+        return;
+
+    D2D1_RECT_F r = block.trailing_ws_rect;
+    r.top += offset_y;
+    r.bottom += offset_y;
+    rt_->FillRectangle(&r, brush.Get());
 }
 
 void RenderEngine::paint_whitespace_markers(const LayoutBlock& block, float offset_y) {
