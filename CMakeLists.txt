@@ -19,12 +19,13 @@ add_library(wlx-core STATIC
     src/text_selection.cpp
 )
 
-target_include_directories(wlx-core PUBLIC include src)
+target_include_directories(wlx-core PUBLIC include src src/colorizer)
 target_link_libraries(wlx-core
     PUBLIC
         md4c::md4c
         d2d1
         dwrite
+        colorizer-core
     PRIVATE
         tomlplusplus::tomlplusplus
 )
@@ -57,6 +58,7 @@ add_library(wlx-listerine-md SHARED
 
 target_link_libraries(wlx-listerine-md PRIVATE
     wlx-core
+    colorizer-core
     shell32
     dwmapi
     uxtheme

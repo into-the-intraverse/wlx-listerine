@@ -49,6 +49,12 @@ struct ThemeConfig {
     SpacingConfig spacing;
     ColorPalette light;
     ColorPalette dark;
+
+    // Code highlighting
+    std::wstring code_grammar_dir = L"grammars";
+    std::wstring code_theme_dir = L"themes";
+    std::string code_default_language;  // empty = no highlighting for untagged blocks
+    std::string code_theme = "default";
 };
 
 class ThemeService {

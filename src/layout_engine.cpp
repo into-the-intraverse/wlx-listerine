@@ -1,4 +1,5 @@
 #include "layout_engine.h"
+#include "colorizer.h"
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -10,12 +11,15 @@
 
 static const float kHeadingSizes[] = {28.0f, 24.0f, 20.0f, 17.0f, 14.0f, 12.0f};
 
-LayoutEngine::LayoutEngine(IDWriteFactory* dwrite, const ThemeService& theme, bool dark_mode)
+LayoutEngine::LayoutEngine(IDWriteFactory* dwrite, const ThemeService& theme, bool dark_mode,
+                           const Colorizer* colorizer)
     : dwrite_(dwrite)
     , theme_(theme)
     , colors_(theme.palette(dark_mode))
     , spacing_(theme.spacing())
-    , fonts_(theme.fonts()) {
+    , fonts_(theme.fonts())
+    , colorizer_(colorizer)
+    , dark_mode_(dark_mode) {
     // Create cached text formats
     dwrite_->CreateTextFormat(
         fonts_.body_family.c_str(), nullptr,
@@ -515,6 +519,77 @@ void LayoutEngine::layout_code_fence(const BlockNode& node, float& y, float left
     if (wrap_code_)
         text_layout->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
 
+    // --- Syntax highlighting ---
+    std::vector<ColorRange> color_ranges;
+    if (colorizer_) {
+        std::string lang;
+        if (!node.code_language.empty()) {
+            // Convert wstring to narrow string (language tags are ASCII)
+            for (wchar_t wc : node.code_language)
+                lang += static_cast<char>(wc);
+        } else {
+            lang = theme_.config().code_default_language;
+        }
+
+        if (!lang.empty() && colorizer_->supports(lang)) {
+            // Convert wstring to UTF-8
+            std::string utf8_source;
+            for (wchar_t wc : code_text) {
+                if (wc < 0x80) {
+                    utf8_source += static_cast<char>(wc);
+                } else if (wc < 0x800) {
+                    utf8_source += static_cast<char>(0xC0 | (wc >> 6));
+                    utf8_source += static_cast<char>(0x80 | (wc & 0x3F));
+                } else {
+                    utf8_source += static_cast<char>(0xE0 | (wc >> 12));
+                    utf8_source += static_cast<char>(0x80 | ((wc >> 6) & 0x3F));
+                    utf8_source += static_cast<char>(0x80 | (wc & 0x3F));
+                }
+            }
+
+            auto cr = colorizer_->colorize(utf8_source, lang, dark_mode_);
+
+            // Build wchar offset lookup table (wchar index -> cumulative byte offset)
+            std::vector<uint32_t> wchar_to_byte;
+            uint32_t byte_pos = 0;
+            for (size_t i = 0; i < code_text.size(); i++) {
+                wchar_to_byte.push_back(byte_pos);
+                wchar_t wc = code_text[i];
+                if (wc < 0x80) byte_pos += 1;
+                else if (wc < 0x800) byte_pos += 2;
+                else byte_pos += 3;
+            }
+            wchar_to_byte.push_back(byte_pos);  // sentinel for end
+
+            // For each color span, find the wchar range
+            for (auto& span : cr.spans) {
+                uint32_t span_end = span.start + span.length;
+
+                // Find wchar start
+                uint32_t wstart = 0;
+                for (uint32_t i = 0; i < wchar_to_byte.size(); i++) {
+                    if (wchar_to_byte[i] >= span.start) {
+                        wstart = i;
+                        break;
+                    }
+                }
+
+                // Find wchar end
+                uint32_t wend = wstart;
+                for (uint32_t i = wstart; i < wchar_to_byte.size(); i++) {
+                    if (wchar_to_byte[i] >= span_end) {
+                        wend = i;
+                        break;
+                    }
+                }
+
+                if (wend > wstart) {
+                    color_ranges.push_back({wstart, wend - wstart, span.color});
+                }
+            }
+        }
+    }
+
     DWRITE_TEXT_METRICS metrics;
     text_layout->GetMetrics(&metrics);
 
@@ -533,6 +608,7 @@ void LayoutEngine::layout_code_fence(const BlockNode& node, float& y, float left
     run.layout = text_layout;
     run.color = colors_.text;
     run.is_code = true;
+    run.color_ranges = std::move(color_ranges);
     lb.text_runs.push_back(std::move(run));
 
     y += block_height + spacing_.paragraph_spacing;

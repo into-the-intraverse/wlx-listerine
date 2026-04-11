@@ -158,6 +158,16 @@ void ThemeService::load(const std::wstring& toml_path) {
         if (auto dk = tbl["colors"]["dark"].as_table())
             config_.dark = read_palette(*dk, config_.dark);
 
+        // [code]
+        if (auto v = tbl["code"]["grammar_dir"].value<std::string>())
+            config_.code_grammar_dir = utf8_to_wstring(*v);
+        if (auto v = tbl["code"]["theme_dir"].value<std::string>())
+            config_.code_theme_dir = utf8_to_wstring(*v);
+        if (auto v = tbl["code"]["default_language"].value<std::string>())
+            config_.code_default_language = *v;
+        if (auto v = tbl["code"]["theme"].value<std::string>())
+            config_.code_theme = *v;
+
     } catch (...) {
         // Parse failure or missing file -- defaults already set above
     }

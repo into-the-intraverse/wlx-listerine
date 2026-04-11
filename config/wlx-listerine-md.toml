@@ -44,3 +44,9 @@ code_bg = "#161B22"
 quote_border = "#30363D"
 rule = "#30363D"
 selection = "#1F3B5B"
+
+[code]
+grammar_dir = "grammars"
+theme_dir = "themes"
+default_language = ""
+theme = "default"

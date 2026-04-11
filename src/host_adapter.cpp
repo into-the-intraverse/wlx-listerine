@@ -26,6 +26,7 @@
 #include "interaction_engine.h"
 #include "theme_service.h"
 #include "cache_service.h"
+#include "colorizer.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -67,6 +68,7 @@ static FileService g_file_service;
 static std::unordered_map<HWND, ViewState*> g_views;
 static ATOM g_window_class = 0;
 static std::string g_default_ini_path;
+static std::unique_ptr<Colorizer> g_colorizer;
 
 // ---------- helpers ----------
 
@@ -106,6 +108,12 @@ static void ensure_theme() {
         std::wstring cfg_path = get_module_dir() + L"wlx-listerine-md.toml";
         g_theme.load(cfg_path);
         g_theme_loaded = true;
+
+        // Initialize colorizer
+        std::wstring base = get_module_dir();
+        std::wstring grammar_dir = base + g_theme.config().code_grammar_dir;
+        std::wstring theme_dir = base + g_theme.config().code_theme_dir;
+        g_colorizer = std::make_unique<Colorizer>(grammar_dir, theme_dir);
     }
 }
 
@@ -138,7 +146,7 @@ static void do_layout(ViewState* vs) {
     lk.viewport_width_bucket = CacheService::bucket_width(static_cast<int>(viewport_width));
     lk.theme_hash = g_theme.theme_hash();
 
-    LayoutEngine engine(g_dwrite_factory.Get(), g_theme, vs->dark_mode);
+    LayoutEngine engine(g_dwrite_factory.Get(), g_theme, vs->dark_mode, g_colorizer.get());
     auto layout = std::make_shared<LayoutDocument>(engine.layout(*vs->document, viewport_width, vs->wrap_text));
 
     vs->layout = layout;
@@ -668,6 +676,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {
         (void)new ComPtr<ID2D1Factory>(std::move(g_d2d_factory));
         (void)new ComPtr<IDWriteFactory>(std::move(g_dwrite_factory));
         (void)new CacheService(std::move(g_cache));
+        (void)new std::unique_ptr<Colorizer>(std::move(g_colorizer));
         // ViewState* raw pointers in g_views are intentionally leaked —
         // their RenderEngine/LayoutDocument COM objects must not Release().
         g_views.clear();
