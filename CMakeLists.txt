@@ -114,6 +114,11 @@ add_custom_command(TARGET wlx-listerine-colorizer POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/config/themes/default.toml"
         "${CMAKE_SOURCE_DIR}/output/themes/default.toml"
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${CMAKE_SOURCE_DIR}/output/grammars"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+        "${CMAKE_SOURCE_DIR}/grammars"
+        "${CMAKE_SOURCE_DIR}/output/grammars"
 )
 
 # --- Screenshot tool ---
