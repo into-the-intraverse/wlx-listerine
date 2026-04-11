@@ -21,6 +21,7 @@
 #include "layout_engine.h"
 #include "render_engine.h"
 #include "theme_service.h"
+#include "colorizer.h"
 
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
@@ -211,6 +212,11 @@ int main(int argc, char* argv[]) {
         ThemeService theme;
         theme.load(opts.config_path);
 
+        // Initialize colorizer for code fence highlighting
+        // Grammar/theme dirs are relative to CWD (matching plugin behavior where they're
+        // relative to the module directory, which is typically where the tool runs from)
+        Colorizer colorizer(theme.config().code_grammar_dir, theme.config().code_theme_dir);
+
         double t_theme = now_ms();
 
         // Read and parse markdown
@@ -229,7 +235,7 @@ int main(int argc, char* argv[]) {
         double t_parse = now_ms();
 
         // Layout
-        LayoutEngine layout_engine(dwrite_factory.Get(), theme, opts.dark);
+        LayoutEngine layout_engine(dwrite_factory.Get(), theme, opts.dark, &colorizer);
         float viewport_width = static_cast<float>(opts.width);
         auto layout = layout_engine.layout(doc, viewport_width);
 
