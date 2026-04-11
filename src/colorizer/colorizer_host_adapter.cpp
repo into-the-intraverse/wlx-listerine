@@ -53,6 +53,9 @@ struct ColorViewState {
     // Triple-click detection
     DWORD last_dblclk_time = 0;
     int last_dblclk_block = -1;
+
+    // Cursor
+    HCURSOR cursor = nullptr;
 };
 
 // ---------- globals ----------
@@ -459,7 +462,7 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
             else
                 KillTimer(hwnd, TIMER_AUTOSCROLL);
         } else {
-            // I-beam cursor over text
+            // Track cursor type for WM_SETCURSOR
             float px = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(GET_X_LPARAM(lp)))
                                     : static_cast<float>(GET_X_LPARAM(lp));
             float py = vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(GET_Y_LPARAM(lp)))
@@ -474,7 +477,8 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
                     break;
                 }
             }
-            SetCursor(LoadCursorW(nullptr, over_text ? IDC_IBEAM : IDC_ARROW));
+            vs->cursor = LoadCursorW(nullptr, over_text ? IDC_IBEAM : IDC_ARROW);
+            SetCursor(vs->cursor);
         }
         return 0;
     }
@@ -646,7 +650,7 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
 
     case WM_SETCURSOR:
         if (LOWORD(lp) == HTCLIENT) {
-            SetCursor(LoadCursorW(nullptr, IDC_ARROW));
+            SetCursor(vs && vs->cursor ? vs->cursor : LoadCursorW(nullptr, IDC_ARROW));
             return TRUE;
         }
         break;
