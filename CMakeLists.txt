@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(wlx-listerine LANGUAGES C CXX)
 
+set(WLX_VERSION "dev" CACHE STRING "Plugin version string, overridden by CI")
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -71,6 +73,8 @@ set_target_properties(wlx-listerine-md PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/output"
 )
 
+target_compile_definitions(wlx-listerine-md PRIVATE WLX_VERSION_STRING="${WLX_VERSION}")
+
 add_custom_command(TARGET wlx-listerine-md POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/config/wlx-listerine-md.toml"
@@ -105,6 +109,8 @@ set_target_properties(wlx-listerine-colorizer PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/output"
     LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/output"
 )
+
+target_compile_definitions(wlx-listerine-colorizer PRIVATE WLX_VERSION_STRING="${WLX_VERSION}")
 
 add_custom_command(TARGET wlx-listerine-colorizer POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
