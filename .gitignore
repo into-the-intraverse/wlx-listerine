@@ -9,6 +9,7 @@ test_data/cases/*.png
 !test_data/cases/*_chrome.png
 node_modules/
 bun.lockb
+bun.lock
 
 # Grammar DLLs (built artifacts, not committed)
 grammars/
