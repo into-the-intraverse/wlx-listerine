@@ -35,7 +35,9 @@ jobs:
         run: cmake --build --preset conan-release
 
       - name: Run unit tests
-        run: ./build/Release/tests.exe
+        run: |
+          ./build/Release/tests.exe
+          ./build/Release/colorizer-tests.exe
 
       - name: Install Cascadia Code font
         shell: pwsh
