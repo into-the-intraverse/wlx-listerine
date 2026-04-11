@@ -24,6 +24,7 @@
 #include "file_service.h"
 #include "render_engine.h"
 #include "theme_service.h"
+#include "string_util.h"
 #include "colorizer.h"
 #include "colorizer_layout.h"
 
@@ -44,6 +45,11 @@ struct ColorViewState {
 
     float scroll_y = 0;
     float max_scroll_y = 0;
+
+    // Cached file content (avoids re-reading on resize)
+    std::wstring cached_text;
+    std::string cached_raw_utf8;
+    ColorizeResult cached_colors;
 
     // Selection
     TextPosition sel_anchor;
@@ -88,7 +94,7 @@ static const struct { const wchar_t* ext; const char* lang; } kExtLangMap[] = {
     { L"rs",          "rust"       },
     { L"go",          "go"         },
     { L"java",        "java"       },
-    { L"cs",          "c_sharp"    },
+    { L"cs",          "c-sharp"    },
     { L"rb",          "ruby"       },
     { L"php",         "php"        },
     { L"lua",         "lua"        },
@@ -158,17 +164,7 @@ static void ensure_theme() {
 
         // Parse [display] section — ThemeService doesn't know about it
         try {
-            std::string utf8_path;
-            {
-                int len = WideCharToMultiByte(CP_UTF8, 0, cfg_path.c_str(),
-                    static_cast<int>(cfg_path.size()), nullptr, 0, nullptr, nullptr);
-                if (len > 0) {
-                    utf8_path.resize(static_cast<size_t>(len));
-                    WideCharToMultiByte(CP_UTF8, 0, cfg_path.c_str(),
-                        static_cast<int>(cfg_path.size()), utf8_path.data(), len, nullptr, nullptr);
-                }
-            }
-            auto tbl = toml::parse_file(utf8_path);
+            auto tbl = toml::parse_file(wstring_to_utf8(cfg_path));
             if (auto v = tbl["display"]["line_numbers"].value<bool>())
                 g_display_cfg.line_numbers = *v;
             if (auto v = tbl["display"]["word_wrap"].value<bool>())
@@ -237,33 +233,29 @@ static void load_document(ColorViewState* vs, const wchar_t* path) {
     auto content = g_file_service.read(path);
     if (!content) {
         vs->layout.reset();
+        vs->cached_text.clear();
+        vs->cached_raw_utf8.clear();
+        vs->cached_colors = {};
         update_scrollbar(vs);
         return;
     }
 
+    vs->cached_text = content->text;
+    vs->cached_raw_utf8 = content->raw_utf8;
+
     std::string language = ext_to_language(vs->file_path);
-    ColorizeResult colors;
+    vs->cached_colors = {};
     if (!language.empty() && g_colorizer && g_colorizer->supports(language)) {
-        colors = g_colorizer->colorize(content->raw_utf8, language, vs->dark_mode);
+        vs->cached_colors = g_colorizer->colorize(vs->cached_raw_utf8, language, vs->dark_mode);
     }
 
-    do_layout(vs, content->text, content->raw_utf8, colors);
+    do_layout(vs, vs->cached_text, vs->cached_raw_utf8, vs->cached_colors);
     InvalidateRect(vs->hwnd, nullptr, FALSE);
 }
 
 static void relayout(ColorViewState* vs) {
-    if (vs->file_path.empty()) return;
-    // Re-read to get colors (we don't cache; acceptable for a simple plugin)
-    auto content = g_file_service.read(vs->file_path.c_str());
-    if (!content) return;
-
-    std::string language = ext_to_language(vs->file_path);
-    ColorizeResult colors;
-    if (!language.empty() && g_colorizer && g_colorizer->supports(language)) {
-        colors = g_colorizer->colorize(content->raw_utf8, language, vs->dark_mode);
-    }
-
-    do_layout(vs, content->text, content->raw_utf8, colors);
+    if (vs->cached_text.empty() && vs->file_path.empty()) return;
+    do_layout(vs, vs->cached_text, vs->cached_raw_utf8, vs->cached_colors);
 }
 
 // ---------- scroll helper ----------
@@ -819,7 +811,13 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
             vs->dark_mode = new_dark;
             vs->renderer->set_dark_mode(new_dark);
             apply_dark_mode(vs->hwnd, new_dark);
-            relayout(vs);
+            // Re-colorize with new palette (no file re-read)
+            std::string language = ext_to_language(vs->file_path);
+            vs->cached_colors = {};
+            if (!language.empty() && g_colorizer && g_colorizer->supports(language)) {
+                vs->cached_colors = g_colorizer->colorize(vs->cached_raw_utf8, language, vs->dark_mode);
+            }
+            do_layout(vs, vs->cached_text, vs->cached_raw_utf8, vs->cached_colors);
             InvalidateRect(vs->hwnd, nullptr, FALSE);
         }
         return LISTPLUGIN_OK;

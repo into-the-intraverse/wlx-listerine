@@ -120,7 +120,7 @@ std::pair<int, int> find_word_boundaries(const std::wstring& text, int offset);
 class LayoutEngine {
 public:
     LayoutEngine(IDWriteFactory* dwrite, const ThemeService& theme, bool dark_mode,
-                 const Colorizer* colorizer = nullptr);
+                 Colorizer* colorizer = nullptr);
 
     LayoutDocument layout(const Document& doc, float viewport_width, bool wrap_code = false);
 
@@ -164,7 +164,7 @@ private:
     const ColorPalette& colors_;
     const SpacingConfig& spacing_;
     const FontConfig& fonts_;
-    const Colorizer* colorizer_;
+    Colorizer* colorizer_;
     bool dark_mode_;
 
     LayoutDocument result_;

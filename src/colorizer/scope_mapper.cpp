@@ -381,33 +381,41 @@ static const std::unordered_map<std::string, std::unordered_set<std::string>> g_
 };
 
 // ---------------------------------------------------------------------------
-// ScopeMapper::map
+// ScopeMapper::for_language — look up keyword sets once per file
+// ---------------------------------------------------------------------------
+LanguageContext ScopeMapper::for_language(const std::string& language) {
+    LanguageContext ctx;
+    auto kw_it = g_keywords.find(language);
+    if (kw_it != g_keywords.end())
+        ctx.keywords = &kw_it->second;
+    auto tkw_it = g_type_keywords.find(language);
+    if (tkw_it != g_type_keywords.end())
+        ctx.type_keywords = &tkw_it->second;
+    return ctx;
+}
+
+// ---------------------------------------------------------------------------
+// ScopeMapper::map (with pre-resolved context)
+// ---------------------------------------------------------------------------
+Scope ScopeMapper::map(const LanguageContext& ctx, const std::string& node_type) {
+    if (ctx.keywords && ctx.keywords->count(node_type))
+        return Scope::Keyword;
+
+    if (ctx.type_keywords && ctx.type_keywords->count(node_type))
+        return Scope::Keyword2;
+
+    auto gen_it = g_generic_map.find(node_type);
+    if (gen_it != g_generic_map.end())
+        return gen_it->second;
+
+    return Scope::Plain;
+}
+
+// ---------------------------------------------------------------------------
+// ScopeMapper::map (convenience overload)
 // ---------------------------------------------------------------------------
 Scope ScopeMapper::map(const std::string& language, const std::string& node_type) {
-    // 1. Language-specific keywords (Keyword)
-    auto kw_it = g_keywords.find(language);
-    if (kw_it != g_keywords.end()) {
-        if (kw_it->second.count(node_type)) {
-            return Scope::Keyword;
-        }
-    }
-
-    // 2. Language-specific type keywords (Keyword2)
-    auto tkw_it = g_type_keywords.find(language);
-    if (tkw_it != g_type_keywords.end()) {
-        if (tkw_it->second.count(node_type)) {
-            return Scope::Keyword2;
-        }
-    }
-
-    // 3. Generic node-type map
-    auto gen_it = g_generic_map.find(node_type);
-    if (gen_it != g_generic_map.end()) {
-        return gen_it->second;
-    }
-
-    // 4. Fallback
-    return Scope::Plain;
+    return map(for_language(language), node_type);
 }
 
 // ---------------------------------------------------------------------------

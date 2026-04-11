@@ -24,18 +24,19 @@ void Colorizer::set_language_theme(const std::string& language, const std::strin
 
 ColorizeResult Colorizer::colorize(const std::string& source,
                                    const std::string& language,
-                                   bool dark_mode) const {
+                                   bool dark_mode) {
     ColorizeResult result;
 
-    auto* grammar = const_cast<GrammarRegistry*>(grammar_registry_.get())->get_grammar(language);
+    auto* grammar = grammar_registry_->get_grammar(language);
     if (!grammar) return result;
 
     auto token_spans = Tokenizer::tokenize(grammar, source);
     auto palette = theme_loader_->palette_for(language, dark_mode);
+    auto lang_ctx = ScopeMapper::for_language(language);
 
     result.spans.reserve(token_spans.size());
     for (auto& ts : token_spans) {
-        Scope scope = ScopeMapper::map(language, ts.node_type);
+        Scope scope = ScopeMapper::map(lang_ctx, ts.node_type);
         uint32_t color = scope_to_color(scope, palette);
 
         ColorSpan cs;

@@ -12,7 +12,7 @@
 static const float kHeadingSizes[] = {28.0f, 24.0f, 20.0f, 17.0f, 14.0f, 12.0f};
 
 LayoutEngine::LayoutEngine(IDWriteFactory* dwrite, const ThemeService& theme, bool dark_mode,
-                           const Colorizer* colorizer)
+                           Colorizer* colorizer)
     : dwrite_(dwrite)
     , theme_(theme)
     , colors_(theme.palette(dark_mode))

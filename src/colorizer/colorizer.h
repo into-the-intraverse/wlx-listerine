@@ -25,7 +25,7 @@ public:
 
     ColorizeResult colorize(const std::string& source,
                             const std::string& language,
-                            bool dark_mode) const;
+                            bool dark_mode);
 
     bool supports(const std::string& language) const;
     std::vector<std::string> available_languages() const;
