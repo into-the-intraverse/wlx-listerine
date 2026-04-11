@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Colorifier Rendering Options</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Segoe UI", sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 40px; }
+  h1 { text-align: center; margin-bottom: 10px; font-size: 22px; color: #fff; }
+  .subtitle { text-align: center; color: #888; margin-bottom: 40px; font-size: 14px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 30px; max-width: 1400px; margin: 0 auto; }
+  .option { border: 1px solid #333; border-radius: 10px; overflow: hidden; }
+  .option-header { padding: 14px 20px; background: #16213e; border-bottom: 1px solid #333; }
+  .option-header h2 { font-size: 15px; color: #e0e0e0; }
+  .option-header p { font-size: 12px; color: #888; margin-top: 4px; }
+  .option-body { padding: 0; }
+
+  /* A: Plain colored text */
+  .plain-view {
+    background: #1e1e1e;
+    font-family: "Cascadia Code", "Consolas", monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    padding: 0;
+  }
+  .plain-view .line {
+    display: flex;
+    padding: 0 16px 0 0;
+  }
+  .plain-view .line:hover { background: #2a2a2a; }
+  .plain-view .line-no {
+    display: inline-block;
+    width: 45px;
+    text-align: right;
+    padding-right: 12px;
+    color: #555;
+    user-select: none;
+    border-right: 1px solid #333;
+    margin-right: 12px;
+    flex-shrink: 0;
+  }
+  .plain-view .line-content { white-space: pre; }
+
+  /* B: Rich styled (like md plugin code blocks) */
+  .rich-view {
+    background: #0d1117;
+    padding: 20px;
+  }
+  .rich-code {
+    background: #161b22;
+    border-radius: 8px;
+    padding: 16px 20px;
+    font-family: "Cascadia Code", "Consolas", monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    border: 1px solid #30363d;
+  }
+  .rich-code .lang-badge {
+    display: inline-block;
+    font-family: "Segoe UI", sans-serif;
+    font-size: 11px;
+    color: #8b949e;
+    background: #21262d;
+    border-radius: 4px;
+    padding: 2px 8px;
+    margin-bottom: 12px;
+  }
+  .rich-code pre { white-space: pre; margin: 0; }
+
+  /* C: Configurable */
+  .config-view {
+    background: #1e1e1e;
+    font-family: "Cascadia Code", "Consolas", monospace;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .config-toolbar {
+    display: flex;
+    gap: 12px;
+    padding: 8px 12px;
+    background: #252526;
+    border-bottom: 1px solid #333;
+    font-family: "Segoe UI", sans-serif;
+    font-size: 11px;
+    color: #888;
+    align-items: center;
+  }
+  .config-toolbar label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+  .config-toolbar input[type="checkbox"] { accent-color: #569cd6; }
+  .config-body { padding: 0; }
+  .config-body .line { display: flex; padding: 0 16px 0 0; }
+  .config-body .line-no {
+    display: inline-block;
+    width: 45px;
+    text-align: right;
+    padding-right: 12px;
+    color: #555;
+    border-right: 1px solid #333;
+    margin-right: 12px;
+    flex-shrink: 0;
+  }
+  .config-body .line-content { white-space: pre; }
+  .minimap {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 60px;
+    background: #1a1a1a;
+    border-left: 1px solid #333;
+  }
+
+  /* Syntax colors (shared) */
+  .kw { color: #c586c0; }        /* keyword */
+  .kw2 { color: #569cd6; }       /* keyword2 (type, const) */
+  .fn { color: #dcdcaa; }        /* function */
+  .str { color: #ce9178; }       /* string */
+  .num { color: #b5cea8; }       /* number */
+  .cmt { color: #6a9955; }       /* comment */
+  .op { color: #d4d4d4; }        /* operator */
+  .type { color: #4ec9b0; }      /* type name */
+  .inc { color: #c586c0; }       /* preprocessor */
+  .hdr { color: #ce9178; }       /* header string */
+  .pp { color: #569cd6; }        /* preprocessor keyword */
+  .plain { color: #d4d4d4; }     /* plain text */
+  .par { color: #ffd700; }       /* parentheses */
+  .mac { color: #569cd6; }       /* macro */
+  .ns { color: #4ec9b0; }        /* namespace */
+
+  .tag { display: inline-block; font-family: "Segoe UI", sans-serif; font-size: 11px;
+         padding: 3px 10px; border-radius: 12px; margin-top: 8px; }
+  .tag-rec { background: #1a4731; color: #4ade80; }
+  .tag-alt { background: #3b2f1a; color: #fbbf24; }
+</style>
+</head>
+<body>
+
+<h1>wlx-listerine-color: Rendering Options</h1>
+<p class="subtitle">How should the standalone syntax colorifier look?</p>
+
+<div class="grid">
+
+  <!-- Option A: Plain -->
+  <div class="option">
+    <div class="option-header">
+      <h2>A) Plain colored text</h2>
+      <p>Minimal. Line numbers + syntax colors. No decoration.</p>
+    </div>
+    <div class="option-body plain-view">
+      <div class="line"><span class="line-no">1</span><span class="line-content"><span class="inc">#include</span> <span class="hdr">&lt;stdio.h&gt;</span></span></div>
+      <div class="line"><span class="line-no">2</span><span class="line-content"><span class="inc">#include</span> <span class="hdr">&lt;stdlib.h&gt;</span></span></div>
+      <div class="line"><span class="line-no">3</span><span class="line-content"></span></div>
+      <div class="line"><span class="line-no">4</span><span class="line-content"><span class="cmt">// Fibonacci sequence</span></span></div>
+      <div class="line"><span class="line-no">5</span><span class="line-content"><span class="kw2">int</span> <span class="fn">fibonacci</span><span class="par">(</span><span class="kw2">int</span> <span class="plain">n</span><span class="par">)</span> <span class="par">{</span></span></div>
+      <div class="line"><span class="line-no">6</span><span class="line-content">    <span class="kw">if</span> <span class="par">(</span><span class="plain">n</span> <span class="op">&lt;=</span> <span class="num">1</span><span class="par">)</span></span></div>
+      <div class="line"><span class="line-no">7</span><span class="line-content">        <span class="kw">return</span> <span class="plain">n</span><span class="op">;</span></span></div>
+      <div class="line"><span class="line-no">8</span><span class="line-content">    <span class="kw">return</span> <span class="fn">fibonacci</span><span class="par">(</span><span class="plain">n</span> <span class="op">-</span> <span class="num">1</span><span class="par">)</span> <span class="op">+</span> <span class="fn">fibonacci</span><span class="par">(</span><span class="plain">n</span> <span class="op">-</span> <span class="num">2</span><span class="par">)</span><span class="op">;</span></span></div>
+      <div class="line"><span class="line-no">9</span><span class="line-content"><span class="par">}</span></span></div>
+      <div class="line"><span class="line-no">10</span><span class="line-content"></span></div>
+      <div class="line"><span class="line-no">11</span><span class="line-content"><span class="kw2">int</span> <span class="fn">main</span><span class="par">(</span><span class="kw2">void</span><span class="par">)</span> <span class="par">{</span></span></div>
+      <div class="line"><span class="line-no">12</span><span class="line-content">    <span class="kw">for</span> <span class="par">(</span><span class="kw2">int</span> <span class="plain">i</span> <span class="op">=</span> <span class="num">0</span><span class="op">;</span> <span class="plain">i</span> <span class="op">&lt;</span> <span class="num">10</span><span class="op">;</span> <span class="plain">i</span><span class="op">++</span><span class="par">)</span></span></div>
+      <div class="line"><span class="line-no">13</span><span class="line-content">        <span class="fn">printf</span><span class="par">(</span><span class="str">"%d\n"</span><span class="op">,</span> <span class="fn">fibonacci</span><span class="par">(</span><span class="plain">i</span><span class="par">)</span><span class="par">)</span><span class="op">;</span></span></div>
+      <div class="line"><span class="line-no">14</span><span class="line-content">    <span class="kw">return</span> <span class="num">0</span><span class="op">;</span></span></div>
+      <div class="line"><span class="line-no">15</span><span class="line-content"><span class="par">}</span></span></div>
+    </div>
+  </div>
+
+  <!-- Option B: Rich styled -->
+  <div class="option">
+    <div class="option-header">
+      <h2>B) Rich styled (md-plugin consistent)</h2>
+      <p>Rounded background, padding, lang badge. Matches code blocks in md renderer.</p>
+    </div>
+    <div class="option-body rich-view">
+      <div class="rich-code">
+        <div class="lang-badge">C</div>
+        <pre><span class="inc">#include</span> <span class="hdr">&lt;stdio.h&gt;</span>
+<span class="inc">#include</span> <span class="hdr">&lt;stdlib.h&gt;</span>
+
+<span class="cmt">// Fibonacci sequence</span>
+<span class="kw2">int</span> <span class="fn">fibonacci</span><span class="par">(</span><span class="kw2">int</span> <span class="plain">n</span><span class="par">)</span> <span class="par">{</span>
+    <span class="kw">if</span> <span class="par">(</span><span class="plain">n</span> <span class="op">&lt;=</span> <span class="num">1</span><span class="par">)</span>
+        <span class="kw">return</span> <span class="plain">n</span><span class="op">;</span>
+    <span class="kw">return</span> <span class="fn">fibonacci</span><span class="par">(</span><span class="plain">n</span> <span class="op">-</span> <span class="num">1</span><span class="par">)</span> <span class="op">+</span> <span class="fn">fibonacci</span><span class="par">(</span><span class="plain">n</span> <span class="op">-</span> <span class="num">2</span><span class="par">)</span><span class="op">;</span>
+<span class="par">}</span>
+
+<span class="kw2">int</span> <span class="fn">main</span><span class="par">(</span><span class="kw2">void</span><span class="par">)</span> <span class="par">{</span>
+    <span class="kw">for</span> <span class="par">(</span><span class="kw2">int</span> <span class="plain">i</span> <span class="op">=</span> <span class="num">0</span><span class="op">;</span> <span class="plain">i</span> <span class="op">&lt;</span> <span class="num">10</span><span class="op">;</span> <span class="plain">i</span><span class="op">++</span><span class="par">)</span>
+        <span class="fn">printf</span><span class="par">(</span><span class="str">"%d\n"</span><span class="op">,</span> <span class="fn">fibonacci</span><span class="par">(</span><span class="plain">i</span><span class="par">)</span><span class="par">)</span><span class="op">;</span>
+    <span class="kw">return</span> <span class="num">0</span><span class="op">;</span>
+<span class="par">}</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option C: Configurable -->
+  <div class="option">
+    <div class="option-header">
+      <h2>C) Configurable via TOML</h2>
+      <p>User toggles line numbers, background style, etc. in config.</p>
+    </div>
+    <div class="option-body config-view">
+      <div class="config-toolbar">
+        <label><input type="checkbox" checked disabled> line_numbers</label>
+        <label><input type="checkbox" checked disabled> word_wrap</label>
+        <label><input type="checkbox" disabled> minimap</label>
+        <span style="margin-left:auto; color:#569cd6;">wlx-listerine-color.toml</span>
+      </div>
+      <div class="config-body">
+        <div class="line"><span class="line-no">1</span><span class="line-content"><span class="inc">#include</span> <span class="hdr">&lt;stdio.h&gt;</span></span></div>
+        <div class="line"><span class="line-no">2</span><span class="line-content"><span class="inc">#include</span> <span class="hdr">&lt;stdlib.h&gt;</span></span></div>
+        <div class="line"><span class="line-no">3</span><span class="line-content"></span></div>
+        <div class="line"><span class="line-no">4</span><span class="line-content"><span class="cmt">// Fibonacci sequence</span></span></div>
+        <div class="line"><span class="line-no">5</span><span class="line-content"><span class="kw2">int</span> <span class="fn">fibonacci</span><span class="par">(</span><span class="kw2">int</span> <span class="plain">n</span><span class="par">)</span> <span class="par">{</span></span></div>
+        <div class="line"><span class="line-no">6</span><span class="line-content">    <span class="kw">if</span> <span class="par">(</span><span class="plain">n</span> <span class="op">&lt;=</span> <span class="num">1</span><span class="par">)</span></span></div>
+        <div class="line"><span class="line-no">7</span><span class="line-content">        <span class="kw">return</span> <span class="plain">n</span><span class="op">;</span></span></div>
+        <div class="line"><span class="line-no">8</span><span class="line-content">    <span class="kw">return</span> <span class="fn">fibonacci</span><span class="par">(</span><span class="plain">n</span> <span class="op">-</span> <span class="num">1</span><span class="par">)</span> <span class="op">+</span> <span class="fn">fibonacci</span><span class="par">(</span><span class="plain">n</span> <span class="op">-</span> <span class="num">2</span><span class="par">)</span><span class="op">;</span></span></div>
+        <div class="line"><span class="line-no">9</span><span class="line-content"><span class="par">}</span></span></div>
+        <div class="line"><span class="line-no">10</span><span class="line-content"></span></div>
+        <div class="line"><span class="line-no">11</span><span class="line-content"><span class="kw2">int</span> <span class="fn">main</span><span class="par">(</span><span class="kw2">void</span><span class="par">)</span> <span class="par">{</span></span></div>
+        <div class="line"><span class="line-no">12</span><span class="line-content">    <span class="kw">for</span> <span class="par">(</span><span class="kw2">int</span> <span class="plain">i</span> <span class="op">=</span> <span class="num">0</span><span class="op">;</span> <span class="plain">i</span> <span class="op">&lt;</span> <span class="num">10</span><span class="op">;</span> <span class="plain">i</span><span class="op">++</span><span class="par">)</span></span></div>
+        <div class="line"><span class="line-no">13</span><span class="line-content">        <span class="fn">printf</span><span class="par">(</span><span class="str">"%d\n"</span><span class="op">,</span> <span class="fn">fibonacci</span><span class="par">(</span><span class="plain">i</span><span class="par">)</span><span class="par">)</span><span class="op">;</span></span></div>
+        <div class="line"><span class="line-no">14</span><span class="line-content">    <span class="kw">return</span> <span class="num">0</span><span class="op">;</span></span></div>
+        <div class="line"><span class="line-no">15</span><span class="line-content"><span class="par">}</span></span></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div style="text-align:center; margin-top: 30px;">
+  <span class="tag tag-rec">Recommended: A for standalone, B for md integration</span>
+</div>
+
+</body>
+</html>
