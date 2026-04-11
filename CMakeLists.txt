@@ -75,6 +75,11 @@ add_custom_command(TARGET wlx-listerine-md POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/config/wlx-listerine-md.toml"
         "${CMAKE_SOURCE_DIR}/output/wlx-listerine-md.toml"
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${CMAKE_SOURCE_DIR}/output/themes"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/config/themes/default.toml"
+        "${CMAKE_SOURCE_DIR}/output/themes/default.toml"
 )
 
 # --- Colorizer Plugin DLL ---

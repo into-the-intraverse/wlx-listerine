@@ -9,6 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Plugins
 
 - **wlx-listerine-md** (`wlx-listerine-md.wlx64`) — Markdown renderer
+- **wlx-listerine-colorizer** (`wlx-listerine-colorizer.wlx64`) — Syntax colorizer (tree-sitter based)
 
 ## Build
 
@@ -42,6 +43,10 @@ HostAdapter (host_adapter.cpp)         WLX exports, WndProc, scroll, D2D/DWrite 
 
 **Per-window state** (`ViewState` in host_adapter.cpp) stored in `g_views` map. Holds Document, LayoutDocument, RenderEngine, InteractionEngine, scroll state.
 
+### colorizer-core (static lib)
+
+Syntax highlighting engine used by both the colorizer and md plugins (for code blocks). Components: `GrammarRegistry` (loads tree-sitter grammars), `Tokenizer` (produces token stream from AST), `ScopeMapper` (maps token scopes to theme colors), `ThemeLoader` (parses TOML color themes). Input: source code + grammar; output: token + color pairs for rendering.
+
 ## WLX exports (Unicode-only)
 
 `ListLoadW`, `ListLoadNextW`, `ListCloseWindow`, `ListGetDetectString`, `ListSendCommand`, `ListSetDefaultParams`. Defined in `plugin.def`. API constants in `include/listerplugin.h`.
@@ -56,7 +61,7 @@ HostAdapter (host_adapter.cpp)         WLX exports, WndProc, scroll, D2D/DWrite 
 
 ## Tests
 
-86 tests via doctest in `tests/`. Coverage: document model construction, theme/config TOML parsing, file encoding detection, markdown-to-AST conversion (30+ cases), cache hit/miss/bucketing, layout engine block positioning with real IDWriteFactory.
+86 tests via doctest in `tests/` (markdown plugin). Coverage: document model construction, theme/config TOML parsing, file encoding detection, markdown-to-AST conversion (30+ cases), cache hit/miss/bucketing, layout engine block positioning with real IDWriteFactory. Colorizer tests in `colorizer-tests` covering grammar registry, tokenization, scope mapping, and theme loading.
 
 ## Visual Regression Tests
 
