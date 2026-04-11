@@ -1,0 +1,127 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install Conan
+        run: |
+          uv pip install conan
+          conan profile detect
+
+      - name: Install C++ dependencies
+        run: conan install . --output-folder=build --build=missing -s build_type=Release
+
+      - name: Configure CMake
+        run: cmake --preset conan-default -DWLX_VERSION=${{ steps.version.outputs.version }}
+
+      - name: Build
+        run: cmake --build --preset conan-release
+
+      - name: Run unit tests
+        run: |
+          ./build/Release/tests.exe
+          ./build/Release/colorizer-tests.exe
+
+      - name: Install Cascadia Code font
+        shell: pwsh
+        run: |
+          $url = "https://github.com/microsoft/cascadia-code/releases/download/v2404.23/CascadiaCode-2404.23.zip"
+          Invoke-WebRequest -Uri $url -OutFile cascadia.zip
+          Expand-Archive cascadia.zip -DestinationPath cascadia
+          $shell = New-Object -ComObject Shell.Application
+          $fonts = $shell.Namespace(0x14)
+          Get-ChildItem cascadia/ttf/static/*.ttf | ForEach-Object {
+              Copy-Item $_.FullName "$env:LOCALAPPDATA\Microsoft\Windows\Fonts\" -Force
+              New-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts" `
+                  -Name $_.BaseName -Value $_.FullName -PropertyType String -Force | Out-Null
+          }
+
+      - name: Run visual regression tests
+        shell: bash
+        run: ./scripts/visual-test.sh
+
+      - name: Package md plugin ZIP
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $staging = "staging/wlx-listerine-md"
+          New-Item -ItemType Directory -Path $staging -Force
+
+          Copy-Item "config/pluginst-md.inf" "$staging/pluginst.inf"
+          Copy-Item "output/wlx-listerine-md.wlx64" "$staging/"
+
+          $header = @"
+          # wlx-listerine-md configuration
+          # Rename this file to wlx-listerine-md.toml to customize.
+          # All values shown are the built-in defaults.
+          # The plugin works without this file — only create it to override specific settings.
+
+          "@
+          $config = Get-Content "config/wlx-listerine-md.toml" -Raw
+          Set-Content -Path "$staging/wlx-listerine-md.toml.sample" -Value ($header + $config) -NoNewline
+
+          Compress-Archive -Path "$staging/*" -DestinationPath "wlx-listerine-md-$version.zip"
+
+      - name: Package colorizer plugin ZIP
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $staging = "staging/wlx-listerine-colorizer"
+          New-Item -ItemType Directory -Path $staging -Force
+
+          Copy-Item "config/pluginst-colorizer.inf" "$staging/pluginst.inf"
+          Copy-Item "output/wlx-listerine-colorizer.wlx64" "$staging/"
+
+          $header = @"
+          # wlx-listerine-colorizer configuration
+          # Rename this file to wlx-listerine-colorizer.toml to customize.
+          # All values shown are the built-in defaults.
+          # The plugin works without this file — only create it to override specific settings.
+
+          "@
+          $config = Get-Content "config/wlx-listerine-colorizer.toml" -Raw
+          Set-Content -Path "$staging/wlx-listerine-colorizer.toml.sample" -Value ($header + $config) -NoNewline
+
+          Copy-Item "output/themes" "$staging/themes" -Recurse
+          Copy-Item "output/grammars" "$staging/grammars" -Recurse
+
+          Compress-Archive -Path "$staging/*" -DestinationPath "wlx-listerine-colorizer-$version.zip"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            wlx-listerine-md-*.zip
+            wlx-listerine-colorizer-*.zip
+
+      - name: Upload diff artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-diffs
+          path: test_data/cases/*_diff.png
+          retention-days: 14
