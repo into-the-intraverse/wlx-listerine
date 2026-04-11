@@ -44,7 +44,9 @@ public:
 
 private:
     ID2D1SolidColorBrush* get_brush(uint32_t color);
+    ID2D1SolidColorBrush* get_brush(uint32_t color, float alpha);
     void paint_block_background(const LayoutBlock& block, float offset_y);
+    void paint_inline_code_bg(const LayoutBlock& block, float offset_y);
     void paint_block_decoration(const LayoutBlock& block, float offset_y);
     void paint_bullet(const LayoutBlock& block, float offset_y);
     void paint_text_runs(const LayoutBlock& block, float offset_y);

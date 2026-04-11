@@ -1,31 +1,7 @@
 #include "theme_service.h"
+#include "string_util.h"
 #include <toml++/toml.hpp>
-#include <windows.h>
 #include <functional>
-
-// --- UTF conversion helpers ---
-
-static std::string wstring_to_utf8(const std::wstring& ws) {
-    if (ws.empty()) return {};
-    int len = WideCharToMultiByte(CP_UTF8, 0, ws.data(), static_cast<int>(ws.size()),
-                                  nullptr, 0, nullptr, nullptr);
-    if (len <= 0) return {};
-    std::string out(static_cast<size_t>(len), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, ws.data(), static_cast<int>(ws.size()),
-                        out.data(), len, nullptr, nullptr);
-    return out;
-}
-
-static std::wstring utf8_to_wstring(const std::string& s) {
-    if (s.empty()) return {};
-    int len = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
-                                  nullptr, 0);
-    if (len <= 0) return {};
-    std::wstring out(static_cast<size_t>(len), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
-                        out.data(), len);
-    return out;
-}
 
 // --- read_palette (file-local) ---
 
@@ -64,7 +40,7 @@ ThemeConfig ThemeService::default_config() {
     cfg.light.muted        = 0x57606A;
     cfg.light.link         = 0x0969DA;
     cfg.light.link_hover   = 0x0550AE;
-    cfg.light.code_bg      = 0xF6F8FA;
+    cfg.light.code_bg      = 0xE8ECF0;
     cfg.light.quote_border = 0xD0D7DE;
     cfg.light.rule         = 0xD8DEE4;
     cfg.light.selection    = 0xDDEBFF;
@@ -76,7 +52,7 @@ ThemeConfig ThemeService::default_config() {
     cfg.dark.muted        = 0x808080;
     cfg.dark.link         = 0x58A6FF;
     cfg.dark.link_hover   = 0x79C0FF;
-    cfg.dark.code_bg      = 0x282828;
+    cfg.dark.code_bg      = 0x2D2D2D;
     cfg.dark.quote_border = 0x404040;
     cfg.dark.rule         = 0x404040;
     cfg.dark.selection    = 0x264F78;
@@ -89,14 +65,7 @@ const ColorPalette& ThemeService::palette(bool dark_mode) const {
 }
 
 uint32_t ThemeService::parse_hex_color(const std::string& hex, uint32_t fallback) {
-    try {
-        std::string h = hex;
-        if (!h.empty() && h[0] == '#') h = h.substr(1);
-        if (h.empty()) return fallback;
-        return static_cast<uint32_t>(std::stoul(h, nullptr, 16));
-    } catch (...) {
-        return fallback;
-    }
+    return ::parse_hex_color(hex, fallback);
 }
 
 D2D1_COLOR_F ThemeService::to_d2d_color(uint32_t rgb, float alpha) {

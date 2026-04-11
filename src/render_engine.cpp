@@ -175,6 +175,23 @@ ID2D1SolidColorBrush* RenderEngine::get_brush(uint32_t color) {
     return ptr;
 }
 
+ID2D1SolidColorBrush* RenderEngine::get_brush(uint32_t color, float alpha) {
+    uint32_t alpha_byte = static_cast<uint32_t>(alpha * 255.0f) & 0xFF;
+    uint32_t key = (alpha_byte << 24) | (color & 0x00FFFFFF);
+
+    auto it = brush_cache_.find(key);
+    if (it != brush_cache_.end())
+        return it->second.Get();
+
+    if (!rt_) return nullptr;
+
+    ComPtr<ID2D1SolidColorBrush> brush;
+    rt_->CreateSolidColorBrush(ThemeService::to_d2d_color(color, alpha), brush.GetAddressOf());
+    auto* ptr = brush.Get();
+    brush_cache_[key] = std::move(brush);
+    return ptr;
+}
+
 void RenderEngine::paint(const LayoutDocument& layout, float scroll_y,
                           TextPosition sel_start, TextPosition sel_end) {
     if (!rt_) return;
@@ -201,6 +218,7 @@ void RenderEngine::paint(const LayoutDocument& layout, float scroll_y,
 
         paint_block_background(block, 0);
         paint_trailing_ws(block, 0);
+        paint_inline_code_bg(block, 0);
         paint_selection_highlight(block, block_idx, 0, sel_start, sel_end);
         paint_block_decoration(block, 0);
         paint_indent_guides(block, 0);
@@ -343,30 +361,31 @@ void RenderEngine::paint_bullet(const LayoutBlock& block, float offset_y) {
         rect, brush);
 }
 
+void RenderEngine::paint_inline_code_bg(const LayoutBlock& block, float offset_y) {
+    for (auto& run : block.text_runs) {
+        if (run.code_bg_rects.empty()) continue;
+        auto* code_bg_brush = get_brush(theme_.palette(dark_mode_).code_bg);
+        if (!code_bg_brush) continue;
+        for (auto& bg : run.code_bg_rects) {
+            D2D1_ROUNDED_RECT rr;
+            rr.rect = D2D1::RectF(
+                run.rect.left + bg.rect.left,
+                run.rect.top + offset_y + bg.rect.top,
+                run.rect.left + bg.rect.right,
+                run.rect.top + offset_y + bg.rect.bottom);
+            rr.radiusX = 3.0f;
+            rr.radiusY = 3.0f;
+            rt_->FillRoundedRectangle(rr, code_bg_brush);
+        }
+    }
+}
+
 void RenderEngine::paint_text_runs(const LayoutBlock& block, float offset_y) {
     for (auto& run : block.text_runs) {
         if (!run.layout) continue;
 
         auto* brush = get_brush(run.color);
         if (!brush) continue;
-
-        // Draw inline code backgrounds
-        if (!run.code_bg_rects.empty()) {
-            auto* code_bg_brush = get_brush(theme_.palette(dark_mode_).code_bg);
-            if (code_bg_brush) {
-                for (auto& bg : run.code_bg_rects) {
-                    D2D1_ROUNDED_RECT rr;
-                    rr.rect = D2D1::RectF(
-                        run.rect.left + bg.rect.left,
-                        run.rect.top + offset_y + bg.rect.top,
-                        run.rect.left + bg.rect.right,
-                        run.rect.top + offset_y + bg.rect.bottom);
-                    rr.radiusX = 3.0f;
-                    rr.radiusY = 3.0f;
-                    rt_->FillRoundedRectangle(rr, code_bg_brush);
-                }
-            }
-        }
 
         // Apply per-range color overrides (e.g., link color)
         for (auto& cr : run.color_ranges) {
@@ -448,26 +467,20 @@ void RenderEngine::paint_copy_button(const LayoutBlock& block, int block_index, 
 void RenderEngine::paint_trailing_ws(const LayoutBlock& block, float offset_y) {
     if (!block.has_trailing_ws) return;
 
-    auto color = ThemeService::to_d2d_color(block.trailing_ws_color);
-    color.a = 0.25f;
-    ComPtr<ID2D1SolidColorBrush> brush;
-    if (FAILED(rt_->CreateSolidColorBrush(color, brush.GetAddressOf())) || !brush)
-        return;
+    auto* brush = get_brush(block.trailing_ws_color, 0.25f);
+    if (!brush) return;
 
     D2D1_RECT_F r = block.trailing_ws_rect;
     r.top += offset_y;
     r.bottom += offset_y;
-    rt_->FillRectangle(&r, brush.Get());
+    rt_->FillRectangle(&r, brush);
 }
 
 void RenderEngine::paint_whitespace_markers(const LayoutBlock& block, float offset_y) {
     if (block.ws_markers.empty() || block.text_runs.empty()) return;
 
-    auto color = ThemeService::to_d2d_color(block.ws_marker_color);
-    color.a = 0.35f;
-    ComPtr<ID2D1SolidColorBrush> brush;
-    if (FAILED(rt_->CreateSolidColorBrush(color, brush.GetAddressOf())) || !brush)
-        return;
+    auto* brush = get_brush(block.ws_marker_color, 0.35f);
+    if (!brush) return;
 
     auto& run = block.text_runs[0];
     float origin_x = run.rect.left;
@@ -479,7 +492,6 @@ void RenderEngine::paint_whitespace_markers(const LayoutBlock& block, float offs
         float cy = origin_y + wm.y + font_size * 0.5f;
 
         if (wm.is_tab) {
-            // Draw a small right arrow →
             float arrow_len = font_size * 0.5f;
             float arrow_h = font_size * 0.15f;
             float ax = cx + font_size * 0.1f;
@@ -487,21 +499,20 @@ void RenderEngine::paint_whitespace_markers(const LayoutBlock& block, float offs
             rt_->DrawLine(
                 D2D1::Point2F(ax, cy),
                 D2D1::Point2F(ax + arrow_len, cy),
-                brush.Get(), 1.0f);
+                brush, 1.0f);
             rt_->DrawLine(
                 D2D1::Point2F(ax + arrow_len, cy),
                 D2D1::Point2F(ax + arrow_len - arrow_h, cy - arrow_h),
-                brush.Get(), 1.0f);
+                brush, 1.0f);
             rt_->DrawLine(
                 D2D1::Point2F(ax + arrow_len, cy),
                 D2D1::Point2F(ax + arrow_len - arrow_h, cy + arrow_h),
-                brush.Get(), 1.0f);
+                brush, 1.0f);
         } else {
-            // Draw a centered dot ·
             float r = 1.2f;
             float dx = cx + font_size * 0.35f;
             D2D1_ELLIPSE ellipse = {{dx, cy}, r, r};
-            rt_->FillEllipse(ellipse, brush.Get());
+            rt_->FillEllipse(ellipse, brush);
         }
     }
 }
@@ -509,11 +520,8 @@ void RenderEngine::paint_whitespace_markers(const LayoutBlock& block, float offs
 void RenderEngine::paint_indent_guides(const LayoutBlock& block, float offset_y) {
     if (block.indent_guides.empty()) return;
 
-    auto color = ThemeService::to_d2d_color(block.indent_guide_color);
-    color.a = 0.2f;
-    ComPtr<ID2D1SolidColorBrush> brush;
-    if (FAILED(rt_->CreateSolidColorBrush(color, brush.GetAddressOf())) || !brush)
-        return;
+    auto* brush = get_brush(block.indent_guide_color, 0.2f);
+    if (!brush) return;
 
     float top = block.rect.top + offset_y;
     float bottom = block.rect.bottom + offset_y;
@@ -522,6 +530,6 @@ void RenderEngine::paint_indent_guides(const LayoutBlock& block, float offset_y)
         rt_->DrawLine(
             D2D1::Point2F(gx, top),
             D2D1::Point2F(gx, bottom),
-            brush.Get(), 1.0f);
+            brush, 1.0f);
     }
 }

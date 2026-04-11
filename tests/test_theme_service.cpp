@@ -150,7 +150,7 @@ selection = "#223344"
     // colors.light -- defaults kept
     CHECK(svc.palette(false).heading == 0x1F2328);
     CHECK(svc.palette(false).muted == 0x57606A);
-    CHECK(svc.palette(false).code_bg == 0xF6F8FA);
+    CHECK(svc.palette(false).code_bg == 0xE8ECF0);
 
     // colors.dark -- overridden
     CHECK(svc.palette(true).background == 0x334455);
