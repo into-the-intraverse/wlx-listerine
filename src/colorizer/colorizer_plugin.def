@@ -1,0 +1,8 @@
+LIBRARY "wlx-listerine-colorizer"
+EXPORTS
+    ListLoadW
+    ListLoadNextW
+    ListCloseWindow
+    ListGetDetectString
+    ListSendCommand
+    ListSetDefaultParams

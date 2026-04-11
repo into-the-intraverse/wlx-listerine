@@ -77,6 +77,40 @@ add_custom_command(TARGET wlx-listerine-md POST_BUILD
         "${CMAKE_SOURCE_DIR}/output/wlx-listerine-md.toml"
 )
 
+# --- Colorizer Plugin DLL ---
+add_library(wlx-listerine-colorizer SHARED
+    src/colorizer/colorizer_host_adapter.cpp
+    src/colorizer/colorizer_layout.cpp
+    src/colorizer/colorizer_plugin.def
+    src/colorizer/colorizer_resource.rc
+)
+
+target_link_libraries(wlx-listerine-colorizer PRIVATE
+    wlx-core
+    colorizer-core
+    shell32
+    dwmapi
+    uxtheme
+)
+
+set_target_properties(wlx-listerine-colorizer PROPERTIES
+    SUFFIX ".wlx64"
+    PREFIX ""
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/output"
+    LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/output"
+)
+
+add_custom_command(TARGET wlx-listerine-colorizer POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/config/wlx-listerine-colorizer.toml"
+        "${CMAKE_SOURCE_DIR}/output/wlx-listerine-colorizer.toml"
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${CMAKE_SOURCE_DIR}/output/themes"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/config/themes/default.toml"
+        "${CMAKE_SOURCE_DIR}/output/themes/default.toml"
+)
+
 # --- Screenshot tool ---
 add_executable(screenshot_tool
     src/screenshot_main.cpp

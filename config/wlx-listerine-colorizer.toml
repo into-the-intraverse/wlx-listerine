@@ -1,0 +1,46 @@
+version = 1
+
+[general]
+extensions = ["c", "cpp", "h", "hpp", "py", "js", "ts", "rs", "go", "java", "cs", "rb", "php", "lua", "sh", "bash", "ps1", "vim", "json", "toml", "yaml", "yml", "xml", "html", "css", "md", "dockerfile", "cmake", "ini", "sql", "gitconfig", "gitignore", "gitattributes"]
+detect_string = 'EXT="C" | EXT="CPP" | EXT="H" | EXT="HPP" | EXT="PY" | EXT="JS" | EXT="TS" | EXT="RS" | EXT="GO" | EXT="JAVA" | EXT="CS" | EXT="RB" | EXT="PHP" | EXT="LUA" | EXT="SH" | EXT="BASH" | EXT="PS1" | EXT="VIM" | EXT="JSON" | EXT="TOML" | EXT="YAML" | EXT="YML" | EXT="XML" | EXT="HTML" | EXT="CSS" | EXT="DOCKERFILE" | EXT="CMAKE" | EXT="INI" | EXT="SQL" | EXT="GITCONFIG" | EXT="GITIGNORE" | EXT="GITATTRIBUTES"'
+grammar_dir = "grammars"
+theme_dir = "themes"
+
+[display]
+line_numbers = true
+word_wrap = false
+tab_width = 4
+
+[fonts]
+code = "Cascadia Code"
+code_size = 13.0
+
+[spacing]
+line_height_factor = 1.4
+
+[colors.light]
+background = "#FFFFFF"
+text = "#1F2328"
+heading = "#1F2328"
+muted = "#57606A"
+link = "#0969DA"
+link_hover = "#0550AE"
+code_bg = "#F6F8FA"
+quote_border = "#D0D7DE"
+rule = "#D8DEE4"
+selection = "#DDEBFF"
+
+[colors.dark]
+background = "#0D1117"
+text = "#E6EDF3"
+heading = "#E6EDF3"
+muted = "#8B949E"
+link = "#58A6FF"
+link_hover = "#79C0FF"
+code_bg = "#161B22"
+quote_border = "#30363D"
+rule = "#30363D"
+selection = "#1F3B5B"
+
+[themes]
+default = "default"
