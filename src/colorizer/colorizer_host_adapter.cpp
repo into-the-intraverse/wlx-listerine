@@ -47,6 +47,10 @@ struct ColorViewState {
     TextPosition sel_anchor;
     TextPosition sel_active;
     bool selecting = false;
+
+    // Triple-click detection
+    DWORD last_dblclk_time = 0;
+    int last_dblclk_block = -1;
 };
 
 // ---------- globals ----------
@@ -458,6 +462,21 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         float doc_y = py + vs->scroll_y;
 
         auto pos = hit_test_position(*vs->layout, px, doc_y);
+
+        // Triple-click detection: click on same block within double-click interval after a dblclk
+        if (pos.valid() && vs->last_dblclk_block >= 0 &&
+            pos.block_index == vs->last_dblclk_block &&
+            (GetTickCount() - vs->last_dblclk_time) < GetDoubleClickTime()) {
+            // Select entire line (block)
+            int len = block_text_length(vs->layout->blocks[pos.block_index]);
+            vs->sel_anchor = TextPosition{pos.block_index, 0};
+            vs->sel_active = TextPosition{pos.block_index, len};
+            vs->selecting = false;
+            vs->last_dblclk_block = -1;  // reset so 4th click doesn't re-trigger
+            InvalidateRect(hwnd, nullptr, FALSE);
+            return 0;
+        }
+
         if (pos.valid()) {
             vs->sel_anchor = pos;
             vs->sel_active = pos;
@@ -511,6 +530,10 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
             vs->sel_anchor = TextPosition{pos.block_index, ws};
             vs->sel_active = TextPosition{pos.block_index, we};
             vs->selecting = false;
+
+            // Record for triple-click detection
+            vs->last_dblclk_time = GetTickCount();
+            vs->last_dblclk_block = pos.block_index;
         }
         InvalidateRect(hwnd, nullptr, FALSE);
         return 0;

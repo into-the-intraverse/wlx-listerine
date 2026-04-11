@@ -53,6 +53,10 @@ struct ViewState {
     TextPosition sel_active;
     bool selecting = false;
     int hovered_code_block = -1;
+
+    // Triple-click detection
+    DWORD last_dblclk_time = 0;
+    int last_dblclk_block = -1;
     int copied_code_block = -1;
 };
 
@@ -439,6 +443,20 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         float doc_y = py + vs->scroll_y;
 
         auto pos = hit_test_position(*vs->layout, px, doc_y);
+
+        // Triple-click: select entire block (line/paragraph)
+        if (pos.valid() && vs->last_dblclk_block >= 0 &&
+            pos.block_index == vs->last_dblclk_block &&
+            (GetTickCount() - vs->last_dblclk_time) < GetDoubleClickTime()) {
+            int len = block_text_length(vs->layout->blocks[pos.block_index]);
+            vs->sel_anchor = TextPosition{pos.block_index, 0};
+            vs->sel_active = TextPosition{pos.block_index, len};
+            vs->selecting = false;
+            vs->last_dblclk_block = -1;
+            InvalidateRect(hwnd, nullptr, FALSE);
+            return 0;
+        }
+
         if (pos.valid()) {
             vs->sel_anchor = pos;
             vs->sel_active = pos;
@@ -536,6 +554,10 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             vs->sel_anchor = TextPosition{pos.block_index, ws};
             vs->sel_active = TextPosition{pos.block_index, we};
             vs->selecting = false;
+
+            // Record for triple-click detection
+            vs->last_dblclk_time = GetTickCount();
+            vs->last_dblclk_block = pos.block_index;
         }
         InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
