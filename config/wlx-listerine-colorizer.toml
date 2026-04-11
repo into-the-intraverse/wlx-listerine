@@ -11,8 +11,8 @@ line_numbers = true
 word_wrap = false
 tab_width = 4
 # "none", "all", or "boundary" (leading/trailing only)
-show_whitespace = "none"
-show_indent_guides = false
+show_whitespace = "boundary"
+show_indent_guides = true
 
 [fonts]
 code = "Cascadia Code"

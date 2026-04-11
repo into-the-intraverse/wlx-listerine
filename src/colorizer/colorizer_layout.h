@@ -14,8 +14,8 @@ struct ColorizerDisplayConfig {
     bool word_wrap = false;
     int tab_width = 4;
     float line_height_factor = 1.4f;
-    ShowWhitespace show_whitespace = ShowWhitespace::None;
-    bool show_indent_guides = false;
+    ShowWhitespace show_whitespace = ShowWhitespace::Boundary;
+    bool show_indent_guides = true;
 };
 
 // Convert source code lines + color spans into a LayoutDocument the RenderEngine can paint.
