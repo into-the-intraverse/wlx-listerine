@@ -12,7 +12,7 @@ bun.lockb
 bun.lock
 
 # Grammar DLLs (built artifacts, not committed)
-grammars/
+grammars/**/*.dll
 
 # Staging directories used by CI packaging
 staging/
