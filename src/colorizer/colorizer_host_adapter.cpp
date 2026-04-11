@@ -81,6 +81,7 @@ static std::string g_default_ini_path;
 // ---------- extension -> language map ----------
 
 static const struct { const wchar_t* ext; const char* lang; } kExtLangMap[] = {
+    // C / C++
     { L"c",           "c"          },
     { L"h",           "c"          },
     { L"cpp",         "cpp"        },
@@ -88,30 +89,61 @@ static const struct { const wchar_t* ext; const char* lang; } kExtLangMap[] = {
     { L"cxx",         "cpp"        },
     { L"hpp",         "cpp"        },
     { L"hxx",         "cpp"        },
+    // Python
     { L"py",          "python"     },
+    { L"pyi",         "python"     },
+    // JavaScript / TypeScript
     { L"js",          "javascript" },
+    { L"mjs",         "javascript" },
+    { L"cjs",         "javascript" },
+    { L"jsx",         "javascript" },
     { L"ts",          "typescript" },
+    { L"tsx",         "typescript" },
+    { L"mts",         "typescript" },
+    // Rust
     { L"rs",          "rust"       },
+    // Go
     { L"go",          "go"         },
+    // Java
     { L"java",        "java"       },
+    // C#
     { L"cs",          "c-sharp"    },
-    { L"rb",          "ruby"       },
+    // PHP
     { L"php",         "php"        },
+    // Lua
     { L"lua",         "lua"        },
+    // Shell
     { L"sh",          "bash"       },
     { L"bash",        "bash"       },
+    { L"zsh",         "bash"       },
+    // PowerShell
     { L"ps1",         "powershell" },
+    { L"psm1",        "powershell" },
+    { L"psd1",        "powershell" },
+    // Vim
     { L"vim",         "vim"        },
+    { L"vimrc",       "vim"        },
+    // Data / Config
     { L"json",        "json"       },
+    { L"jsonc",       "json"       },
     { L"toml",        "toml"       },
     { L"yaml",        "yaml"       },
     { L"yml",         "yaml"       },
-    { L"xml",         "xml"        },
+    // Markup
     { L"html",        "html"       },
+    { L"htm",         "html"       },
+    { L"xml",         "xml"        },
+    { L"svg",         "xml"        },
     { L"css",         "css"        },
     { L"md",          "markdown"   },
+    { L"markdown",    "markdown"   },
+    // Build / DevOps
     { L"cmake",       "cmake"      },
     { L"sql",         "sql"        },
+    // Git
+    { L"gitconfig",   "gitconfig"  },
+    { L"gitignore",   "gitignore"  },
+    { L"gitattributes", "gitattributes" },
 };
 
 static std::string ext_to_language(const std::wstring& path) {
@@ -123,6 +155,26 @@ static std::string ext_to_language(const std::wstring& path) {
     for (auto& e : kExtLangMap) {
         if (ext == e.ext) return e.lang;
     }
+    return {};
+}
+
+static std::string filename_to_language(const std::wstring& path) {
+    auto slash = path.find_last_of(L"\\/");
+    std::wstring filename = (slash != std::wstring::npos)
+        ? path.substr(slash + 1) : path;
+    for (auto& c : filename) c = static_cast<wchar_t>(towlower(c));
+
+    if (filename == L"dockerfile" || filename == L"containerfile")
+        return "dockerfile";
+    if (filename == L"cmakelists.txt")
+        return "cmake";
+    if (filename == L".gitconfig")
+        return "gitconfig";
+    if (filename == L".gitignore")
+        return "gitignore";
+    if (filename == L".gitattributes")
+        return "gitattributes";
+
     return {};
 }
 
@@ -244,6 +296,8 @@ static void load_document(ColorViewState* vs, const wchar_t* path) {
     vs->cached_raw_utf8 = content->raw_utf8;
 
     std::string language = ext_to_language(vs->file_path);
+    if (language.empty())
+        language = filename_to_language(vs->file_path);
     vs->cached_colors = {};
     if (!language.empty() && g_colorizer && g_colorizer->supports(language)) {
         vs->cached_colors = g_colorizer->colorize(vs->cached_raw_utf8, language, vs->dark_mode);
@@ -813,6 +867,8 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
             apply_dark_mode(vs->hwnd, new_dark);
             // Re-colorize with new palette (no file re-read)
             std::string language = ext_to_language(vs->file_path);
+            if (language.empty())
+                language = filename_to_language(vs->file_path);
             vs->cached_colors = {};
             if (!language.empty() && g_colorizer && g_colorizer->supports(language)) {
                 vs->cached_colors = g_colorizer->colorize(vs->cached_raw_utf8, language, vs->dark_mode);
