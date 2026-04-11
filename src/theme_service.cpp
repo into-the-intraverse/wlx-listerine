@@ -69,17 +69,17 @@ ThemeConfig ThemeService::default_config() {
     cfg.light.rule         = 0xD8DEE4;
     cfg.light.selection    = 0xDDEBFF;
 
-    // Dark palette (GitHub dark-inspired)
-    cfg.dark.background   = 0x0D1117;
-    cfg.dark.text         = 0xE6EDF3;
-    cfg.dark.heading      = 0xE6EDF3;
-    cfg.dark.muted        = 0x8B949E;
+    // Dark palette (neutral gray, matches TC dark mode)
+    cfg.dark.background   = 0x1E1E1E;
+    cfg.dark.text         = 0xD4D4D4;
+    cfg.dark.heading      = 0xE0E0E0;
+    cfg.dark.muted        = 0x808080;
     cfg.dark.link         = 0x58A6FF;
     cfg.dark.link_hover   = 0x79C0FF;
-    cfg.dark.code_bg      = 0x161B22;
-    cfg.dark.quote_border = 0x30363D;
-    cfg.dark.rule         = 0x30363D;
-    cfg.dark.selection    = 0x1F3B5B;
+    cfg.dark.code_bg      = 0x282828;
+    cfg.dark.quote_border = 0x404040;
+    cfg.dark.rule         = 0x404040;
+    cfg.dark.selection    = 0x264F78;
 
     return cfg;
 }

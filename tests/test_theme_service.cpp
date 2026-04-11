@@ -52,7 +52,7 @@ TEST_CASE("default config light palette background") {
 
 TEST_CASE("default config dark palette background") {
     ThemeService svc;
-    CHECK(svc.palette(true).background == 0x0D1117);
+    CHECK(svc.palette(true).background == 0x1E1E1E);
 }
 
 TEST_CASE("default font config body_family") {
@@ -77,7 +77,7 @@ TEST_CASE("loading from nonexistent file uses defaults") {
 
     CHECK(svc.config().extensions.size() == 5);
     CHECK(svc.palette(false).background == 0xFFFFFF);
-    CHECK(svc.palette(true).background == 0x0D1117);
+    CHECK(svc.palette(true).background == 0x1E1E1E);
     CHECK(svc.fonts().body_family == L"Segoe UI");
     CHECK(svc.spacing().paragraph_spacing == doctest::Approx(12.0f));
 }
@@ -157,9 +157,9 @@ selection = "#223344"
     CHECK(svc.palette(true).link == 0x99AAFF);
     CHECK(svc.palette(true).selection == 0x223344);
     // colors.dark -- defaults kept
-    CHECK(svc.palette(true).text == 0xE6EDF3);
-    CHECK(svc.palette(true).heading == 0xE6EDF3);
-    CHECK(svc.palette(true).quote_border == 0x30363D);
+    CHECK(svc.palette(true).text == 0xD4D4D4);
+    CHECK(svc.palette(true).heading == 0xE0E0E0);
+    CHECK(svc.palette(true).quote_border == 0x404040);
 
     // hash should differ from defaults
     ThemeService def;
