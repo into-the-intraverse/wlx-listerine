@@ -1,0 +1,5 @@
+[plugininstall]
+description=Fast, lightweight Markdown renderer with minimal memory footprint
+type=wlx
+file=wlx-listerine-md.wlx64
+defaultdir=wlx-listerine-md

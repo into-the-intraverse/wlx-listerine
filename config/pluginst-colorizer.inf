@@ -1,0 +1,5 @@
+[plugininstall]
+description=Fast, lightweight syntax colorizer with minimal memory footprint (tree-sitter). Easily customizable and extendable with more languages
+type=wlx
+file=wlx-listerine-colorizer.wlx64
+defaultdir=wlx-listerine-colorizer
