@@ -63,52 +63,9 @@ jobs:
         shell: bash
         run: ./scripts/visual-test.sh
 
-      - name: Package md plugin ZIP
+      - name: Package plugin ZIPs
         shell: pwsh
-        run: |
-          $version = "${{ steps.version.outputs.version }}"
-          $staging = "staging/wlx-listerine-md"
-          New-Item -ItemType Directory -Path $staging -Force
-
-          Copy-Item "config/pluginst-md.inf" "$staging/pluginst.inf"
-          Copy-Item "output/wlx-listerine-md.wlx64" "$staging/"
-
-          $header = @"
-          # wlx-listerine-md configuration
-          # Rename this file to wlx-listerine-md.toml to customize.
-          # All values shown are the built-in defaults.
-          # The plugin works without this file — only create it to override specific settings.
-
-          "@
-          $config = Get-Content "config/wlx-listerine-md.toml" -Raw
-          Set-Content -Path "$staging/wlx-listerine-md.toml.sample" -Value ($header + $config) -NoNewline
-
-          Compress-Archive -Path "$staging/*" -DestinationPath "wlx-listerine-md-$version.zip"
-
-      - name: Package colorizer plugin ZIP
-        shell: pwsh
-        run: |
-          $version = "${{ steps.version.outputs.version }}"
-          $staging = "staging/wlx-listerine-colorizer"
-          New-Item -ItemType Directory -Path $staging -Force
-
-          Copy-Item "config/pluginst-colorizer.inf" "$staging/pluginst.inf"
-          Copy-Item "output/wlx-listerine-colorizer.wlx64" "$staging/"
-
-          $header = @"
-          # wlx-listerine-colorizer configuration
-          # Rename this file to wlx-listerine-colorizer.toml to customize.
-          # All values shown are the built-in defaults.
-          # The plugin works without this file — only create it to override specific settings.
-
-          "@
-          $config = Get-Content "config/wlx-listerine-colorizer.toml" -Raw
-          Set-Content -Path "$staging/wlx-listerine-colorizer.toml.sample" -Value ($header + $config) -NoNewline
-
-          Copy-Item "output/themes" "$staging/themes" -Recurse
-          Copy-Item "output/grammars" "$staging/grammars" -Recurse
-
-          Compress-Archive -Path "$staging/*" -DestinationPath "wlx-listerine-colorizer-$version.zip"
+        run: ./scripts/package.ps1 ${{ steps.version.outputs.version }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
