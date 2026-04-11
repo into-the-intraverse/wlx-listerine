@@ -12,3 +12,18 @@ bun.lockb
 
 # Grammar DLLs (built artifacts, not committed)
 grammars/
+
+# Staging directories used by CI packaging
+staging/
+
+# Release ZIPs
+*.zip
+
+# Claude Code
+.claude/
+
+# Playwright MCP
+.playwright-mcp/
+
+# Superpowers plugin cache
+.superpowers/
