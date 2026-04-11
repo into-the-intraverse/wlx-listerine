@@ -39,8 +39,6 @@ add_library(colorizer-core STATIC
     src/colorizer/colorizer.cpp
     src/colorizer/theme_loader.cpp
     src/colorizer/grammar_registry.cpp
-    src/colorizer/scope_mapper.cpp
-    src/colorizer/tokenizer.cpp
     src/colorizer/scope.cpp
     src/colorizer/query_highlighter.cpp
 )
@@ -174,9 +172,16 @@ function(add_grammar LANG SOURCE_DIR)
         target_link_libraries(tree-sitter-${LANG} PRIVATE tree-sitter::tree-sitter)
         set_target_properties(tree-sitter-${LANG} PROPERTIES
             PREFIX ""
-            RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/grammars"
-            RUNTIME_OUTPUT_DIRECTORY_DEBUG   "${CMAKE_SOURCE_DIR}/grammars"
+            RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/grammars/${LANG}"
+            RUNTIME_OUTPUT_DIRECTORY_DEBUG   "${CMAKE_SOURCE_DIR}/grammars/${LANG}"
         )
+        if(EXISTS "${SOURCE_DIR}/queries/highlights.scm")
+            add_custom_command(TARGET tree-sitter-${LANG} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${SOURCE_DIR}/queries/highlights.scm"
+                    "${CMAKE_SOURCE_DIR}/grammars/${LANG}/highlights.scm"
+            )
+        endif()
     endif()
 endfunction()
 
@@ -190,8 +195,6 @@ add_executable(colorizer-tests
     tests/test_colorizer.cpp
     tests/test_colorizer_theme.cpp
     tests/test_colorizer_grammar.cpp
-    tests/test_colorizer_scope.cpp
-    tests/test_colorizer_tokenizer.cpp
     tests/test_colorizer_scope_new.cpp
     tests/test_colorizer_query_highlighter.cpp
 )

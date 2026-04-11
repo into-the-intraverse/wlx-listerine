@@ -1,8 +1,9 @@
 #include "colorizer.h"
 #include "grammar_registry.h"
-#include "tokenizer.h"
-#include "scope_mapper.h"
+#include "query_highlighter.h"
 #include "theme_loader.h"
+
+#include <tree_sitter/api.h>
 
 Colorizer::Colorizer(const std::wstring& grammar_dir, const std::wstring& theme_dir)
     : grammar_registry_(std::make_unique<GrammarRegistry>(grammar_dir))
@@ -27,24 +28,18 @@ ColorizeResult Colorizer::colorize(const std::string& source,
                                    bool dark_mode) {
     ColorizeResult result;
 
-    auto* grammar = grammar_registry_->get_grammar(language);
-    if (!grammar) return result;
+    auto* tree = grammar_registry_->parse(language, source);
+    if (!tree) return result;
 
-    auto token_spans = Tokenizer::tokenize(grammar, source);
-    auto palette = theme_loader_->palette_for(language, dark_mode);
-    auto lang_ctx = ScopeMapper::for_language(language);
-
-    result.spans.reserve(token_spans.size());
-    for (auto& ts : token_spans) {
-        Scope scope = ScopeMapper::map(lang_ctx, ts.node_type);
-        uint32_t color = scope_to_color(scope, palette);
-
-        ColorSpan cs;
-        cs.start = ts.start;
-        cs.length = ts.length;
-        cs.color = color;
-        result.spans.push_back(cs);
+    auto* query = grammar_registry_->get_query(language);
+    if (!query) {
+        ts_tree_delete(tree);
+        return result;
     }
 
+    auto palette = theme_loader_->palette_for(language, dark_mode);
+    result.spans = QueryHighlighter::highlight(tree, query, palette);
+
+    ts_tree_delete(tree);
     return result;
 }

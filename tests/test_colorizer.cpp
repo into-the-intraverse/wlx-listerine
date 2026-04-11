@@ -19,7 +19,7 @@ TEST_CASE("Colorizer available_languages with no grammar dir is empty") {
 }
 
 TEST_CASE("Colorizer end-to-end with C grammar"
-    * doctest::skip(!std::filesystem::exists("grammars/tree-sitter-c.dll"))) {
+    * doctest::skip(!std::filesystem::exists("grammars/c/tree-sitter-c.dll"))) {
     Colorizer c(L"grammars", L"config/themes");
     REQUIRE(c.supports("c"));
 
@@ -32,7 +32,7 @@ TEST_CASE("Colorizer end-to-end with C grammar"
 }
 
 TEST_CASE("Colorizer dark mode produces different colors"
-    * doctest::skip(!std::filesystem::exists("grammars/tree-sitter-c.dll"))) {
+    * doctest::skip(!std::filesystem::exists("grammars/c/tree-sitter-c.dll"))) {
     Colorizer c(L"grammars", L"config/themes");
     REQUIRE(c.supports("c"));
 
@@ -45,7 +45,7 @@ TEST_CASE("Colorizer dark mode produces different colors"
 }
 
 TEST_CASE("Colorizer end-to-end with JSON grammar"
-    * doctest::skip(!std::filesystem::exists("grammars/tree-sitter-json.dll"))) {
+    * doctest::skip(!std::filesystem::exists("grammars/json/tree-sitter-json.dll"))) {
     Colorizer c(L"grammars", L"config/themes");
     REQUIRE(c.supports("json"));
 
@@ -54,7 +54,7 @@ TEST_CASE("Colorizer end-to-end with JSON grammar"
 }
 
 TEST_CASE("Colorizer end-to-end with Python grammar"
-    * doctest::skip(!std::filesystem::exists("grammars/tree-sitter-python.dll"))) {
+    * doctest::skip(!std::filesystem::exists("grammars/python/tree-sitter-python.dll"))) {
     Colorizer c(L"grammars", L"config/themes");
     REQUIRE(c.supports("python"));
 
