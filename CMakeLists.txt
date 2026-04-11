@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(wlx-listerine LANGUAGES CXX)
+project(wlx-listerine LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -104,6 +104,30 @@ target_link_libraries(tests PRIVATE
     wlx-core
     doctest::doctest
 )
+
+# --- Grammar DLLs (optional, only built when grammar sources have been cloned) ---
+function(add_grammar LANG SOURCE_DIR)
+    if(EXISTS "${SOURCE_DIR}/src/parser.c")
+        set(GRAMMAR_SOURCES "${SOURCE_DIR}/src/parser.c")
+        if(EXISTS "${SOURCE_DIR}/src/scanner.c")
+            list(APPEND GRAMMAR_SOURCES "${SOURCE_DIR}/src/scanner.c")
+        elseif(EXISTS "${SOURCE_DIR}/src/scanner.cc")
+            list(APPEND GRAMMAR_SOURCES "${SOURCE_DIR}/src/scanner.cc")
+        endif()
+        add_library(tree-sitter-${LANG} SHARED ${GRAMMAR_SOURCES})
+        target_include_directories(tree-sitter-${LANG} PRIVATE "${SOURCE_DIR}/src")
+        target_link_libraries(tree-sitter-${LANG} PRIVATE tree-sitter::tree-sitter)
+        set_target_properties(tree-sitter-${LANG} PROPERTIES
+            PREFIX ""
+            RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/grammars"
+            RUNTIME_OUTPUT_DIRECTORY_DEBUG   "${CMAKE_SOURCE_DIR}/grammars"
+        )
+    endif()
+endfunction()
+
+add_grammar(c      "${CMAKE_SOURCE_DIR}/build/grammars/c")
+add_grammar(json   "${CMAKE_SOURCE_DIR}/build/grammars/json")
+add_grammar(python "${CMAKE_SOURCE_DIR}/build/grammars/python")
 
 # --- Colorizer tests ---
 add_executable(colorizer-tests
