@@ -1,0 +1,114 @@
+# Default light theme (VS Code Light+ inspired)
+# Helix-compatible format — see https://docs.helix-editor.com/themes.html
+
+# --- Keywords ---
+"keyword"            = "#AF00DB"
+"keyword.directive"  = "#AF00DB"
+"keyword.storage"    = "#0000FF"
+"keyword.control"    = "#AF00DB"
+"keyword.function"   = "#0000FF"
+"keyword.operator"   = "#0000FF"
+
+# Tree-sitter shorthand aliases (some grammars use these instead of Helix names)
+"conditional"        = "#AF00DB"
+"repeat"             = "#AF00DB"
+"import"             = "#AF00DB"
+"preproc"            = "#AF00DB"
+
+# --- Functions ---
+"function"           = "#795E26"
+"function.builtin"   = "#795E26"
+"function.call"      = "#795E26"
+"function.method"    = "#795E26"
+"function.macro"     = "#795E26"
+"function.special"   = "#795E26"
+"method"             = "#795E26"
+"method.call"        = "#795E26"
+
+# --- Strings ---
+"string"             = "#A31515"
+"string.escape"      = "#EE0000"
+"string.special"     = "#811F3F"
+"string.regexp"      = "#811F3F"
+"escape"             = "#EE0000"
+"character.special"  = "#EE0000"
+
+# --- Constants & Numbers ---
+"constant"           = "#001080"
+"constant.builtin"   = "#0000FF"
+"constant.builtin.boolean" = "#0000FF"
+"constant.numeric"   = "#098658"
+"constant.numeric.integer" = "#098658"
+"constant.numeric.float"   = "#098658"
+"constant.character"       = "#A31515"
+"constant.character.escape" = "#EE0000"
+"number"             = "#098658"
+"number.float"       = "#098658"
+"boolean"            = "#0000FF"
+
+# --- Comments ---
+"comment"            = "#008000"
+"comment.line"       = "#008000"
+"comment.block"      = "#008000"
+"comment.block.documentation" = "#008000"
+
+# --- Operators & Punctuation ---
+"operator"           = "#000000"
+"punctuation"           = "#000000"
+"punctuation.delimiter" = "#000000"
+"punctuation.bracket"   = "#000000"
+"punctuation.special"   = "#000000"
+"delimiter"          = "#000000"
+
+# --- Types ---
+"type"               = "#267F99"
+"type.builtin"       = "#0000FF"
+"type.parameter"     = "#267F99"
+"constructor"        = "#267F99"
+
+# --- Modules & Namespaces ---
+"namespace"          = "#267F99"
+"module"             = "#267F99"
+"module.builtin"     = "#267F99"
+
+# --- Variables ---
+"variable"           = "#001080"
+"variable.builtin"   = "#0000FF"
+"variable.parameter" = "#001080"
+"variable.other.member" = "#001080"
+"parameter"          = "#001080"
+"field"              = "#001080"
+
+# --- Tags (HTML/XML) ---
+"tag"                = "#800000"
+"tag.builtin"        = "#800000"
+"tag.delimiter"      = "#800000"
+"attribute"          = "#FF0000"
+
+# --- Properties & Labels ---
+"property"           = "#001080"
+"label"              = "#001080"
+
+# --- Markup ---
+"markup.heading"     = "#0000FF"
+"markup.bold"        = "#0000FF"
+"markup.italic"      = "#AF00DB"
+"markup.link"        = "#0000FF"
+"markup.link.url"    = "#A31515"
+"markup.raw"         = "#A31515"
+"markup.list"        = "#AF00DB"
+
+# --- Embedded / Special ---
+"special"            = "#AF00DB"
+"embedded"           = "#AF00DB"
+
+# --- Diff (git-commit, git-rebase) ---
+"diff.plus"          = "#098658"
+"diff.minus"         = "#A31515"
+"diff.delta"         = "#0000FF"
+
+# --- CSS at-rules ---
+"media"              = "#AF00DB"
+"keyframes"          = "#AF00DB"
+"charset"            = "#AF00DB"
+"supports"           = "#AF00DB"

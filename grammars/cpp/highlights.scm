@@ -1,5 +1,3 @@
-; inherits: c
-
 ; Functions
 
 (call_expression

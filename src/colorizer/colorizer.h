@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include "helix_theme.h"
 
 struct ColorSpan {
     uint32_t start = 0;   // byte offset in UTF-8 source
@@ -16,11 +17,16 @@ struct ColorizeResult {
 };
 
 class GrammarRegistry;
-class ThemeLoader;
 
 class Colorizer {
 public:
-    Colorizer(const std::wstring& grammar_dir, const std::wstring& theme_dir);
+    // theme_dir: directory containing Helix-format .toml theme files
+    // theme_name: default theme (used for dark mode, or both modes)
+    // theme_light_name: optional light-mode override (empty = use theme_name)
+    Colorizer(const std::wstring& grammar_dir,
+              const std::wstring& theme_dir,
+              const std::string& theme_name = "default",
+              const std::string& theme_light_name = "");
     ~Colorizer();
 
     ColorizeResult colorize(const std::string& source,
@@ -30,10 +36,10 @@ public:
     bool supports(const std::string& language) const;
     std::vector<std::string> available_languages() const;
 
-    void set_language_theme(const std::string& language, const std::string& theme_name);
-    ThemeLoader& theme_loader() { return *theme_loader_; }
+    const HelixTheme& theme(bool dark_mode) const;
 
 private:
     std::unique_ptr<GrammarRegistry> grammar_registry_;
-    std::unique_ptr<ThemeLoader> theme_loader_;
+    HelixTheme dark_theme_;
+    HelixTheme light_theme_;
 };

@@ -1,29 +1,114 @@
-[light]
-keyword = "#AF00DB"
-keyword2 = "#0000FF"
-function = "#795E26"
-string = "#A31515"
-number = "#098658"
-comment = "#008000"
-operator = "#000000"
-type = "#267F99"
-preprocessor = "#AF00DB"
-namespace = "#267F99"
-variable = "#001080"
-punctuation = "#000000"
-plain = "#1F2328"
+# Default dark theme (VS Code Dark+ inspired)
+# Helix-compatible format — see https://docs.helix-editor.com/themes.html
 
-[dark]
-keyword = "#C586C0"
-keyword2 = "#569CD6"
-function = "#DCDCAA"
-string = "#CE9178"
-number = "#B5CEA8"
-comment = "#6A9955"
-operator = "#D4D4D4"
-type = "#4EC9B0"
-preprocessor = "#C586C0"
-namespace = "#4EC9B0"
-variable = "#9CDCFE"
-punctuation = "#D4D4D4"
-plain = "#D4D4D4"
+# --- Keywords ---
+"keyword"            = "#C586C0"
+"keyword.directive"  = "#C586C0"
+"keyword.storage"    = "#569CD6"
+"keyword.control"    = "#C586C0"
+"keyword.function"   = "#569CD6"
+"keyword.operator"   = "#569CD6"
+
+# Tree-sitter shorthand aliases (some grammars use these instead of Helix names)
+"conditional"        = "#C586C0"
+"repeat"             = "#C586C0"
+"import"             = "#C586C0"
+"preproc"            = "#C586C0"
+
+# --- Functions ---
+"function"           = "#DCDCAA"
+"function.builtin"   = "#DCDCAA"
+"function.call"      = "#DCDCAA"
+"function.method"    = "#DCDCAA"
+"function.macro"     = "#DCDCAA"
+"function.special"   = "#DCDCAA"
+"method"             = "#DCDCAA"
+"method.call"        = "#DCDCAA"
+
+# --- Strings ---
+"string"             = "#CE9178"
+"string.escape"      = "#D7BA7D"
+"string.special"     = "#D16969"
+"string.regexp"      = "#D16969"
+"escape"             = "#D7BA7D"
+"character.special"  = "#D7BA7D"
+
+# --- Constants & Numbers ---
+"constant"           = "#9CDCFE"
+"constant.builtin"   = "#569CD6"
+"constant.builtin.boolean" = "#569CD6"
+"constant.numeric"   = "#B5CEA8"
+"constant.numeric.integer" = "#B5CEA8"
+"constant.numeric.float"   = "#B5CEA8"
+"constant.character"       = "#CE9178"
+"constant.character.escape" = "#D7BA7D"
+"number"             = "#B5CEA8"
+"number.float"       = "#B5CEA8"
+"boolean"            = "#569CD6"
+
+# --- Comments ---
+"comment"            = "#6A9955"
+"comment.line"       = "#6A9955"
+"comment.block"      = "#6A9955"
+"comment.block.documentation" = "#6A9955"
+
+# --- Operators & Punctuation ---
+"operator"           = "#D4D4D4"
+"punctuation"           = "#D4D4D4"
+"punctuation.delimiter" = "#D4D4D4"
+"punctuation.bracket"   = "#D4D4D4"
+"punctuation.special"   = "#D4D4D4"
+"delimiter"          = "#D4D4D4"
+
+# --- Types ---
+"type"               = "#4EC9B0"
+"type.builtin"       = "#569CD6"
+"type.parameter"     = "#4EC9B0"
+"constructor"        = "#4EC9B0"
+
+# --- Modules & Namespaces ---
+"namespace"          = "#4EC9B0"
+"module"             = "#4EC9B0"
+"module.builtin"     = "#4EC9B0"
+
+# --- Variables ---
+"variable"           = "#9CDCFE"
+"variable.builtin"   = "#569CD6"
+"variable.parameter" = "#9CDCFE"
+"variable.other.member" = "#9CDCFE"
+"parameter"          = "#9CDCFE"
+"field"              = "#9CDCFE"
+
+# --- Tags (HTML/XML) ---
+"tag"                = "#569CD6"
+"tag.builtin"        = "#569CD6"
+"tag.delimiter"      = "#808080"
+"attribute"          = "#9CDCFE"
+
+# --- Properties & Labels ---
+"property"           = "#9CDCFE"
+"label"              = "#9CDCFE"
+
+# --- Markup ---
+"markup.heading"     = "#569CD6"
+"markup.bold"        = "#569CD6"
+"markup.italic"      = "#CE9178"
+"markup.link"        = "#569CD6"
+"markup.link.url"    = "#CE9178"
+"markup.raw"         = "#CE9178"
+"markup.list"        = "#6796E6"
+
+# --- Embedded / Special ---
+"special"            = "#D7BA7D"
+"embedded"           = "#D7BA7D"
+
+# --- Diff (git-commit, git-rebase) ---
+"diff.plus"          = "#B5CEA8"
+"diff.minus"         = "#F44747"
+"diff.delta"         = "#569CD6"
+
+# --- CSS at-rules ---
+"media"              = "#C586C0"
+"keyframes"          = "#C586C0"
+"charset"            = "#C586C0"
+"supports"           = "#C586C0"

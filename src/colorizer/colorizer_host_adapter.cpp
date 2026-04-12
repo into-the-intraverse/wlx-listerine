@@ -255,7 +255,10 @@ static void ensure_theme() {
         std::wstring base = get_module_dir();
         std::wstring grammar_dir = base + g_theme.config().code_grammar_dir;
         std::wstring theme_dir   = base + g_theme.config().code_theme_dir;
-        g_colorizer = std::make_unique<Colorizer>(grammar_dir, theme_dir);
+        g_colorizer = std::make_unique<Colorizer>(
+            grammar_dir, theme_dir,
+            g_theme.config().code_theme,
+            g_theme.config().code_theme_light);
 
         // line_height_factor from spacing config
         g_display_cfg.line_height_factor = g_theme.spacing().line_height_factor;

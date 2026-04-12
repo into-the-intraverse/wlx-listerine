@@ -1,5 +1,4 @@
 #include "query_highlighter.h"
-#include "scope.h"
 #include <algorithm>
 #include <regex>
 #include <string>
@@ -9,7 +8,7 @@ struct RawSpan {
     uint32_t start;
     uint32_t end;
     uint32_t pattern_index;
-    Scope scope;
+    uint32_t color;
 };
 
 // Get the text for a capture within a match, given the source string.
@@ -144,18 +143,25 @@ static bool evaluate_predicates(const TSQuery* query, const TSQueryMatch& match,
 std::vector<ColorSpan> QueryHighlighter::highlight(
     const TSTree* tree,
     const TSQuery* query,
-    const SyntaxPalette& palette,
-    const std::string& source)
+    const HelixTheme& theme,
+    const std::string& source,
+    uint32_t default_color)
 {
     if (!tree || !query) return {};
 
-    // Build capture_index -> Scope lookup
+    // Build capture_index -> color lookup via theme resolution
     uint32_t capture_count = ts_query_capture_count(query);
-    std::vector<Scope> capture_scopes(capture_count, Scope::Plain);
+    std::vector<uint32_t> capture_colors(capture_count, 0);
+    std::vector<bool> capture_has_color(capture_count, false);
     for (uint32_t i = 0; i < capture_count; i++) {
         uint32_t name_len = 0;
         const char* name = ts_query_capture_name_for_id(query, i, &name_len);
-        capture_scopes[i] = capture_to_scope(std::string_view(name, name_len));
+        std::string scope(name, name_len);
+        auto style = theme.resolve(scope);
+        if (style && style->has_fg) {
+            capture_colors[i] = style->fg;
+            capture_has_color[i] = true;
+        }
     }
 
     // Execute query
@@ -173,9 +179,8 @@ std::vector<ColorSpan> QueryHighlighter::highlight(
         const TSQueryCapture& cap = match.captures[capture_index];
         uint32_t start = ts_node_start_byte(cap.node);
         uint32_t end = ts_node_end_byte(cap.node);
-        Scope scope = (cap.index < capture_count) ? capture_scopes[cap.index] : Scope::Plain;
-        if (scope == Scope::Plain) continue;
-        raw.push_back({start, end, match.pattern_index, scope});
+        if (cap.index >= capture_count || !capture_has_color[cap.index]) continue;
+        raw.push_back({start, end, match.pattern_index, capture_colors[cap.index]});
     }
 
     ts_query_cursor_delete(cursor);
@@ -192,8 +197,7 @@ std::vector<ColorSpan> QueryHighlighter::highlight(
     for (const auto& span : raw) {
         uint32_t eff_start = std::max(span.start, covered_until);
         if (eff_start >= span.end) continue;
-        uint32_t color = scope_to_color(span.scope, palette);
-        result.push_back({eff_start, span.end - eff_start, color});
+        result.push_back({eff_start, span.end - eff_start, span.color});
         covered_until = span.end;
     }
 

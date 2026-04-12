@@ -215,7 +215,8 @@ int main(int argc, char* argv[]) {
         // Initialize colorizer for code fence highlighting
         // Grammar/theme dirs are relative to CWD (matching plugin behavior where they're
         // relative to the module directory, which is typically where the tool runs from)
-        Colorizer colorizer(theme.config().code_grammar_dir, theme.config().code_theme_dir);
+        Colorizer colorizer(theme.config().code_grammar_dir, theme.config().code_theme_dir,
+                            theme.config().code_theme, theme.config().code_theme_light);
 
         double t_theme = now_ms();
 

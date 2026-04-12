@@ -2,32 +2,29 @@
 #include <filesystem>
 #include "query_highlighter.h"
 #include "grammar_registry.h"
+#include "helix_theme.h"
 
 // ---------------------------------------------------------------------------
 // Null-safety tests
 // ---------------------------------------------------------------------------
 
 TEST_CASE("QueryHighlighter: null tree returns empty") {
-    SyntaxPalette pal = SyntaxPalette::defaults(false);
-    // Need a valid query for this test — but tree is null
-    // Pass nullptr for both; should still be empty
-    auto spans = QueryHighlighter::highlight(nullptr, nullptr, pal, "");
+    auto theme = HelixTheme::make_default(false);
+    auto spans = QueryHighlighter::highlight(nullptr, nullptr, theme, "");
     CHECK(spans.empty());
 }
 
 TEST_CASE("QueryHighlighter: null query returns empty") {
-    SyntaxPalette pal = SyntaxPalette::defaults(false);
-    // We need a real tree but null query
+    auto theme = HelixTheme::make_default(false);
     if (!std::filesystem::exists("grammars/c/tree-sitter-c.dll")) {
-        // Can't make a tree without a grammar; just test nullptr/nullptr
-        auto spans = QueryHighlighter::highlight(nullptr, nullptr, pal, "");
+        auto spans = QueryHighlighter::highlight(nullptr, nullptr, theme, "");
         CHECK(spans.empty());
         return;
     }
     GrammarRegistry reg(L"grammars");
     auto* tree = reg.parse("c", "int x = 1;");
     REQUIRE(tree != nullptr);
-    auto spans = QueryHighlighter::highlight(tree, nullptr, pal, "int x = 1;");
+    auto spans = QueryHighlighter::highlight(tree, nullptr, theme, "int x = 1;");
     CHECK(spans.empty());
     ts_tree_delete(tree);
 }
@@ -55,7 +52,7 @@ static bool has_c_grammar() {
 TEST_CASE("QueryHighlighter: C code produces spans"
     * doctest::skip(!has_c_grammar())) {
     GrammarRegistry reg(L"grammars");
-    SyntaxPalette pal = SyntaxPalette::defaults(false);
+    auto theme = HelixTheme::make_default(false);
 
     const char* source = "int main() { return 0; }";
     auto* tree = reg.parse("c", source);
@@ -63,7 +60,7 @@ TEST_CASE("QueryHighlighter: C code produces spans"
     REQUIRE(tree != nullptr);
     REQUIRE(query != nullptr);
 
-    auto spans = QueryHighlighter::highlight(tree, query, pal, source);
+    auto spans = QueryHighlighter::highlight(tree, query, theme, source);
     CHECK(!spans.empty());
     check_non_overlapping(spans);
 
@@ -91,7 +88,7 @@ static bool has_json_grammar() {
 TEST_CASE("QueryHighlighter: JSON produces spans"
     * doctest::skip(!has_json_grammar())) {
     GrammarRegistry reg(L"grammars");
-    SyntaxPalette pal = SyntaxPalette::defaults(false);
+    auto theme = HelixTheme::make_default(false);
 
     const char* source = R"({"name": "test", "value": 42, "flag": true})";
     auto* tree = reg.parse("json", source);
@@ -99,7 +96,7 @@ TEST_CASE("QueryHighlighter: JSON produces spans"
     REQUIRE(tree != nullptr);
     REQUIRE(query != nullptr);
 
-    auto spans = QueryHighlighter::highlight(tree, query, pal, source);
+    auto spans = QueryHighlighter::highlight(tree, query, theme, source);
     CHECK(!spans.empty());
     check_non_overlapping(spans);
 
@@ -117,7 +114,7 @@ static bool has_python_grammar() {
 TEST_CASE("QueryHighlighter: Python produces spans"
     * doctest::skip(!has_python_grammar())) {
     GrammarRegistry reg(L"grammars");
-    SyntaxPalette pal = SyntaxPalette::defaults(false);
+    auto theme = HelixTheme::make_default(false);
 
     const char* source = "def hello():\n    print(\"world\")\n";
     auto* tree = reg.parse("python", source);
@@ -125,7 +122,7 @@ TEST_CASE("QueryHighlighter: Python produces spans"
     REQUIRE(tree != nullptr);
     REQUIRE(query != nullptr);
 
-    auto spans = QueryHighlighter::highlight(tree, query, pal, source);
+    auto spans = QueryHighlighter::highlight(tree, query, theme, source);
     CHECK(!spans.empty());
     check_non_overlapping(spans);
 
@@ -149,7 +146,7 @@ TEST_CASE("QueryHighlighter: Python produces spans"
 TEST_CASE("QueryHighlighter: spans are non-overlapping for C"
     * doctest::skip(!has_c_grammar())) {
     GrammarRegistry reg(L"grammars");
-    SyntaxPalette pal = SyntaxPalette::defaults(false);
+    auto theme = HelixTheme::make_default(false);
 
     // Longer sample with overlapping potential
     const char* source =
@@ -164,7 +161,7 @@ TEST_CASE("QueryHighlighter: spans are non-overlapping for C"
     REQUIRE(tree != nullptr);
     REQUIRE(query != nullptr);
 
-    auto spans = QueryHighlighter::highlight(tree, query, pal, source);
+    auto spans = QueryHighlighter::highlight(tree, query, theme, source);
     CHECK(!spans.empty());
     check_non_overlapping(spans);
 
@@ -178,8 +175,8 @@ TEST_CASE("QueryHighlighter: spans are non-overlapping for C"
 TEST_CASE("QueryHighlighter: dark mode produces different colors"
     * doctest::skip(!has_c_grammar())) {
     GrammarRegistry reg(L"grammars");
-    SyntaxPalette light_pal = SyntaxPalette::defaults(false);
-    SyntaxPalette dark_pal = SyntaxPalette::defaults(true);
+    auto light_theme = HelixTheme::make_default(false);
+    auto dark_theme = HelixTheme::make_default(true);
 
     const char* source = "int main() { return 0; }";
     auto* tree = reg.parse("c", source);
@@ -187,8 +184,8 @@ TEST_CASE("QueryHighlighter: dark mode produces different colors"
     REQUIRE(tree != nullptr);
     REQUIRE(query != nullptr);
 
-    auto light_spans = QueryHighlighter::highlight(tree, query, light_pal, source);
-    auto dark_spans = QueryHighlighter::highlight(tree, query, dark_pal, source);
+    auto light_spans = QueryHighlighter::highlight(tree, query, light_theme, source);
+    auto dark_spans = QueryHighlighter::highlight(tree, query, dark_theme, source);
 
     // Same number of spans (same structure, different colors)
     REQUIRE(light_spans.size() == dark_spans.size());

@@ -37,9 +37,8 @@ find_package(tree-sitter REQUIRED)
 
 add_library(colorizer-core STATIC
     src/colorizer/colorizer.cpp
-    src/colorizer/theme_loader.cpp
+    src/colorizer/helix_theme.cpp
     src/colorizer/grammar_registry.cpp
-    src/colorizer/scope.cpp
     src/colorizer/query_highlighter.cpp
 )
 
@@ -84,6 +83,9 @@ add_custom_command(TARGET wlx-listerine-md POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/config/themes/default.toml"
         "${CMAKE_SOURCE_DIR}/output/themes/default.toml"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/config/themes/default_light.toml"
+        "${CMAKE_SOURCE_DIR}/output/themes/default_light.toml"
 )
 
 # --- Colorizer Plugin DLL ---
@@ -121,6 +123,9 @@ add_custom_command(TARGET wlx-listerine-colorizer POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/config/themes/default.toml"
         "${CMAKE_SOURCE_DIR}/output/themes/default.toml"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/config/themes/default_light.toml"
+        "${CMAKE_SOURCE_DIR}/output/themes/default_light.toml"
     COMMAND ${CMAKE_COMMAND} -E make_directory
         "${CMAKE_SOURCE_DIR}/output/grammars"
     COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
@@ -420,9 +425,8 @@ add_grammar(gitignore   "${ts-gitignore_SOURCE_DIR}")
 add_executable(colorizer-tests
     tests/test_main.cpp
     tests/test_colorizer.cpp
-    tests/test_colorizer_theme.cpp
+    tests/test_colorizer_helix_theme.cpp
     tests/test_colorizer_grammar.cpp
-    tests/test_colorizer_scope_new.cpp
     tests/test_colorizer_query_highlighter.cpp
     tests/test_colorizer_grammars.cpp
 )

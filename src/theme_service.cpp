@@ -136,6 +136,8 @@ void ThemeService::load(const std::wstring& toml_path) {
             config_.code_default_language = *v;
         if (auto v = tbl["code"]["theme"].value<std::string>())
             config_.code_theme = *v;
+        if (auto v = tbl["code"]["theme_light"].value<std::string>())
+            config_.code_theme_light = *v;
 
     } catch (...) {
         // Parse failure or missing file -- defaults already set above

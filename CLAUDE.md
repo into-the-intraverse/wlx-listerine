@@ -45,7 +45,9 @@ HostAdapter (host_adapter.cpp)         WLX exports, WndProc, scroll, D2D/DWrite 
 
 ### colorizer-core (static lib)
 
-Syntax highlighting engine used by both the colorizer and md plugins (for code blocks). Components: `GrammarRegistry` (loads tree-sitter grammars), `Tokenizer` (produces token stream from AST), `ScopeMapper` (maps token scopes to theme colors), `ThemeLoader` (parses TOML color themes). Input: source code + grammar; output: token + color pairs for rendering.
+Syntax highlighting engine used by both the colorizer and md plugins (for code blocks). Components: `GrammarRegistry` (loads tree-sitter grammars), `QueryHighlighter` (executes tree-sitter queries, resolves colors via theme), `HelixTheme` (loads Helix-compatible TOML themes with hierarchical scope resolution). Input: source code + grammar; output: colored spans for rendering.
+
+**Theme system:** Helix editor-compatible TOML themes in `config/themes/`. Theme files use the same format as Helix (flat scope-to-style entries, `[palette]` section, `inherits` key). Config keys: `theme` (dark/default), `theme_light` (optional light override). If only `theme = "foo"` is set, the system auto-detects `foo_light.toml` for light mode.
 
 ## WLX exports (Unicode-only)
 

@@ -20,7 +20,7 @@
 - Line numbers, indent guides, whitespace markers
 - Ships with **25+ grammars** (git, vim, c++, UE and more)
 - **Easily extendable** — drop tree-sitter grammar DLLs into `grammars/`
-- **Customizable** color themes
+- **Helix-compatible** color themes — drop in themes from the [Helix community](https://github.com/helix-editor/helix/tree/master/runtime/themes)
 
 ---
 
@@ -56,7 +56,8 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the full reference.
 ### Deferred grammars
 - **Markdown** — tree-sitter-markdown uses split block/inline parsers with injection support; needs non-trivial integration
 - **Unreal C++** (`taku25/tree-sitter-unreal-cpp`) — exports `tree_sitter_cpp()` which collides with standard C++ grammar; needs custom export wrapper
-- **Predicate evaluation** — `#eq?`, `#match?`, `#any-of?` predicates in highlights.scm are currently ignored; most grammars work without them but quality improves with support
+- ~~**Predicate evaluation**~~ — ✅ implemented (`#eq?`, `#match?`, `#any-of?`, `#not-eq?`, `#not-match?`)
+- **Theme modifiers** — Helix themes can specify text modifiers (bold, italic, underline) per scope; currently only foreground/background colors are applied
 
 ## 📄 License
 
