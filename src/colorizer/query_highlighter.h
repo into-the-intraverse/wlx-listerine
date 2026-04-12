@@ -10,5 +10,6 @@ public:
     static std::vector<ColorSpan> highlight(
         const TSTree* tree,
         const TSQuery* query,
-        const SyntaxPalette& palette);
+        const SyntaxPalette& palette,
+        const std::string& source);
 };

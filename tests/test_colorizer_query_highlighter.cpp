@@ -11,7 +11,7 @@ TEST_CASE("QueryHighlighter: null tree returns empty") {
     SyntaxPalette pal = SyntaxPalette::defaults(false);
     // Need a valid query for this test — but tree is null
     // Pass nullptr for both; should still be empty
-    auto spans = QueryHighlighter::highlight(nullptr, nullptr, pal);
+    auto spans = QueryHighlighter::highlight(nullptr, nullptr, pal, "");
     CHECK(spans.empty());
 }
 
@@ -20,14 +20,14 @@ TEST_CASE("QueryHighlighter: null query returns empty") {
     // We need a real tree but null query
     if (!std::filesystem::exists("grammars/c/tree-sitter-c.dll")) {
         // Can't make a tree without a grammar; just test nullptr/nullptr
-        auto spans = QueryHighlighter::highlight(nullptr, nullptr, pal);
+        auto spans = QueryHighlighter::highlight(nullptr, nullptr, pal, "");
         CHECK(spans.empty());
         return;
     }
     GrammarRegistry reg(L"grammars");
     auto* tree = reg.parse("c", "int x = 1;");
     REQUIRE(tree != nullptr);
-    auto spans = QueryHighlighter::highlight(tree, nullptr, pal);
+    auto spans = QueryHighlighter::highlight(tree, nullptr, pal, "int x = 1;");
     CHECK(spans.empty());
     ts_tree_delete(tree);
 }
@@ -63,7 +63,7 @@ TEST_CASE("QueryHighlighter: C code produces spans"
     REQUIRE(tree != nullptr);
     REQUIRE(query != nullptr);
 
-    auto spans = QueryHighlighter::highlight(tree, query, pal);
+    auto spans = QueryHighlighter::highlight(tree, query, pal, source);
     CHECK(!spans.empty());
     check_non_overlapping(spans);
 
@@ -99,7 +99,7 @@ TEST_CASE("QueryHighlighter: JSON produces spans"
     REQUIRE(tree != nullptr);
     REQUIRE(query != nullptr);
 
-    auto spans = QueryHighlighter::highlight(tree, query, pal);
+    auto spans = QueryHighlighter::highlight(tree, query, pal, source);
     CHECK(!spans.empty());
     check_non_overlapping(spans);
 
@@ -125,7 +125,7 @@ TEST_CASE("QueryHighlighter: Python produces spans"
     REQUIRE(tree != nullptr);
     REQUIRE(query != nullptr);
 
-    auto spans = QueryHighlighter::highlight(tree, query, pal);
+    auto spans = QueryHighlighter::highlight(tree, query, pal, source);
     CHECK(!spans.empty());
     check_non_overlapping(spans);
 
@@ -164,7 +164,7 @@ TEST_CASE("QueryHighlighter: spans are non-overlapping for C"
     REQUIRE(tree != nullptr);
     REQUIRE(query != nullptr);
 
-    auto spans = QueryHighlighter::highlight(tree, query, pal);
+    auto spans = QueryHighlighter::highlight(tree, query, pal, source);
     CHECK(!spans.empty());
     check_non_overlapping(spans);
 
@@ -187,8 +187,8 @@ TEST_CASE("QueryHighlighter: dark mode produces different colors"
     REQUIRE(tree != nullptr);
     REQUIRE(query != nullptr);
 
-    auto light_spans = QueryHighlighter::highlight(tree, query, light_pal);
-    auto dark_spans = QueryHighlighter::highlight(tree, query, dark_pal);
+    auto light_spans = QueryHighlighter::highlight(tree, query, light_pal, source);
+    auto dark_spans = QueryHighlighter::highlight(tree, query, dark_pal, source);
 
     // Same number of spans (same structure, different colors)
     REQUIRE(light_spans.size() == dark_spans.size());

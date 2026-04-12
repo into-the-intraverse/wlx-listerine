@@ -38,7 +38,7 @@ ColorizeResult Colorizer::colorize(const std::string& source,
     }
 
     auto palette = theme_loader_->palette_for(language, dark_mode);
-    result.spans = QueryHighlighter::highlight(tree, query, palette);
+    result.spans = QueryHighlighter::highlight(tree, query, palette, source);
 
     ts_tree_delete(tree);
     return result;
