@@ -28,7 +28,7 @@ jobs:
 
       - name: Install Conan
         run: |
-          uv pip install conan
+          uv pip install --system conan
           conan profile detect
 
       - name: Install C++ dependencies
