@@ -61,16 +61,3 @@ TEST_CASE("Colorizer end-to-end with Python grammar"
     auto result = c.colorize("def foo(x):\n    return x + 1\n", "python", false);
     CHECK_FALSE(result.spans.empty());
 }
-
-TEST_CASE("Colorizer git-commit produces spans with comment line"
-    * doctest::skip(!std::filesystem::exists("grammars/git-commit/tree-sitter-git-commit.dll"))) {
-    Colorizer c(L"grammars", L"config/themes");
-    REQUIRE(c.supports("git-commit"));
-
-    // git-commit grammar only matches punctuation in specific positions.
-    // Custom scopes like @subject, @message are not themed => skipped.
-    // To get spans, we need a comment line (starts with #).
-    auto result = c.colorize("feat: fix\n# comment line\n", "git-commit", false);
-    INFO("git-commit span count: " << result.spans.size());
-    CHECK_FALSE(result.spans.empty());
-}

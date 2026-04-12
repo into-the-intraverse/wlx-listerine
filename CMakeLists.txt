@@ -196,18 +196,23 @@ function(add_grammar LANG SOURCE_DIR)
         RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/grammars/${LANG}"
         RUNTIME_OUTPUT_DIRECTORY_DEBUG   "${CMAKE_SOURCE_DIR}/grammars/${LANG}"
     )
-    # Determine highlights.scm location
-    if(AG_QUERY_DIR)
-        set(_query_dir "${AG_QUERY_DIR}")
-    else()
-        set(_query_dir "${SOURCE_DIR}/queries")
-    endif()
-    if(EXISTS "${_query_dir}/highlights.scm")
-        add_custom_command(TARGET tree-sitter-${LANG} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${_query_dir}/highlights.scm"
-                "${CMAKE_SOURCE_DIR}/grammars/${LANG}/highlights.scm"
-        )
+    # Copy highlights.scm from upstream ONLY if we don't have a local override.
+    # Local query files (in grammars/${LANG}/) take precedence — they may contain
+    # Helix-compatible queries with ; inherits: directives and richer scope coverage.
+    set(_local_query "${CMAKE_SOURCE_DIR}/grammars/${LANG}/highlights.scm")
+    if(NOT EXISTS "${_local_query}")
+        if(AG_QUERY_DIR)
+            set(_query_dir "${AG_QUERY_DIR}")
+        else()
+            set(_query_dir "${SOURCE_DIR}/queries")
+        endif()
+        if(EXISTS "${_query_dir}/highlights.scm")
+            add_custom_command(TARGET tree-sitter-${LANG} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${_query_dir}/highlights.scm"
+                    "${_local_query}"
+            )
+        endif()
     endif()
 endfunction()
 
@@ -311,11 +316,6 @@ FetchContent_Declare(ts-gitattributes
     GIT_TAG        v0.1.6
     GIT_SHALLOW    TRUE
 )
-FetchContent_Declare(ts-gitcommit
-    GIT_REPOSITORY git@github.com:the-mikedavis/tree-sitter-git-commit.git
-    GIT_TAG        main
-    GIT_SHALLOW    TRUE
-)
 FetchContent_Declare(ts-gitconfig
     GIT_REPOSITORY git@github.com:the-mikedavis/tree-sitter-git-config.git
     GIT_TAG        main
@@ -373,7 +373,6 @@ fetch_grammar(ts-lua)
 fetch_grammar(ts-dockerfile)
 fetch_grammar(ts-cmake-lang)
 fetch_grammar(ts-gitattributes)
-fetch_grammar(ts-gitcommit)
 fetch_grammar(ts-gitconfig)
 fetch_grammar(ts-git-rebase)
 fetch_grammar(ts-typescript)
@@ -401,7 +400,6 @@ add_grammar(lua         "${ts-lua_SOURCE_DIR}")
 add_grammar(dockerfile  "${ts-dockerfile_SOURCE_DIR}")
 add_grammar(cmake       "${ts-cmake-lang_SOURCE_DIR}")
 add_grammar(gitattributes "${ts-gitattributes_SOURCE_DIR}")
-add_grammar(git-commit  "${ts-gitcommit_SOURCE_DIR}")
 add_grammar(git-config  "${ts-gitconfig_SOURCE_DIR}")
 add_grammar(git_rebase  "${ts-git-rebase_SOURCE_DIR}")
 

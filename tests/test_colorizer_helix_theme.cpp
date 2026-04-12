@@ -116,7 +116,7 @@ TEST_CASE("HelixTheme load: default light theme from config/themes") {
     CHECK(!theme.empty());
     CHECK(theme.resolve_fg("keyword", 0) != 0);
 
-    // Verify punctuation and comment resolve (critical for git-commit grammar)
+    // Verify punctuation and comment resolve
     auto punc = theme.resolve("punctuation");
     CHECK(punc.has_value());
     if (punc) CHECK(punc->has_fg);

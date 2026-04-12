@@ -1,76 +1,99 @@
 (comment) @comment
 
-(tag_name) @tag
-(nesting_selector) @tag
-(universal_selector) @tag
+[
+  (tag_name)
+  (nesting_selector)
+  (universal_selector)
+] @tag
 
-"~" @operator
-">" @operator
-"+" @operator
-"-" @operator
-"*" @operator
-"/" @operator
-"=" @operator
-"^=" @operator
-"|=" @operator
-"~=" @operator
-"$=" @operator
-"*=" @operator
+[
+  "~"
+  ">"
+  "+"
+  "-"
+  "*"
+  "/"
+  "="
+  "^="
+  "|="
+  "~="
+  "$="
+  "*="
+] @operator
 
-"and" @operator
-"or" @operator
-"not" @operator
-"only" @operator
+[
+  "and"
+  "not"
+  "only"
+  "or"
+] @keyword.operator
 
 (attribute_selector (plain_value) @string)
 
+(property_name) @variable.other.member
+(plain_value) @constant
+
 ((property_name) @variable
- (#match? @variable "^--"))
+  (#match? @variable "^--"))
 ((plain_value) @variable
- (#match? @variable "^--"))
+  (#match? @variable "^--"))
 
-(class_name) @property
-(id_name) @property
-(namespace_name) @property
-(property_name) @property
-(feature_name) @property
+(class_name) @label
+(feature_name) @variable.other.member
+(function_name) @function
+(id_name) @label
+(namespace_name) @namespace
 
+(attribute_name) @attribute
 (pseudo_element_selector (tag_name) @attribute)
 (pseudo_class_selector (class_name) @attribute)
-(attribute_name) @attribute
 
-(function_name) @function
+[
+  "@charset"
+  "@import"
+  "@keyframes"
+  "@media"
+  "@namespace"
+  "@supports"
+  (at_keyword)
+  (from)
+  (important)
+  (to)
+  (keyword_query)
+  (keyframes_name)
+  (unit)
+] @keyword
 
-"@media" @keyword
-"@import" @keyword
-"@charset" @keyword
-"@namespace" @keyword
-"@supports" @keyword
-"@keyframes" @keyword
-(at_keyword) @keyword
-(to) @keyword
-(from) @keyword
-(important) @keyword
-
-(string_value) @string
-(color_value) @string.special
-
-(integer_value) @number
-(float_value) @number
-(unit) @type
+; @apply something;
+(at_rule
+  . (at_keyword) @keyword
+  . (keyword_query) @constant
+  (#eq? @keyword "@apply"))
 
 [
   "#"
-  ","
   "."
-  ":"
-  "::"
-  ";"
-] @punctuation.delimiter
+] @punctuation
+
+(string_value) @string
+(color_value "#" @string.special)
+(color_value) @string.special
+
+(integer_value) @constant.numeric.integer
+(float_value) @constant.numeric.float
 
 [
-  "{"
   ")"
   "("
+  "["
+  "]"
+  "{"
   "}"
 ] @punctuation.bracket
+
+[
+  ","
+  ";"
+  ":"
+  "::"
+] @punctuation.delimiter
