@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 #include <filesystem>
 #include <string>
+#include <set>
 #include "colorizer.h"
 
 // Helper: verify that colorize() produces non-empty, sorted, non-overlapping spans.
@@ -461,4 +462,58 @@ squash 9ab0cde chore: cleanup
 fixup fab1234 style: formatting
 drop dead567 test: remove flaky test
 )", "git_rebase");
+}
+
+// --- Diagnostic: report per-grammar stats ---
+TEST_CASE("Grammar diagnostics: span and color counts") {
+    Colorizer c(L"grammars", L"config/themes");
+    struct TC { const char* lang; const char* src; };
+    TC cases[] = {
+        {"c",       "// comment\nint main() { return 0; }"},
+        {"cpp",     "// comment\n#include <string>\nclass Foo { int x = 42; };"},
+        {"python",  "# comment\ndef foo(x):\n    return x + 1"},
+        {"javascript", "// comment\nconst x = 'hello';\nfunction foo(a) { return a; }"},
+        {"typescript",  "// comment\nconst x: string = 'hello';\nfunction foo(a: number): number { return a; }"},
+        {"rust",    "// comment\nfn main() {\n    let x: i32 = 42;\n    println!(\"hi\");\n}"},
+        {"go",      "// comment\npackage main\nfunc main() {\n    x := 42\n}"},
+        {"java",    "// comment\npublic class Main {\n    public static void main(String[] args) {}\n}"},
+        {"c-sharp", "// comment\nclass Program {\n    static void Main() { int x = 42; }\n}"},
+        {"json",    "{\"key\": \"value\", \"num\": 42, \"bool\": true}"},
+        {"html",    "<html><head><title>Test</title></head><body class=\"main\">Hello</body></html>"},
+        {"css",     "/* comment */\nbody { color: #333; font-size: 14px; }"},
+        {"bash",    "#!/bin/bash\n# comment\nif [ -f \"$1\" ]; then\n  echo \"exists\"\nfi"},
+        {"toml",    "# comment\n[section]\nkey = \"value\"\nnum = 42\nbool = true"},
+        {"yaml",    "# comment\nname: test\nitems:\n  - foo\n  - bar"},
+        {"lua",     "-- comment\nlocal function foo(x)\n  return x + 1\nend"},
+        {"php",     "<?php\n// comment\nfunction foo($x) {\n  return $x + 1;\n}"},
+        {"powershell", "# comment\nfunction Get-Thing {\n  $x = 42\n  Write-Host $x\n}"},
+        {"vim",     "\" comment\nfunction! Foo()\n  let l:x = 42\n  echo l:x\nendfunction"},
+        {"dockerfile", "FROM ubuntu:22.04\nRUN apt-get update\nCOPY . /app\nCMD [\"./app\"]"},
+        {"cmake",   "cmake_minimum_required(VERSION 3.20)\nproject(test)\nadd_executable(main main.cpp)"},
+        {"git-commit", "feat: add feature\n\nDetailed description.\n\nFixes #123"},
+        {"git-config", "[user]\n  name = Test\n  email = test@example.com"},
+        {"gitignore",  "# comment\nbuild/\n*.o\n!important.o"},
+        {"gitattributes", "*.txt text\n*.png binary\n*.cpp diff=cpp"},
+        {"git_rebase",    "pick abc1234 feat: add\nreword def567 fix: typo"},
+    };
+    for (auto& tc : cases) {
+        if (!c.supports(tc.lang)) {
+            MESSAGE(tc.lang << ": NOT SUPPORTED");
+            continue;
+        }
+        auto result = c.colorize(tc.src, tc.lang, false);
+        std::set<uint32_t> colors;
+        uint32_t colored = 0;
+        for (auto& s : result.spans) { colors.insert(s.color); colored += s.length; }
+        int src_len = (int)strlen(tc.src);
+        int cov = src_len > 0 ? (int)(100.0 * colored / src_len) : 0;
+        std::string lang_str(tc.lang);
+        MESSAGE(lang_str << ": spans=" << result.spans.size()
+                << " colors=" << colors.size() << " coverage=" << cov << "%");
+        CHECK(result.spans.size() > 0);
+        // git-commit messages are mostly plain text, so 1 color is acceptable
+        if (lang_str != "git-commit") {
+            CHECK(colors.size() >= 2);
+        }
+    }
 }
