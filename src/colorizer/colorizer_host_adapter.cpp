@@ -208,11 +208,26 @@ static void ensure_factories() {
     }
 }
 
+static constexpr wchar_t kDefaultDetectString[] =
+    L"EXT=\"C\" | EXT=\"H\" | EXT=\"CPP\" | EXT=\"CC\" | EXT=\"CXX\" | EXT=\"HPP\" | "
+    L"EXT=\"HXX\" | EXT=\"PY\" | EXT=\"PYI\" | EXT=\"JS\" | EXT=\"MJS\" | EXT=\"CJS\" | "
+    L"EXT=\"JSX\" | EXT=\"TS\" | EXT=\"TSX\" | EXT=\"MTS\" | EXT=\"RS\" | EXT=\"GO\" | "
+    L"EXT=\"JAVA\" | EXT=\"CS\" | EXT=\"PHP\" | EXT=\"LUA\" | EXT=\"SH\" | EXT=\"BASH\" | "
+    L"EXT=\"ZSH\" | EXT=\"PS1\" | EXT=\"PSM1\" | EXT=\"PSD1\" | EXT=\"VIM\" | "
+    L"EXT=\"VIMRC\" | EXT=\"JSON\" | EXT=\"JSONC\" | EXT=\"TOML\" | EXT=\"YAML\" | "
+    L"EXT=\"YML\" | EXT=\"HTML\" | EXT=\"HTM\" | EXT=\"XML\" | EXT=\"SVG\" | EXT=\"CSS\" | "
+    L"EXT=\"MD\" | EXT=\"MARKDOWN\" | EXT=\"CMAKE\" | EXT=\"SQL\" | EXT=\"GITCONFIG\" | "
+    L"EXT=\"GITIGNORE\" | EXT=\"GITATTRIBUTES\"";
+
 static void ensure_theme() {
     if (!g_theme_loaded) {
         std::wstring cfg_path = get_module_dir() + L"wlx-listerine-colorizer.toml";
         g_theme.load(cfg_path);
         g_theme_loaded = true;
+
+        // Override md-only default detect_string with colorizer's full set
+        if (g_theme.config().detect_string == L"EXT=\"MD\" | EXT=\"MARKDOWN\"")
+            g_theme.mutable_config().detect_string = kDefaultDetectString;
 
         // Parse [display] section — ThemeService doesn't know about it
         try {

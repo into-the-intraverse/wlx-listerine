@@ -64,6 +64,7 @@ public:
     void load(const std::wstring& toml_path);
 
     const ThemeConfig& config() const { return config_; }
+    ThemeConfig& mutable_config() { return config_; }
     const ColorPalette& palette(bool dark_mode) const;
     const FontConfig& fonts() const { return config_.fonts; }
     const SpacingConfig& spacing() const { return config_.spacing; }
