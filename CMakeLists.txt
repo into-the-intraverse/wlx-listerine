@@ -424,6 +424,7 @@ add_executable(colorizer-tests
     tests/test_colorizer_grammar.cpp
     tests/test_colorizer_scope_new.cpp
     tests/test_colorizer_query_highlighter.cpp
+    tests/test_colorizer_grammars.cpp
 )
 
 target_link_libraries(colorizer-tests PRIVATE

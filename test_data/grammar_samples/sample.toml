@@ -1,0 +1,16 @@
+# TOML sample
+title = "Sample Config"
+version = 2
+
+[database]
+server = "192.168.1.1"
+port = 5432
+enabled = true
+
+[database.options]
+timeout = 30.0
+retries = 3
+
+[[servers]]
+name = "alpha"
+ip = "10.0.0.1"

@@ -1,0 +1,15 @@
+[user]
+    name = Test User
+    email = test@example.com
+
+[core]
+    autocrlf = true
+    editor = vim
+
+[alias]
+    st = status
+    co = checkout
+    lg = log --oneline --graph
+
+[color]
+    ui = auto

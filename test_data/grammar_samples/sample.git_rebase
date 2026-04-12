@@ -1,0 +1,7 @@
+pick abc1234 feat: add new feature
+reword def5678 fix: correct typo
+squash 9ab0cde chore: cleanup whitespace
+fixup fab1234 style: formatting
+drop dead567 test: remove flaky test
+
+# Rebase abc1234..dead567 onto main (5 commands)

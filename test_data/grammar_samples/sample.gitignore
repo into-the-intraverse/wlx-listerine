@@ -1,0 +1,17 @@
+# Build output
+build/
+*.o
+*.exe
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+
+# Dependencies
+node_modules/
+__pycache__/
+
+# Environment
+.env
+*.log

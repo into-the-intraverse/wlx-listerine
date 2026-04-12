@@ -1,0 +1,17 @@
+# YAML sample
+name: sample-app
+version: "1.0"
+debug: true
+
+database:
+  host: localhost
+  port: 5432
+  credentials:
+    user: admin
+    password: secret
+
+services:
+  - name: web
+    port: 8080
+  - name: api
+    port: 3000

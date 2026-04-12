@@ -1,0 +1,7 @@
+feat: add grammar sample files for testing
+
+Create sample source files for all 26 supported languages.
+Each file exercises key syntax: keywords, strings, comments,
+numbers, functions, and types.
+
+Fixes #123

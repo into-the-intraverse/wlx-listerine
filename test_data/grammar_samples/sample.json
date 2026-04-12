@@ -1,0 +1,11 @@
+{
+    "name": "sample",
+    "version": 1,
+    "enabled": true,
+    "tags": ["test", "example"],
+    "metadata": {
+        "author": "test",
+        "count": 42,
+        "ratio": 3.14
+    }
+}

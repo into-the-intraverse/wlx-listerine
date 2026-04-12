@@ -1,0 +1,19 @@
+// C++ sample with templates
+#include <iostream>
+#include <vector>
+
+template<typename T>
+class Container {
+public:
+    void add(const T& item) { items_.push_back(item); }
+    size_t size() const { return items_.size(); }
+private:
+    std::vector<T> items_;
+};
+
+int main() {
+    auto c = Container<std::string>();
+    c.add("hello");
+    std::cout << c.size() << std::endl;
+    return 0;
+}
