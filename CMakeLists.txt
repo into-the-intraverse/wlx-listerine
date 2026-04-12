@@ -396,8 +396,8 @@ add_grammar(lua         "${ts-lua_SOURCE_DIR}")
 add_grammar(dockerfile  "${ts-dockerfile_SOURCE_DIR}")
 add_grammar(cmake       "${ts-cmake-lang_SOURCE_DIR}")
 add_grammar(gitattributes "${ts-gitattributes_SOURCE_DIR}")
-add_grammar(gitcommit   "${ts-gitcommit_SOURCE_DIR}")
-add_grammar(gitconfig   "${ts-gitconfig_SOURCE_DIR}")
+add_grammar(git-commit  "${ts-gitcommit_SOURCE_DIR}")
+add_grammar(git-config  "${ts-gitconfig_SOURCE_DIR}")
 add_grammar(git_rebase  "${ts-git-rebase_SOURCE_DIR}")
 
 # --- Special grammars ---

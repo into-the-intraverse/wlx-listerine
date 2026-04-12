@@ -392,8 +392,8 @@ endif()
 }
 
 // --- Grammar: git commit ---
-TEST_CASE("Grammar: gitcommit"
-    * doctest::skip(!std::filesystem::exists("grammars/gitcommit/tree-sitter-gitcommit.dll"))) {
+TEST_CASE("Grammar: git-commit"
+    * doctest::skip(!std::filesystem::exists("grammars/git-commit/tree-sitter-git-commit.dll"))) {
     Colorizer c(L"grammars", L"config/themes");
     verify_colorize(c, R"(feat: add grammar sample files for testing
 
@@ -401,12 +401,12 @@ Create sample source files for all 26 supported languages.
 Each file exercises key syntax: keywords, strings, comments.
 
 Fixes #123
-)", "gitcommit");
+)", "git-commit");
 }
 
 // --- Grammar: git config ---
-TEST_CASE("Grammar: gitconfig"
-    * doctest::skip(!std::filesystem::exists("grammars/gitconfig/tree-sitter-gitconfig.dll"))) {
+TEST_CASE("Grammar: git-config"
+    * doctest::skip(!std::filesystem::exists("grammars/git-config/tree-sitter-git-config.dll"))) {
     Colorizer c(L"grammars", L"config/themes");
     verify_colorize(c, R"([user]
     name = Test User
@@ -417,7 +417,7 @@ TEST_CASE("Grammar: gitconfig"
 [alias]
     st = status
     co = checkout
-)", "gitconfig");
+)", "git-config");
 }
 
 // --- Grammar: gitignore ---

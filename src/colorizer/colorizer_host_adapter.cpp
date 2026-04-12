@@ -141,7 +141,7 @@ static const struct { const wchar_t* ext; const char* lang; } kExtLangMap[] = {
     { L"cmake",       "cmake"      },
     { L"sql",         "sql"        },
     // Git
-    { L"gitconfig",   "gitconfig"  },
+    { L"gitconfig",   "git-config" },
     { L"gitignore",   "gitignore"  },
     { L"gitattributes", "gitattributes" },
 };
@@ -169,7 +169,7 @@ static std::string filename_to_language(const std::wstring& path) {
     if (filename == L"cmakelists.txt")
         return "cmake";
     if (filename == L".gitconfig")
-        return "gitconfig";
+        return "git-config";
     if (filename == L".gitignore")
         return "gitignore";
     if (filename == L".gitattributes")
