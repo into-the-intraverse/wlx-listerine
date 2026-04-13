@@ -139,6 +139,7 @@ static const struct { const wchar_t* ext; const char* lang; } kExtLangMap[] = {
     { L"markdown",    "markdown"   },
     // Build / DevOps
     { L"cmake",       "cmake"      },
+    { L"dockerfile",  "dockerfile" },
     { L"sql",         "sql"        },
     // Git
     { L"gitconfig",   "git-config" },
@@ -166,6 +167,8 @@ static std::string filename_to_language(const std::wstring& path) {
 
     if (filename == L"dockerfile" || filename == L"containerfile")
         return "dockerfile";
+    if (filename.find(L"dockerfile") != std::wstring::npos)
+        return "dockerfile";
     if (filename == L"cmakelists.txt")
         return "cmake";
     if (filename == L".gitconfig")
@@ -174,6 +177,8 @@ static std::string filename_to_language(const std::wstring& path) {
         return "gitignore";
     if (filename == L".gitattributes")
         return "gitattributes";
+    if (filename.find(L"git-rebase-todo") != std::wstring::npos)
+        return "git_rebase";
 
     return {};
 }
@@ -216,8 +221,8 @@ static constexpr wchar_t kDefaultDetectString[] =
     L"EXT=\"ZSH\" | EXT=\"PS1\" | EXT=\"PSM1\" | EXT=\"PSD1\" | EXT=\"VIM\" | "
     L"EXT=\"VIMRC\" | EXT=\"JSON\" | EXT=\"JSONC\" | EXT=\"TOML\" | EXT=\"YAML\" | "
     L"EXT=\"YML\" | EXT=\"HTML\" | EXT=\"HTM\" | EXT=\"XML\" | EXT=\"SVG\" | EXT=\"CSS\" | "
-    L"EXT=\"MD\" | EXT=\"MARKDOWN\" | EXT=\"CMAKE\" | EXT=\"SQL\" | EXT=\"GITCONFIG\" | "
-    L"EXT=\"GITIGNORE\" | EXT=\"GITATTRIBUTES\"";
+    L"EXT=\"MD\" | EXT=\"MARKDOWN\" | EXT=\"CMAKE\" | EXT=\"SQL\" | EXT=\"DOCKERFILE\" | "
+    L"EXT=\"GITCONFIG\" | EXT=\"GITIGNORE\" | EXT=\"GITATTRIBUTES\"";
 
 static void ensure_theme() {
     if (!g_theme_loaded) {
