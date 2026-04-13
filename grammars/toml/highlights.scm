@@ -51,3 +51,6 @@
   "{"
   "}"
 ] @punctuation.bracket
+
+; Syntax errors
+(ERROR) @diagnostic.error

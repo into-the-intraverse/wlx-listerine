@@ -219,6 +219,7 @@ void RenderEngine::paint(const LayoutDocument& layout, float scroll_y,
         paint_block_background(block, 0);
         paint_trailing_ws(block, 0);
         paint_inline_code_bg(block, 0);
+        paint_span_backgrounds(block, 0);
         paint_selection_highlight(block, block_idx, 0, sel_start, sel_end);
         paint_block_decoration(block, 0);
         paint_indent_guides(block, 0);
@@ -474,6 +475,36 @@ void RenderEngine::paint_trailing_ws(const LayoutBlock& block, float offset_y) {
     r.top += offset_y;
     r.bottom += offset_y;
     rt_->FillRectangle(&r, brush);
+}
+
+void RenderEngine::paint_span_backgrounds(const LayoutBlock& block, float offset_y) {
+    for (auto& run : block.text_runs) {
+        if (!run.layout) continue;
+        for (auto& cr : run.color_ranges) {
+            if (!cr.has_bg) continue;
+            auto* brush = get_brush(cr.bg_color, 0.25f);
+            if (!brush) continue;
+
+            // Get rect from text layout for this range
+            UINT32 actual_count = 0;
+            run.layout->HitTestTextRange(cr.start, cr.length, 0, 0,
+                                         nullptr, 0, &actual_count);
+            if (actual_count == 0) continue;
+
+            std::vector<DWRITE_HIT_TEST_METRICS> metrics(actual_count);
+            run.layout->HitTestTextRange(cr.start, cr.length, 0, 0,
+                                         metrics.data(), actual_count, &actual_count);
+
+            for (UINT32 m = 0; m < actual_count; m++) {
+                D2D1_RECT_F r = D2D1::RectF(
+                    run.rect.left + metrics[m].left,
+                    run.rect.top + offset_y + metrics[m].top,
+                    run.rect.left + metrics[m].left + metrics[m].width,
+                    run.rect.top + offset_y + metrics[m].top + metrics[m].height);
+                rt_->FillRectangle(&r, brush);
+            }
+        }
+    }
 }
 
 void RenderEngine::paint_whitespace_markers(const LayoutBlock& block, float offset_y) {

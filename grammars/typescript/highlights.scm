@@ -306,3 +306,6 @@
   "keyof" "namespace" "private" "protected" "public" "type"
   "readonly" "override" "satisfies"
 ] @keyword
+
+; Syntax errors
+(ERROR) @diagnostic.error

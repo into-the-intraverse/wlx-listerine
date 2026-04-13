@@ -50,3 +50,6 @@
 ] @error
 
 (comment) @comment
+
+; Syntax errors
+(ERROR) @diagnostic.error

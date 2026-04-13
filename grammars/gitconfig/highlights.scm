@@ -26,3 +26,6 @@
 "=" @punctuation.delimiter
 
 (comment) @comment
+
+; Syntax errors
+(ERROR) @diagnostic.error

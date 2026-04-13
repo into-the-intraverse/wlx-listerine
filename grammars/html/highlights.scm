@@ -45,3 +45,6 @@
 ] @punctuation.bracket
 
 "=" @punctuation.delimiter
+
+; Syntax errors
+(ERROR) @diagnostic.error

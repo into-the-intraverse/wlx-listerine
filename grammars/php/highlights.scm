@@ -201,3 +201,6 @@
  (#eq? @variable.builtin "this"))
 
 "$" @operator
+
+; Syntax errors
+(ERROR) @diagnostic.error

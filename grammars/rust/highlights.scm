@@ -527,3 +527,6 @@
     "FromIterator"
     "TryFrom"
     "TryInto"))
+
+; Syntax errors
+(ERROR) @diagnostic.error

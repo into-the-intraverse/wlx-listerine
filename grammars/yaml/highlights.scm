@@ -40,3 +40,6 @@
 ] @punctuation.bracket
 
 ["*" "&" "---" "..."] @punctuation.special
+
+; Syntax errors
+(ERROR) @diagnostic.error

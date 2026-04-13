@@ -229,3 +229,6 @@
     ; )
     (const_spec)
   ])
+
+; Syntax errors
+(ERROR) @diagnostic.error

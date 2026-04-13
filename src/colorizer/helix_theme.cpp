@@ -291,6 +291,8 @@ HelixTheme HelixTheme::make_default(bool dark_mode) {
         s["property"]           = fg(0x001080);
         s["label"]              = fg(0x001080);
         s["embedded"]           = fg(0xAF00DB);
+        s["diagnostic.error"]   = {0, 0xFF4444, false, true};
+        s["error"]              = {0, 0xFF4444, false, true};
     } else {
         // Dark mode (VS Code Dark+)
         s["keyword"]            = fg(0xC586C0);
@@ -344,6 +346,8 @@ HelixTheme HelixTheme::make_default(bool dark_mode) {
         s["property"]           = fg(0x9CDCFE);
         s["label"]              = fg(0x9CDCFE);
         s["embedded"]           = fg(0xD7BA7D);
+        s["diagnostic.error"]   = {0, 0xFF4444, false, true};
+        s["error"]              = {0, 0xFF4444, false, true};
     }
 
     return theme;

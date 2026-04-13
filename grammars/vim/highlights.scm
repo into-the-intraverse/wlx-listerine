@@ -348,3 +348,6 @@
   option: (option_name) @_option
   value: (set_value) @function)
   (#any-of? @_option "tagfunc" "tfu" "completefunc" "cfu" "omnifunc" "ofu" "operatorfunc" "opfunc"))
+
+; Syntax errors
+(ERROR) @diagnostic.error

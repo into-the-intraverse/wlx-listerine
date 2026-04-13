@@ -27,3 +27,6 @@
 (escape_sequence) @constant.character.escape
 
 (comment) @comment
+
+; Syntax errors
+(ERROR) @diagnostic.error

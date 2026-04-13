@@ -97,3 +97,6 @@
   ":"
   "::"
 ] @punctuation.delimiter
+
+; Syntax errors
+(ERROR) @diagnostic.error

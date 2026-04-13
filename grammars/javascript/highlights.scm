@@ -324,3 +324,6 @@
 (formal_parameters
   (assignment_pattern
     left: (identifier) @variable.parameter))
+
+; Syntax errors
+(ERROR) @diagnostic.error

@@ -306,3 +306,6 @@
  
 (comment) @comment
 (string) @string
+
+; Syntax errors
+(ERROR) @diagnostic.error

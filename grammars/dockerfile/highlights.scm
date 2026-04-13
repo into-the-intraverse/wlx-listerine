@@ -70,3 +70,6 @@
 
 (expose_instruction
   (expose_port) @constant.numeric.integer)
+
+; Syntax errors
+(ERROR) @diagnostic.error

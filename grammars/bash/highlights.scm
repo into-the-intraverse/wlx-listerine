@@ -248,3 +248,6 @@
   (regex)
   (extglob_pattern)
 ] @string.regexp
+
+; Syntax errors
+(ERROR) @diagnostic.error

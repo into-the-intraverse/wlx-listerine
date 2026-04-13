@@ -11,3 +11,6 @@
 (bracket_char_escaped) @string.escape
 (bracket_char_class) @type
 (bracket_range) @constant
+
+; Syntax errors
+(ERROR) @diagnostic.error

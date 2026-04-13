@@ -107,6 +107,10 @@
 "diff.minus"         = "#A31515"
 "diff.delta"         = "#0000FF"
 
+# --- Diagnostics (syntax errors, mismatched brackets) ---
+"diagnostic.error" = { bg = "#FF4444" }
+"error" = { bg = "#FF4444" }
+
 # --- CSS at-rules ---
 "media"              = "#AF00DB"
 "keyframes"          = "#AF00DB"
