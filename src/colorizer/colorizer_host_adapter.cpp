@@ -62,6 +62,8 @@ struct ColorViewState {
 
     // Cursor
     HCURSOR cursor = nullptr;
+
+    bool wrap_text = false;
 };
 
 // ---------- globals ----------
@@ -293,9 +295,12 @@ static void do_layout(ColorViewState* vs, const std::wstring& text, const std::s
 
     float viewport_width = vs->renderer ? vs->renderer->dip_width() : 1.0f;
 
+    ColorizerDisplayConfig cfg = g_display_cfg;
+    cfg.word_wrap = vs->wrap_text;   // ShowFlags wins over TOML default
+
     auto layout = std::make_shared<LayoutDocument>(
         layout_source(g_dwrite_factory.Get(), text, raw_utf8,
-                      colors, g_theme, vs->dark_mode, viewport_width, g_display_cfg));
+                      colors, g_theme, vs->dark_mode, viewport_width, cfg));
 
     vs->layout = layout;
     update_scrollbar(vs);
@@ -789,6 +794,7 @@ HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
     ensure_window_class();
 
     bool dark = (ShowFlags & lcp_darkmode) != 0;
+    bool wrap = (ShowFlags & lcp_wraptext) != 0;
 
     RECT rc;
     GetClientRect(ParentWin, &rc);
@@ -807,6 +813,7 @@ HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
     vs->hwnd = hwnd;
     vs->parent = ParentWin;
     vs->dark_mode = dark;
+    vs->wrap_text = wrap;
 
     SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(vs));
     g_views[hwnd] = vs;
@@ -826,12 +833,15 @@ int __stdcall ListLoadNextW(HWND ParentWin, HWND PluginWin, wchar_t* FileToLoad,
 
     auto* vs = it->second;
     bool new_dark = (ShowFlags & lcp_darkmode) != 0;
+    bool new_wrap = (ShowFlags & lcp_wraptext) != 0;
 
     if (new_dark != vs->dark_mode) {
         vs->dark_mode = new_dark;
         vs->renderer->set_dark_mode(new_dark);
         apply_dark_mode(vs->hwnd, new_dark);
     }
+
+    vs->wrap_text = new_wrap;
 
     load_document(vs, FileToLoad);
     return LISTPLUGIN_OK;
@@ -883,19 +893,28 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
     }
 
     case lc_newparams: {
-        bool new_dark = (Parameter & lcp_darkmode) != 0;
+        bool new_dark = (Parameter & lcp_darkmode)  != 0;
+        bool new_wrap = (Parameter & lcp_wraptext) != 0;
+        bool changed = false;
+
         if (new_dark != vs->dark_mode) {
             vs->dark_mode = new_dark;
             vs->renderer->set_dark_mode(new_dark);
             apply_dark_mode(vs->hwnd, new_dark);
             // Re-colorize with new palette (no file re-read)
             std::string language = ext_to_language(vs->file_path);
-            if (language.empty())
-                language = filename_to_language(vs->file_path);
+            if (language.empty()) language = filename_to_language(vs->file_path);
             vs->cached_colors = {};
             if (!language.empty() && g_colorizer && g_colorizer->supports(language)) {
                 vs->cached_colors = g_colorizer->colorize(vs->cached_raw_utf8, language, vs->dark_mode);
             }
+            changed = true;
+        }
+        if (new_wrap != vs->wrap_text) {
+            vs->wrap_text = new_wrap;
+            changed = true;
+        }
+        if (changed) {
             do_layout(vs, vs->cached_text, vs->cached_raw_utf8, vs->cached_colors);
             InvalidateRect(vs->hwnd, nullptr, FALSE);
         }
