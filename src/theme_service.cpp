@@ -182,6 +182,8 @@ uint64_t ThemeService::theme_hash() const {
     combine(config_.light.quote_border);
     combine(config_.light.rule);
     combine(config_.light.selection);
+    combine(config_.light.search_highlight);
+    combine(config_.light.search_highlight_current);
 
     // All dark palette colors
     combine(config_.dark.background);
@@ -194,6 +196,8 @@ uint64_t ThemeService::theme_hash() const {
     combine(config_.dark.quote_border);
     combine(config_.dark.rule);
     combine(config_.dark.selection);
+    combine(config_.dark.search_highlight);
+    combine(config_.dark.search_highlight_current);
 
     return hash;
 }

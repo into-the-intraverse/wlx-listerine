@@ -168,11 +168,55 @@ selection = "#223344"
     std::remove(path);
 }
 
-TEST_CASE("ThemeService defaults include search highlight colors") {
+TEST_CASE("ThemeService defaults include search highlight colors, distinct from selection") {
     ThemeService svc;
-    CHECK(svc.palette(false).search_highlight != 0);
-    CHECK(svc.palette(false).search_highlight_current != 0);
-    CHECK(svc.palette(true).search_highlight != 0);
-    CHECK(svc.palette(true).search_highlight_current != 0);
-    CHECK(svc.palette(false).search_highlight != svc.palette(false).search_highlight_current);
+    const auto& light = svc.palette(false);
+    const auto& dark  = svc.palette(true);
+
+    // Non-zero
+    CHECK(light.search_highlight != 0);
+    CHECK(light.search_highlight_current != 0);
+    CHECK(dark.search_highlight != 0);
+    CHECK(dark.search_highlight_current != 0);
+
+    // Dim != current in both modes (the point of having two)
+    CHECK(light.search_highlight != light.search_highlight_current);
+    CHECK(dark.search_highlight  != dark.search_highlight_current);
+
+    // Light != dark variants (defaults shouldn't collide by accident)
+    CHECK(light.search_highlight         != dark.search_highlight);
+    CHECK(light.search_highlight_current != dark.search_highlight_current);
+
+    // Distinct from selection -- the design goal documented in theme_service.cpp
+    CHECK(light.search_highlight         != light.selection);
+    CHECK(light.search_highlight_current != light.selection);
+    CHECK(dark.search_highlight          != dark.selection);
+    CHECK(dark.search_highlight_current  != dark.selection);
+}
+
+TEST_CASE("ThemeService parses search highlight keys from TOML") {
+    const char* path = "test_data/test_theme_search_highlight.toml";
+    {
+        std::ofstream f(path);
+        REQUIRE(f.is_open());
+        f << R"(
+[colors.light]
+search_highlight         = "#112233"
+search_highlight_current = "#445566"
+
+[colors.dark]
+search_highlight         = "#778899"
+search_highlight_current = "#AABBCC"
+)";
+    }
+
+    ThemeService svc;
+    svc.load(L"test_data/test_theme_search_highlight.toml");
+
+    CHECK(svc.palette(false).search_highlight         == 0x112233);
+    CHECK(svc.palette(false).search_highlight_current == 0x445566);
+    CHECK(svc.palette(true).search_highlight          == 0x778899);
+    CHECK(svc.palette(true).search_highlight_current  == 0xAABBCC);
+
+    std::remove(path);
 }

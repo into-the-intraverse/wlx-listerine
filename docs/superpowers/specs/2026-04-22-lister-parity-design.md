@@ -177,8 +177,7 @@ For each match:
 - `search_highlight_current` — stronger tint, ~60% alpha.
 - Text color unchanged (remains readable over both).
 
-**Theme schema (md plugin):** two new keys in `[colors.light]` and `[colors.dark]`.
-**Theme schema (colorizer):** two new scopes in Helix TOML themes: `ui.search.highlight`, `ui.search.highlight.current`. Fallback when a theme omits them: `selection` color at reduced alpha.
+**Theme schema:** the two new fields `search_highlight` and `search_highlight_current` live on `ColorPalette` in `theme_service.h` and are loaded from `[colors.light]` / `[colors.dark]` in each plugin's TOML (`config/wlx-listerine-md.toml` and `config/wlx-listerine-colorizer.toml`). Helix themes in `config/themes/` are NOT extended — an earlier attempt to register `ui.search.highlight{,.current}` scopes was dropped because the Helix loader (`helix_theme.cpp`) skips every `ui.*` scope at load time. Both plugins' `RenderEngine` consumes the search-highlight colors via `theme_.palette(dark_mode_)`, so there is no per-plugin divergence; overrides set in either plugin's TOML flow through the shared `ThemeService` path.
 
 ## Component: `lcp_wraptext` in colorizer
 
