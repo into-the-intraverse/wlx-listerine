@@ -19,6 +19,7 @@ add_library(wlx-core STATIC
     src/theme_service.cpp
     src/cache_service.cpp
     src/text_selection.cpp
+    src/search_engine.cpp
 )
 
 target_include_directories(wlx-core PUBLIC include src src/colorizer)
@@ -156,6 +157,7 @@ add_executable(tests
     tests/test_cache_service.cpp
     tests/test_layout_engine.cpp
     tests/test_text_selection.cpp
+    tests/test_search_engine.cpp
 )
 
 target_link_libraries(tests PRIVATE
