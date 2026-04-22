@@ -772,8 +772,11 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
 
         if (handled) return 0;
 
+        // PostMessageW (not SendMessageW) so Lister's message loop calls
+        // TranslateAccelerator on the keystroke — that's where F2/F5/F7/N/P/W
+        // live. SendMessage would bypass the accelerator table entirely.
         HWND parent = GetParent(hwnd);
-        if (parent) return SendMessageW(parent, msg, wp, lp);
+        if (parent) PostMessageW(parent, msg, wp, lp);
         return 0;
     }
 
@@ -781,10 +784,11 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
     case WM_SYSKEYDOWN: {
         // Lister dispatches letter shortcuts (N/P/W) via WM_CHAR and Alt+key
         // combos via WM_SYSKEYDOWN; function keys like F2/F5/F7 arrive as
-        // WM_KEYDOWN and are forwarded there. Forward all three unconditionally
-        // so Lister's accelerator table sees the keystrokes it expects.
+        // WM_KEYDOWN and are forwarded there. PostMessage (not SendMessage)
+        // routes back through the host's message loop so TranslateAccelerator
+        // can convert these into WM_COMMANDs.
         HWND parent = GetParent(hwnd);
-        if (parent) return SendMessageW(parent, msg, wp, lp);
+        if (parent) PostMessageW(parent, msg, wp, lp);
         return 0;
     }
 

@@ -47,8 +47,8 @@ code_bg = "#2D2D2D"
 quote_border = "#404040"
 rule = "#404040"
 selection = "#264F78"
-search_highlight = "#5A4B00"
-search_highlight_current = "#C08400"
+search_highlight = "#A87800"
+search_highlight_current = "#E89820"
 
 [themes]
 default = "default"

@@ -60,8 +60,8 @@ ThemeConfig ThemeService::default_config() {
     cfg.dark.quote_border = 0x404040;
     cfg.dark.rule         = 0x404040;
     cfg.dark.selection    = 0x264F78;
-    cfg.dark.search_highlight           = 0x5A4B00;  // muted amber
-    cfg.dark.search_highlight_current   = 0xC08400;  // stronger amber
+    cfg.dark.search_highlight           = 0xA87800;  // amber — bright enough to read at 30% alpha on dark bg
+    cfg.dark.search_highlight_current   = 0xE89820;  // vivid amber — stands out against dim matches at 60% alpha
 
     return cfg;
 }
