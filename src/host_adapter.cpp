@@ -671,6 +671,17 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 InvalidateRect(hwnd, nullptr, FALSE);
                 handled = true;
                 break;
+            case VK_F2:
+                // F2 reload — handled locally because Lister's File > Reload
+                // menu item doesn't always route to ListLoadNextW for plugin
+                // windows. Re-reading from disk + fresh layout covers both
+                // F2 press and menu click (menu uses the same F2 accelerator).
+                if (!vs->file_path.empty()) {
+                    load_document(vs, vs->file_path.c_str());
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                }
+                handled = true;
+                break;
             }
         }
 
