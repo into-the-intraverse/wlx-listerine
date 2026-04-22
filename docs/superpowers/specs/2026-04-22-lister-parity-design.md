@@ -189,7 +189,7 @@ The colorizer today has `g_display_cfg.word_wrap` from TOML but no response to `
 4. In `lc_newparams`: toggle `vs->wrap_text` from `Parameter & lcp_wraptext`; if changed, relayout.
 5. In `ListLoadNextW`: same.
 
-The TOML value becomes the **initial default** when Lister hasn't passed `lcp_wraptext` yet (first load with stale config) — `ShowFlags` always wins once it arrives.
+`ShowFlags` is the authoritative source — the `lcp_wraptext` bit is always present (either 0 or 1) on every `ListLoadW`/`ListLoadNextW`/`lc_newparams` call, so there is no "Lister hasn't told us yet" state. The colorizer's TOML `[display] word_wrap` therefore governs only the behavior of other `screenshot_tool`-style direct callers that don't route through `ListLoadW`; in the plugin runtime it's shadowed immediately on first load. This matches the md plugin's existing behavior for consistency.
 
 ## Data flow (Find)
 
