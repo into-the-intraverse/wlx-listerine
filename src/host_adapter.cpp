@@ -27,6 +27,7 @@
 #include "theme_service.h"
 #include "cache_service.h"
 #include "colorizer.h"
+#include "search_engine.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -58,6 +59,12 @@ struct ViewState {
     DWORD last_dblclk_time = 0;
     int last_dblclk_block = -1;
     int copied_code_block = -1;
+
+    SearchIndex search_index;
+    std::vector<SearchMatch> matches;
+    int current_match = -1;
+    SearchQuery last_query;
+    bool index_dirty = true;
 };
 
 // ---------- globals ----------
@@ -160,6 +167,7 @@ static void do_layout(ViewState* vs) {
     vs->interaction = std::make_unique<InteractionEngine>(*vs->layout);
 
     update_scrollbar(vs);
+    vs->index_dirty = true;
 }
 
 static void load_document(ViewState* vs, const wchar_t* path) {
@@ -170,6 +178,10 @@ static void load_document(ViewState* vs, const wchar_t* path) {
     vs->selecting = false;
     vs->hovered_code_block = -1;
     vs->copied_code_block = -1;
+    vs->matches.clear();
+    vs->current_match = -1;
+    vs->last_query = SearchQuery{};
+    vs->index_dirty = true;
 
     auto content = g_file_service.read(path);
     if (!content) return;
@@ -597,6 +609,8 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         float page = vs->renderer ? vs->renderer->dip_height() : 100.0f;
         float line = g_theme.fonts().body_size * g_theme.spacing().line_height_factor;
 
+        bool handled = false;
+
         // Ctrl+C — copy selection
         if (wp == 'C' && (GetKeyState(VK_CONTROL) & 0x8000)) {
             if (vs->layout && vs->sel_anchor.valid() && vs->sel_anchor != vs->sel_active) {
@@ -605,11 +619,10 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 auto text = extract_selected_text(*vs->layout, lo, hi);
                 copy_to_clipboard(hwnd, text);
             }
-            return 0;
+            handled = true;
         }
-
         // Ctrl+A — select all
-        if (wp == 'A' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+        else if (wp == 'A' && (GetKeyState(VK_CONTROL) & 0x8000)) {
             if (vs->layout && !vs->layout->blocks.empty()) {
                 vs->sel_anchor = TextPosition{0, 0};
                 int last = static_cast<int>(vs->layout->blocks.size()) - 1;
@@ -617,34 +630,56 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 vs->selecting = false;
                 InvalidateRect(hwnd, nullptr, FALSE);
             }
-            return 0;
+            handled = true;
         }
-
-        // Escape — clear selection
-        if (wp == VK_ESCAPE) {
+        // Escape — clear selection; if no selection but active matches, clear them;
+        // otherwise forward to parent (Lister uses Esc to close the window).
+        else if (wp == VK_ESCAPE) {
             if (vs->sel_anchor.valid()) {
                 clear_selection(vs);
                 InvalidateRect(hwnd, nullptr, FALSE);
-                return 0;
+                handled = true;
+            } else if (!vs->matches.empty()) {
+                vs->matches.clear();
+                vs->current_match = -1;
+                if (vs->renderer) vs->renderer->set_search_matches({}, -1);
+                InvalidateRect(hwnd, nullptr, FALSE);
+                handled = true;
+            }
+            // else fall through -> forwarded to parent
+        }
+        else {
+            switch (wp) {
+            case VK_UP:    handle_scroll(vs, -line); handled = true; break;
+            case VK_DOWN:  handle_scroll(vs,  line); handled = true; break;
+            case VK_PRIOR: handle_scroll(vs, -page); handled = true; break;
+            case VK_NEXT:  handle_scroll(vs,  page); handled = true; break;
+            case VK_HOME:
+                vs->scroll_y = 0;
+                update_scrollbar(vs);
+                InvalidateRect(hwnd, nullptr, FALSE);
+                handled = true;
+                break;
+            case VK_END:
+                vs->scroll_y = vs->max_scroll_y;
+                update_scrollbar(vs);
+                InvalidateRect(hwnd, nullptr, FALSE);
+                handled = true;
+                break;
             }
         }
 
-        switch (wp) {
-        case VK_UP:    handle_scroll(vs, -line); break;
-        case VK_DOWN:  handle_scroll(vs, line); break;
-        case VK_PRIOR: handle_scroll(vs, -page); break;
-        case VK_NEXT:  handle_scroll(vs, page); break;
-        case VK_HOME:
-            vs->scroll_y = 0;
-            update_scrollbar(vs);
-            InvalidateRect(hwnd, nullptr, FALSE);
-            break;
-        case VK_END:
-            vs->scroll_y = vs->max_scroll_y;
-            update_scrollbar(vs);
-            InvalidateRect(hwnd, nullptr, FALSE);
-            break;
-        }
+        if (handled) return 0;
+
+        HWND parent = GetParent(hwnd);
+        if (parent) return SendMessageW(parent, msg, wp, lp);
+        return 0;
+    }
+
+    case WM_CHAR:
+    case WM_SYSKEYDOWN: {
+        HWND parent = GetParent(hwnd);
+        if (parent) return SendMessageW(parent, msg, wp, lp);
         return 0;
     }
 
@@ -713,6 +748,25 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {
         break;
     }
     return TRUE;
+}
+
+static void scroll_to_match(ViewState* vs, const SearchMatch& m) {
+    if (!vs->layout) return;
+    if (m.block_index < 0 ||
+        m.block_index >= static_cast<int>(vs->layout->blocks.size())) return;
+
+    const auto& block = vs->layout->blocks[m.block_index];
+    const float viewport_h = vs->renderer ? vs->renderer->dip_height() : 100.0f;
+    const float block_top = block.rect.top;
+    const float block_bot = block.rect.bottom;
+
+    // Already visible? leave scroll alone.
+    if (block_top >= vs->scroll_y && block_bot <= vs->scroll_y + viewport_h) return;
+
+    // Otherwise center the block vertically.
+    const float target = block_top - (viewport_h - (block_bot - block_top)) * 0.5f;
+    vs->scroll_y = std::clamp(target, 0.0f, vs->max_scroll_y);
+    update_scrollbar(vs);
 }
 
 // ---------- WLX exports ----------
@@ -864,6 +918,61 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
     default:
         return LISTPLUGIN_ERROR;
     }
+}
+
+int __stdcall ListSearchTextW(HWND ListWin, wchar_t* SearchString, int SearchParameter) {
+    auto it = g_views.find(ListWin);
+    if (it == g_views.end()) return LISTPLUGIN_ERROR;
+    if (!SearchString || !*SearchString) return LISTPLUGIN_ERROR;
+
+    auto* vs = it->second;
+    if (!vs->layout) return LISTPLUGIN_ERROR;
+
+    SearchQuery q;
+    q.needle       = SearchString;
+    q.match_case   = (SearchParameter & lcs_matchcase)  != 0;
+    q.whole_words  = (SearchParameter & lcs_wholewords) != 0;
+    q.backwards    = (SearchParameter & lcs_backwards)  != 0;
+    const bool findfirst = (SearchParameter & lcs_findfirst) != 0;
+
+    bool rebuilt = false;
+    if (vs->index_dirty) {
+        vs->search_index.build(*vs->layout);
+        vs->index_dirty = false;
+        rebuilt = true;
+    }
+
+    // Re-run find_all when the user started over, the layout changed,
+    // or needle / flags shifted. F5 with identical query reuses cached matches.
+    const bool requery = findfirst || rebuilt || q != vs->last_query;
+    if (requery) {
+        vs->matches = vs->search_index.find_all(q);
+        if (findfirst) {
+            vs->current_match = -1;
+        } else if (vs->current_match >= static_cast<int>(vs->matches.size())) {
+            vs->current_match = static_cast<int>(vs->matches.size()) - 1;
+        }
+        vs->last_query = q;
+    }
+
+    if (vs->matches.empty()) {
+        vs->current_match = -1;
+        if (vs->renderer) vs->renderer->set_search_matches({}, -1);
+        InvalidateRect(vs->hwnd, nullptr, FALSE);
+        return LISTPLUGIN_ERROR;
+    }
+
+    const int n = static_cast<int>(vs->matches.size());
+    if (q.backwards) {
+        vs->current_match = (vs->current_match <= 0) ? n - 1 : vs->current_match - 1;
+    } else {
+        vs->current_match = (vs->current_match + 1) % n;
+    }
+
+    scroll_to_match(vs, vs->matches[vs->current_match]);
+    if (vs->renderer) vs->renderer->set_search_matches(vs->matches, vs->current_match);
+    InvalidateRect(vs->hwnd, nullptr, FALSE);
+    return LISTPLUGIN_OK;
 }
 
 void __stdcall ListSetDefaultParams(ListDefaultParamStruct* dps) {
