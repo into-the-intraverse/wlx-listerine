@@ -182,6 +182,11 @@ static void load_document(ViewState* vs, const wchar_t* path) {
     vs->current_match = -1;
     vs->last_query = SearchQuery{};
     vs->index_dirty = true;
+    // Also clear matches in the renderer: its search_matches_ still holds
+    // SearchMatch objects whose block_index values point into the previous
+    // file's layout. Any repaint before the next F7 would walk them against
+    // the new layout and could draw spurious highlight rects.
+    if (vs->renderer) vs->renderer->set_search_matches({}, -1);
 
     auto content = g_file_service.read(path);
     if (!content) return;
