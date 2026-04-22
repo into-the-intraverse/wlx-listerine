@@ -21,6 +21,8 @@ static ColorPalette read_palette(const toml::table& tbl, const ColorPalette& def
     read("quote_border", pal.quote_border);
     read("rule",         pal.rule);
     read("selection",    pal.selection);
+    read("search_highlight",         pal.search_highlight);
+    read("search_highlight_current", pal.search_highlight_current);
     return pal;
 }
 
@@ -44,6 +46,8 @@ ThemeConfig ThemeService::default_config() {
     cfg.light.quote_border = 0xD0D7DE;
     cfg.light.rule         = 0xD8DEE4;
     cfg.light.selection    = 0xDDEBFF;
+    cfg.light.search_highlight          = 0xFFE066;  // soft yellow
+    cfg.light.search_highlight_current  = 0xFFA500;  // orange — distinct from selection
 
     // Dark palette (neutral gray, matches TC dark mode)
     cfg.dark.background   = 0x1E1E1E;
@@ -56,6 +60,8 @@ ThemeConfig ThemeService::default_config() {
     cfg.dark.quote_border = 0x404040;
     cfg.dark.rule         = 0x404040;
     cfg.dark.selection    = 0x264F78;
+    cfg.dark.search_highlight           = 0x5A4B00;  // muted amber
+    cfg.dark.search_highlight_current   = 0xC08400;  // stronger amber
 
     return cfg;
 }

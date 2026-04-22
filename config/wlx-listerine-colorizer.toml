@@ -33,6 +33,8 @@ code_bg = "#E8ECF0"
 quote_border = "#D0D7DE"
 rule = "#D8DEE4"
 selection = "#DDEBFF"
+search_highlight = "#FFE066"
+search_highlight_current = "#FFA500"
 
 [colors.dark]
 background = "#1E1E1E"
@@ -45,6 +47,8 @@ code_bg = "#2D2D2D"
 quote_border = "#404040"
 rule = "#404040"
 selection = "#264F78"
+search_highlight = "#5A4B00"
+search_highlight_current = "#C08400"
 
 [themes]
 default = "default"

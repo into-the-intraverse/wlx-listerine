@@ -20,6 +20,8 @@ struct ColorPalette {
     uint32_t quote_border;
     uint32_t rule;
     uint32_t selection;
+    uint32_t search_highlight;
+    uint32_t search_highlight_current;
 };
 
 struct SpacingConfig {

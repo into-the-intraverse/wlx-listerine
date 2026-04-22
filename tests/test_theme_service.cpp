@@ -167,3 +167,12 @@ selection = "#223344"
 
     std::remove(path);
 }
+
+TEST_CASE("ThemeService defaults include search highlight colors") {
+    ThemeService svc;
+    CHECK(svc.palette(false).search_highlight != 0);
+    CHECK(svc.palette(false).search_highlight_current != 0);
+    CHECK(svc.palette(true).search_highlight != 0);
+    CHECK(svc.palette(true).search_highlight_current != 0);
+    CHECK(svc.palette(false).search_highlight != svc.palette(false).search_highlight_current);
+}
