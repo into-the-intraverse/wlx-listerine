@@ -55,6 +55,7 @@ std::vector<SearchMatch> SearchIndex::find_all(const SearchQuery& q) const {
         bool crosses_boundary = false;
         if (bi + 1 < static_cast<int>(block_starts_.size())) {
             const int next_block_start = block_starts_[bi + 1];
+            // The '\n' separator sits at next_block_start - 1; a match must end before it.
             if (static_cast<int>(end) > next_block_start - 1)
                 crosses_boundary = true;
         }
