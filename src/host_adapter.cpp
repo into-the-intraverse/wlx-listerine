@@ -678,6 +678,10 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
     case WM_CHAR:
     case WM_SYSKEYDOWN: {
+        // Lister dispatches letter shortcuts (N/P/W) via WM_CHAR and Alt+key
+        // combos via WM_SYSKEYDOWN; function keys like F2/F5/F7 arrive as
+        // WM_KEYDOWN and are forwarded there. Forward all three unconditionally
+        // so Lister's accelerator table sees the keystrokes it expects.
         HWND parent = GetParent(hwnd);
         if (parent) return SendMessageW(parent, msg, wp, lp);
         return 0;
@@ -763,7 +767,10 @@ static void scroll_to_match(ViewState* vs, const SearchMatch& m) {
     // Already visible? leave scroll alone.
     if (block_top >= vs->scroll_y && block_bot <= vs->scroll_y + viewport_h) return;
 
-    // Otherwise center the block vertically.
+    // Otherwise center the block vertically. Note: for blocks taller than the
+    // viewport this shows the block's middle — matches near the block edges
+    // may still be clipped. SearchMatch is block-level (no per-char y), so
+    // this is the best we can do at the current granularity.
     const float target = block_top - (viewport_h - (block_bot - block_top)) * 0.5f;
     vs->scroll_y = std::clamp(target, 0.0f, vs->max_scroll_y);
     update_scrollbar(vs);
@@ -946,10 +953,13 @@ int __stdcall ListSearchTextW(HWND ListWin, wchar_t* SearchString, int SearchPar
     // or needle / flags shifted. F5 with identical query reuses cached matches.
     const bool requery = findfirst || rebuilt || q != vs->last_query;
     if (requery) {
+        const bool query_changed = q != vs->last_query;
         vs->matches = vs->search_index.find_all(q);
-        if (findfirst) {
+        if (findfirst || query_changed) {
+            // Fresh search — reset cursor. Advancement below steps to match 0.
             vs->current_match = -1;
         } else if (vs->current_match >= static_cast<int>(vs->matches.size())) {
+            // Same query, index rebuilt after relayout: clamp cursor in range.
             vs->current_match = static_cast<int>(vs->matches.size()) - 1;
         }
         vs->last_query = q;
