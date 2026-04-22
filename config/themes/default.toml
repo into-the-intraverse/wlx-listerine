@@ -111,6 +111,10 @@
 "diagnostic.error" = { bg = "#FF4444" }
 "error" = { bg = "#FF4444" }
 
+# --- UI: search highlight ---
+"ui.highlight"         = { bg = "#5A4B00" }
+"ui.highlight.current" = { bg = "#C08400" }
+
 # --- CSS at-rules ---
 "media"              = "#C586C0"
 "keyframes"          = "#C586C0"
