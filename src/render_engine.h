@@ -1,6 +1,7 @@
 #pragma once
 
 #include "layout_engine.h"
+#include "search_engine.h"
 #include "theme_service.h"
 
 #include <d2d1.h>
@@ -9,6 +10,7 @@
 #include <wrl/client.h>
 
 #include <unordered_map>
+#include <vector>
 
 using Microsoft::WRL::ComPtr;
 
@@ -30,6 +32,7 @@ public:
     void set_hovered_span(int index) { hovered_span_ = index; }
     void set_hovered_code_block(int index) { hovered_code_block_ = index; }
     void set_copied_code_block(int index) { copied_code_block_ = index; }
+    void set_search_matches(const std::vector<SearchMatch>& matches, int current_index);
 
     bool needs_recreate() const { return needs_recreate_; }
     UINT width() const { return width_; }
@@ -52,6 +55,7 @@ private:
     void paint_text_runs(const LayoutBlock& block, float offset_y);
     void paint_selection_highlight(const LayoutBlock& block, int block_index,
                                    float offset_y, TextPosition sel_start, TextPosition sel_end);
+    void paint_search_highlights(const LayoutBlock& block, int block_index, float offset_y);
     void paint_copy_button(const LayoutBlock& block, int block_index, float offset_y);
     void paint_whitespace_markers(const LayoutBlock& block, float offset_y);
     void paint_indent_guides(const LayoutBlock& block, float offset_y);
@@ -74,6 +78,8 @@ private:
     int hovered_span_ = -1;
     int hovered_code_block_ = -1;
     int copied_code_block_ = -1;
+    std::vector<SearchMatch> search_matches_;
+    int search_current_ = -1;
     bool needs_recreate_ = false;
     UINT width_ = 0;
     UINT height_ = 0;

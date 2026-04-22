@@ -20,6 +20,11 @@ void RenderEngine::set_dark_mode(bool dark) {
     brush_cache_.clear();
 }
 
+void RenderEngine::set_search_matches(const std::vector<SearchMatch>& matches, int current_index) {
+    search_matches_ = matches;
+    search_current_ = current_index;
+}
+
 HRESULT RenderEngine::create_device_resources(HWND hwnd) {
     if (rt_) return S_OK;
 
@@ -221,6 +226,7 @@ void RenderEngine::paint(const LayoutDocument& layout, float scroll_y,
         paint_inline_code_bg(block, 0);
         paint_span_backgrounds(block, 0);
         paint_selection_highlight(block, block_idx, 0, sel_start, sel_end);
+        paint_search_highlights(block, block_idx, 0);
         paint_block_decoration(block, 0);
         paint_indent_guides(block, 0);
         paint_bullet(block, 0);
@@ -293,6 +299,61 @@ void RenderEngine::paint_selection_highlight(const LayoutBlock& block, int block
             metrics[i].left + metrics[i].width,
             metrics[i].top + metrics[i].height);
         rt_->FillRectangle(r, brush);
+    }
+}
+
+void RenderEngine::paint_search_highlights(const LayoutBlock& block, int block_index, float offset_y) {
+    if (search_matches_.empty() || !rt_) return;
+
+    const auto& pal = theme_.palette(dark_mode_);
+
+    for (size_t i = 0; i < search_matches_.size(); i++) {
+        const auto& m = search_matches_[i];
+        if (m.block_index != block_index) continue;
+
+        // Walk runs, find the overlap with [m.char_start, m.char_end)
+        int cursor = 0;
+        for (const auto& run : block.text_runs) {
+            const int run_len = static_cast<int>(run.text.size());
+            const int run_start = cursor;
+            const int run_end   = cursor + run_len;
+            cursor = run_end;
+
+            if (m.char_end <= run_start || m.char_start >= run_end) continue;
+            if (!run.layout) continue;
+
+            const int local_start = std::max(m.char_start, run_start) - run_start;
+            const int local_end   = std::min(m.char_end,   run_end)   - run_start;
+            const UINT32 length   = static_cast<UINT32>(local_end - local_start);
+
+            // Two-call pattern: first for required buffer size.
+            UINT32 required = 0;
+            run.layout->HitTestTextRange(
+                static_cast<UINT32>(local_start), length,
+                run.rect.left, run.rect.top + offset_y,
+                nullptr, 0, &required);
+            if (required == 0) continue;
+
+            std::vector<DWRITE_HIT_TEST_METRICS> metrics(required);
+            UINT32 actual = 0;
+            run.layout->HitTestTextRange(
+                static_cast<UINT32>(local_start), length,
+                run.rect.left, run.rect.top + offset_y,
+                metrics.data(), required, &actual);
+
+            const bool is_current = (static_cast<int>(i) == search_current_);
+            const uint32_t color = is_current ? pal.search_highlight_current
+                                              : pal.search_highlight;
+            const float alpha = is_current ? 0.60f : 0.30f;
+            auto* brush = get_brush(color, alpha);
+
+            for (UINT32 j = 0; j < actual; j++) {
+                const auto& mm = metrics[j];
+                const D2D1_RECT_F r = { mm.left, mm.top,
+                                        mm.left + mm.width, mm.top + mm.height };
+                rt_->FillRectangle(r, brush);
+            }
+        }
     }
 }
 
