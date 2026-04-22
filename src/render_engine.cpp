@@ -22,7 +22,10 @@ void RenderEngine::set_dark_mode(bool dark) {
 
 void RenderEngine::set_search_matches(const std::vector<SearchMatch>& matches, int current_index) {
     search_matches_ = matches;
-    search_current_ = current_index;
+    // Clamp current out-of-range to -1 so an invalid index doesn't silently
+    // hide the "current" highlight — it becomes an obvious no-current instead.
+    search_current_ = (current_index >= 0 && current_index < static_cast<int>(matches.size()))
+                    ? current_index : -1;
 }
 
 HRESULT RenderEngine::create_device_resources(HWND hwnd) {
@@ -307,11 +310,17 @@ void RenderEngine::paint_search_highlights(const LayoutBlock& block, int block_i
 
     const auto& pal = theme_.palette(dark_mode_);
 
+    // Matches are in document order (see SearchIndex::find_all). Skip past
+    // earlier blocks and break once we pass block_index — keeps this O(matches
+    // for this block) instead of O(all matches × visible blocks) per frame.
     for (size_t i = 0; i < search_matches_.size(); i++) {
         const auto& m = search_matches_[i];
-        if (m.block_index != block_index) continue;
+        if (m.block_index < block_index) continue;
+        if (m.block_index > block_index) break;
 
-        // Walk runs, find the overlap with [m.char_start, m.char_end)
+        // Walk runs, find the overlap with [m.char_start, m.char_end).
+        // A match can span multiple runs in a block (e.g. across bold/regular
+        // boundaries) since SearchIndex concatenates run text without separators.
         int cursor = 0;
         for (const auto& run : block.text_runs) {
             const int run_len = static_cast<int>(run.text.size());
