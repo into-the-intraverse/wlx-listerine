@@ -3,6 +3,8 @@ project(wlx-listerine LANGUAGES C CXX)
 
 set(WLX_VERSION "dev" CACHE STRING "Plugin version string, overridden by CI")
 
+option(WLX_TRACE_ENABLE "Emit OutputDebugStringW traces from WLX entry points and WndProc (capture with DebugView)" OFF)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -64,6 +66,7 @@ target_link_libraries(wlx-listerine-md PRIVATE
     shell32
     dwmapi
     uxtheme
+    comctl32
 )
 
 set_target_properties(wlx-listerine-md PROPERTIES
@@ -74,6 +77,9 @@ set_target_properties(wlx-listerine-md PROPERTIES
 )
 
 target_compile_definitions(wlx-listerine-md PRIVATE WLX_VERSION_STRING="${WLX_VERSION}")
+if(WLX_TRACE_ENABLE)
+    target_compile_definitions(wlx-listerine-md PRIVATE WLX_TRACE_ENABLE)
+endif()
 
 add_custom_command(TARGET wlx-listerine-md POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -104,6 +110,7 @@ target_link_libraries(wlx-listerine-colorizer PRIVATE
     shell32
     dwmapi
     uxtheme
+    comctl32
 )
 
 set_target_properties(wlx-listerine-colorizer PROPERTIES
@@ -114,6 +121,9 @@ set_target_properties(wlx-listerine-colorizer PROPERTIES
 )
 
 target_compile_definitions(wlx-listerine-colorizer PRIVATE WLX_VERSION_STRING="${WLX_VERSION}")
+if(WLX_TRACE_ENABLE)
+    target_compile_definitions(wlx-listerine-colorizer PRIVATE WLX_TRACE_ENABLE)
+endif()
 
 add_custom_command(TARGET wlx-listerine-colorizer POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
