@@ -289,8 +289,6 @@ static void ensure_theme() {
             g_theme.config().code_theme,
             g_theme.config().code_theme_light);
 
-        // line_height_factor from spacing config
-        g_display_cfg.line_height_factor = g_theme.spacing().line_height_factor;
     }
 }
 
@@ -319,6 +317,7 @@ static void do_layout(ColorViewState* vs, const std::wstring& text, const std::s
 
     ColorizerDisplayConfig cfg = g_display_cfg;
     cfg.word_wrap = vs->wrap_text;   // ShowFlags wins over TOML default
+    cfg.line_height_factor = g_theme.spacing().line_height_factor;
 
     auto layout = std::make_shared<LayoutDocument>(
         layout_source(g_dwrite_factory.Get(), text, raw_utf8,
@@ -575,7 +574,7 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
     case WM_VSCROLL: {
         if (!vs) break;
         float page = vs->renderer ? vs->renderer->dip_height() : 100.0f;
-        float line = g_theme.fonts().code_size * g_display_cfg.line_height_factor;
+        float line = g_theme.fonts().code_size * g_theme.spacing().line_height_factor;
 
         switch (LOWORD(wp)) {
         case SB_LINEUP:   handle_scroll(vs, -line); break;
@@ -610,7 +609,7 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
     case WM_MOUSEWHEEL: {
         if (!vs) break;
         int delta = GET_WHEEL_DELTA_WPARAM(wp);
-        float line = g_theme.fonts().code_size * g_display_cfg.line_height_factor;
+        float line = g_theme.fonts().code_size * g_theme.spacing().line_height_factor;
         handle_scroll(vs, -static_cast<float>(delta) / 120.0f * line * 3.0f);
         return 0;
     }
@@ -746,7 +745,7 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
 
     case WM_TIMER: {
         if (wp == TIMER_AUTOSCROLL && vs && vs->selecting) {
-            float line = g_theme.fonts().code_size * g_display_cfg.line_height_factor;
+            float line = g_theme.fonts().code_size * g_theme.spacing().line_height_factor;
             POINT pt;
             GetCursorPos(&pt);
             ScreenToClient(hwnd, &pt);
@@ -770,7 +769,7 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         WLX_TRACE(L"WndProc WM_KEYDOWN hwnd=%p vk=0x%X", hwnd, (unsigned)wp);
         if (!vs) break;
         float page = vs->renderer ? vs->renderer->dip_height() : 100.0f;
-        float line = g_theme.fonts().code_size * g_display_cfg.line_height_factor;
+        float line = g_theme.fonts().code_size * g_theme.spacing().line_height_factor;
 
         bool handled = false;
 
