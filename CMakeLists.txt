@@ -168,6 +168,7 @@ add_executable(tests
     tests/test_layout_engine.cpp
     tests/test_text_selection.cpp
     tests/test_search_engine.cpp
+    tests/test_search_ops.cpp
 )
 
 target_link_libraries(tests PRIVATE
