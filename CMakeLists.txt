@@ -242,129 +242,129 @@ endmacro()
 
 # --- Standard grammars (21) ---
 FetchContent_Declare(ts-c
-    GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-c.git
+    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-c.git
     GIT_TAG        v0.24.1
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-cpp
-    GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-cpp.git
+    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-cpp.git
     GIT_TAG        v0.23.4
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-python
-    GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-python.git
+    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-python.git
     GIT_TAG        v0.25.0
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-javascript
-    GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-javascript.git
+    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-javascript.git
     GIT_TAG        v0.25.0
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-rust
-    GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-rust.git
+    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-rust.git
     GIT_TAG        v0.24.2
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-go
-    GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-go.git
+    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-go.git
     GIT_TAG        v0.25.0
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-java
-    GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-java.git
+    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-java.git
     GIT_TAG        v0.23.5
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-c-sharp
-    GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-c-sharp.git
+    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-c-sharp.git
     GIT_TAG        v0.23.1
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-json
-    GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-json.git
+    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-json.git
     GIT_TAG        v0.24.8
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-html
-    GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-html.git
+    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-html.git
     GIT_TAG        v0.23.2
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-css
-    GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-css.git
+    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-css.git
     GIT_TAG        v0.25.0
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-bash
-    GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-bash.git
+    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-bash.git
     GIT_TAG        v0.25.1
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-toml
-    GIT_REPOSITORY https://github.com/tree-sitter-grammars/tree-sitter-toml.git
+    GIT_REPOSITORY git@github.com:tree-sitter-grammars/tree-sitter-toml.git
     GIT_TAG        v0.7.0
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-yaml
-    GIT_REPOSITORY https://github.com/tree-sitter-grammars/tree-sitter-yaml.git
+    GIT_REPOSITORY git@github.com:tree-sitter-grammars/tree-sitter-yaml.git
     GIT_TAG        v0.7.2
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-lua
-    GIT_REPOSITORY https://github.com/MunifTanjim/tree-sitter-lua.git
+    GIT_REPOSITORY git@github.com:MunifTanjim/tree-sitter-lua.git
     GIT_TAG        v0.0.19
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-dockerfile
-    GIT_REPOSITORY https://github.com/camdencheek/tree-sitter-dockerfile.git
+    GIT_REPOSITORY git@github.com:camdencheek/tree-sitter-dockerfile.git
     GIT_TAG        v0.2.0
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-cmake-lang
-    GIT_REPOSITORY https://github.com/uyha/tree-sitter-cmake.git
+    GIT_REPOSITORY git@github.com:uyha/tree-sitter-cmake.git
     GIT_TAG        v0.7.2
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-gitattributes
-    GIT_REPOSITORY https://github.com/ObserverOfTime/tree-sitter-gitattributes.git
+    GIT_REPOSITORY git@github.com:ObserverOfTime/tree-sitter-gitattributes.git
     GIT_TAG        v0.1.6
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-gitconfig
-    GIT_REPOSITORY https://github.com/the-mikedavis/tree-sitter-git-config.git
+    GIT_REPOSITORY git@github.com:the-mikedavis/tree-sitter-git-config.git
     GIT_TAG        main
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-git-rebase
-    GIT_REPOSITORY https://github.com/the-mikedavis/tree-sitter-git-rebase.git
+    GIT_REPOSITORY git@github.com:the-mikedavis/tree-sitter-git-rebase.git
     GIT_TAG        main
     GIT_SHALLOW    TRUE
 )
 
 # --- Special repos ---
 FetchContent_Declare(ts-typescript
-    GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-typescript.git
+    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-typescript.git
     GIT_TAG        v0.23.2
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-php
-    GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-php.git
+    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-php.git
     GIT_TAG        v0.24.2
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-vim
-    GIT_REPOSITORY https://github.com/tree-sitter-grammars/tree-sitter-vim.git
+    GIT_REPOSITORY git@github.com:tree-sitter-grammars/tree-sitter-vim.git
     GIT_TAG        v0.8.1
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-powershell
-    GIT_REPOSITORY https://github.com/airbus-cert/tree-sitter-powershell.git
+    GIT_REPOSITORY git@github.com:airbus-cert/tree-sitter-powershell.git
     GIT_TAG        v0.26.3
     GIT_SHALLOW    TRUE
 )
 FetchContent_Declare(ts-gitignore
-    GIT_REPOSITORY https://github.com/shunsambongi/tree-sitter-gitignore.git
+    GIT_REPOSITORY git@github.com:shunsambongi/tree-sitter-gitignore.git
     GIT_TAG        main
     GIT_SHALLOW    TRUE
     GIT_SUBMODULES ""  # upstream test submodule points to deleted toptal/gitignore; we only need the parser
