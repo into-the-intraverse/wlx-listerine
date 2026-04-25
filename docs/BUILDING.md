@@ -10,7 +10,7 @@
 ## Build
 
 ```bash
-conan install . --output-folder=build --build=missing -s build_type=Release
+conan install . --output-folder=build --build=missing -s build_type=Release -s compiler.cppstd=20
 cmake --preset conan-default
 cmake --build --preset conan-release
 ```

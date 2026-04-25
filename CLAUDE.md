@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Requires CMake 3.20+, Conan 2.x, MSVC.
 
 ```bash
-conan install . --output-folder=build --build=missing -s build_type=Release
+conan install . --output-folder=build --build=missing -s build_type=Release -s compiler.cppstd=20
 cmake --preset conan-default
 cmake --build --preset conan-release
 ./build/Release/tests.exe
