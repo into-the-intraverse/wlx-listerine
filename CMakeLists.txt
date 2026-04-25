@@ -5,7 +5,7 @@ set(WLX_VERSION "dev" CACHE STRING "Plugin version string, overridden by CI")
 
 option(WLX_TRACE_ENABLE "Emit OutputDebugStringW traces from WLX entry points and WndProc (capture with DebugView)" OFF)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(md4c REQUIRED)
