@@ -188,3 +188,66 @@ LRESULT CALLBACK HostIntegration<V>::parent_subclass_proc_(HWND hwnd, UINT msg,
 
     return DefSubclassProc(hwnd, msg, wp, lp);
 }
+
+template <HostView V>
+HWND HostIntegration<V>::find_menu_owner_(HWND start) {
+    HWND wnd = start;
+    while (wnd) {
+        if (GetMenu(wnd)) return wnd;
+        HWND parent = GetParent(wnd);
+        if (!parent || parent == wnd) break;
+        wnd = parent;
+    }
+    return nullptr;
+}
+
+template <HostView V>
+UINT HostIntegration<V>::find_menu_item_by_accel_(HMENU menu, const wchar_t* accel) {
+    if (!menu) return 0;
+    const int count = GetMenuItemCount(menu);
+    const size_t accel_len = wcslen(accel);
+    for (int i = 0; i < count; i++) {
+        const UINT id = GetMenuItemID(menu, i);
+        if (id == 0 || id == static_cast<UINT>(-1)) continue;
+        wchar_t buf[256];
+        const int len = GetMenuStringW(menu, i, buf, _countof(buf), MF_BYPOSITION);
+        if (len <= 0) continue;
+        const wchar_t* tab = wcschr(buf, L'\t');
+        if (!tab) continue;
+        if (wcsncmp(tab + 1, accel, accel_len) != 0) continue;
+        const wchar_t after = tab[1 + accel_len];
+        if (after == 0 || iswspace(after)) return id;
+    }
+    return 0;
+}
+
+// TC builds accelerator tables at runtime from .lng/.ini; this RT_ACCELERATOR
+// scan returns 0 on shipping TC builds. Kept as a cheap try-first in case a
+// future build or alternative file manager ships static accel resources.
+template <HostView V>
+UINT HostIntegration<V>::find_reload_id_via_accel_resources_() {
+    HMODULE main = GetModuleHandleW(nullptr);
+    if (!main) return 0;
+    UINT found = 0;
+    EnumResourceNamesW(main, RT_ACCELERATOR,
+        [](HMODULE mod, LPCWSTR, LPWSTR name, LONG_PTR param) -> BOOL {
+            auto* out = reinterpret_cast<UINT*>(param);
+            HACCEL h = LoadAcceleratorsW(mod, name);
+            if (!h) return TRUE;
+            const int n = CopyAcceleratorTable(h, nullptr, 0);
+            if (n <= 0) return TRUE;
+            std::vector<ACCEL> accels(static_cast<size_t>(n));
+            CopyAcceleratorTable(h, accels.data(), n);
+            for (const auto& a : accels) {
+                if (a.key == VK_F2
+                    && (a.fVirt & FVIRTKEY)
+                    && !(a.fVirt & (FALT | FCONTROL | FSHIFT))) {
+                    *out = a.cmd;
+                    return FALSE;
+                }
+            }
+            return TRUE;
+        },
+        reinterpret_cast<LONG_PTR>(&found));
+    return found;
+}
