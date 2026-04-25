@@ -365,6 +365,7 @@ FetchContent_Declare(ts-gitignore
     GIT_REPOSITORY git@github.com:shunsambongi/tree-sitter-gitignore.git
     GIT_TAG        main
     GIT_SHALLOW    TRUE
+    GIT_SUBMODULES ""  # upstream test submodule points to deleted toptal/gitignore; we only need the parser
 )
 
 # Download all grammar sources (no add_subdirectory — we only need the source files)
