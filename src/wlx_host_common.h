@@ -144,3 +144,47 @@ void HostIntegration<V>::emergency_cleanup() {
     views_.clear();
     self_ = nullptr;
 }
+
+template <HostView V>
+LRESULT CALLBACK HostIntegration<V>::parent_subclass_proc_(HWND hwnd, UINT msg,
+                                                             WPARAM wp, LPARAM lp,
+                                                             UINT_PTR, DWORD_PTR) {
+    if (!self_) return DefSubclassProc(hwnd, msg, wp, lp);
+
+    // Lazy text-based discovery: some TC builds label menu items with a tab
+    // followed by "F2". Use that if our resource scan didn't yield anything.
+    if (msg == WM_INITMENUPOPUP && self_->reload_menu_id_ == 0) {
+        if (HMENU menu = reinterpret_cast<HMENU>(wp)) {
+            if (UINT id = find_menu_item_by_accel_(menu, L"F2"); id) {
+                self_->reload_menu_id_ = id;
+            }
+        }
+    }
+
+    if (msg == WM_COMMAND) {
+        const UINT cmd = LOWORD(wp);
+        const UINT src = HIWORD(wp);  // 0=menu, 1=accelerator
+
+        // Always eat accelerator-source reload commands. The F2 hook already
+        // reloaded every matching view; TC's default handler would be a no-op
+        // for plugin windows anyway.
+        if (src == 1 && self_->reload_menu_id_ != 0 && cmd == self_->reload_menu_id_) {
+            return 0;
+        }
+
+        // Menu click on the known reload item: fan out to EVERY view whose
+        // subclass_target is this hwnd (H3 fix — was previously return-after-first).
+        if (src == 0 && self_->reload_menu_id_ != 0 && cmd == self_->reload_menu_id_) {
+            bool any = false;
+            for (auto& [pwnd, vs] : self_->views_) {
+                if (vs->subclass_target == hwnd && !vs->file_path.empty()) {
+                    reload_view(*vs, vs->file_path.c_str());
+                    any = true;
+                }
+            }
+            if (any) return 0;
+        }
+    }
+
+    return DefSubclassProc(hwnd, msg, wp, lp);
+}
