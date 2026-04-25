@@ -30,6 +30,7 @@
 #include "cache_service.h"
 #include "colorizer.h"
 #include "search_engine.h"
+#include "search_ops.h"
 
 #define WLX_TRACE_TAG L"wlx-md"
 #include "wlx_trace.h"
@@ -72,6 +73,8 @@ struct ViewState {
     SearchQuery last_query;
     bool index_dirty = true;
 };
+
+static_assert(SearchState<ViewState>);
 
 // ---------- globals ----------
 
@@ -1290,45 +1293,14 @@ int __stdcall ListSearchTextW(HWND ListWin, wchar_t* SearchString, int SearchPar
     q.backwards    = (SearchParameter & lcs_backwards)  != 0;
     const bool findfirst = (SearchParameter & lcs_findfirst) != 0;
 
-    bool rebuilt = false;
-    if (vs->index_dirty) {
-        vs->search_index.build(*vs->layout);
-        vs->index_dirty = false;
-        rebuilt = true;
-    }
-
-    // Re-run find_all when the user started over, the layout changed,
-    // or needle / flags shifted. F5 with identical query reuses cached matches.
-    const bool requery = findfirst || rebuilt || q != vs->last_query;
-    if (requery) {
-        const bool query_changed = q != vs->last_query;
-        vs->matches = vs->search_index.find_all(q);
-        if (findfirst || query_changed) {
-            // Fresh search — reset cursor. Advancement below steps to match 0.
-            vs->current_match = -1;
-        } else if (vs->current_match >= static_cast<int>(vs->matches.size())) {
-            // Same query, index rebuilt after relayout: clamp cursor in range.
-            vs->current_match = static_cast<int>(vs->matches.size()) - 1;
-        }
-        vs->last_query = q;
-    }
-
-    if (vs->matches.empty()) {
-        vs->current_match = -1;
+    auto r = search_step(*vs, q, findfirst);
+    if (!r.has_match) {
         if (vs->renderer) vs->renderer->set_search_matches({}, -1);
         InvalidateRect(vs->hwnd, nullptr, FALSE);
         return LISTPLUGIN_ERROR;
     }
-
-    const int n = static_cast<int>(vs->matches.size());
-    if (q.backwards) {
-        vs->current_match = (vs->current_match <= 0) ? n - 1 : vs->current_match - 1;
-    } else {
-        vs->current_match = (vs->current_match + 1) % n;
-    }
-
-    scroll_to_match(vs, vs->matches[vs->current_match]);
-    if (vs->renderer) vs->renderer->set_search_matches(vs->matches, vs->current_match);
+    scroll_to_match(vs, r.matches[r.cursor]);
+    if (vs->renderer) vs->renderer->set_search_matches(r.matches, r.cursor);
     InvalidateRect(vs->hwnd, nullptr, FALSE);
     return LISTPLUGIN_OK;
 }
