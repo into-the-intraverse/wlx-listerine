@@ -180,7 +180,9 @@ target_link_libraries(tests PRIVATE
 
 # --- Grammar DLLs via FetchContent ---
 include(FetchContent)
-set(FETCHCONTENT_QUIET ON)
+# QUIET=OFF so 25 sequential grammar clones print progress (otherwise the
+# configure step looks frozen for several minutes after "Target declared 'doctest::doctest'").
+set(FETCHCONTENT_QUIET OFF)
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 # We use FetchContent_Populate (download-only, no add_subdirectory) to avoid
 # target name conflicts from grammar repos' own CMakeLists.txt files.
