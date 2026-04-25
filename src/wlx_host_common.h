@@ -67,3 +67,80 @@ struct ConceptProbe {
 inline void reload_view(ConceptProbe&, const wchar_t*) {}
 static_assert(HostView<ConceptProbe>);
 }
+
+template <HostView V>
+LRESULT CALLBACK HostIntegration<V>::get_msg_hook_(int code, WPARAM wp, LPARAM lp) {
+    if (code == HC_ACTION && wp == PM_REMOVE && self_) {
+        MSG* m = reinterpret_cast<MSG*>(lp);
+        if (m && m->message == WM_KEYDOWN && m->wParam == VK_F2) {
+            auto it = self_->views_.find(m->hwnd);
+            if (it != self_->views_.end()) {
+                V* vs = it->second;
+                if (!vs->file_path.empty()) {
+                    reload_view(*vs, vs->file_path.c_str());
+                }
+                // Eat F2 iff we already know the reload cmd (otherwise let TC
+                // dispatch it normally so WM_INITMENUPOPUP discovery still
+                // has a chance to learn the ID).
+                if (self_->reload_menu_id_ != 0) {
+                    m->message = WM_NULL;
+                }
+            }
+        }
+    }
+    return CallNextHookEx(nullptr, code, wp, lp);
+}
+
+template <HostView V>
+void HostIntegration<V>::attach(V* vs, HWND parent_hint) {
+    self_ = this;
+    views_[vs->hwnd] = vs;
+
+    if (hook_refcount_++ == 0) {
+        msg_hook_ = SetWindowsHookExW(WH_GETMESSAGE, get_msg_hook_,
+                                       nullptr, GetCurrentThreadId());
+    }
+
+    if (reload_menu_id_ == 0) {
+        reload_menu_id_ = find_reload_id_via_accel_resources_();
+    }
+
+    HWND target = find_menu_owner_(parent_hint);
+    if (!target) target = parent_hint;
+    vs->subclass_target = target;
+    if (target && parent_refcount_[target]++ == 0) {
+        SetWindowSubclass(target, parent_subclass_proc_, kSubclassId, 0);
+    }
+}
+
+template <HostView V>
+void HostIntegration<V>::detach(V* vs) {
+    if (vs->subclass_target) {
+        auto it = parent_refcount_.find(vs->subclass_target);
+        if (it != parent_refcount_.end() && --it->second <= 0) {
+            RemoveWindowSubclass(vs->subclass_target, parent_subclass_proc_, kSubclassId);
+            parent_refcount_.erase(it);
+        }
+    }
+    views_.erase(vs->hwnd);
+    if (hook_refcount_ > 0 && --hook_refcount_ == 0 && msg_hook_) {
+        UnhookWindowsHookEx(msg_hook_);
+        msg_hook_ = nullptr;
+    }
+    if (views_.empty()) self_ = nullptr;
+}
+
+template <HostView V>
+void HostIntegration<V>::emergency_cleanup() {
+    for (auto& [parent, _] : parent_refcount_) {
+        RemoveWindowSubclass(parent, parent_subclass_proc_, kSubclassId);
+    }
+    parent_refcount_.clear();
+    if (msg_hook_) {
+        UnhookWindowsHookEx(msg_hook_);
+        msg_hook_ = nullptr;
+    }
+    hook_refcount_ = 0;
+    views_.clear();
+    self_ = nullptr;
+}
