@@ -229,7 +229,10 @@ UINT HostIntegration<V>::find_reload_id_via_accel_resources_() {
     HMODULE main = GetModuleHandleW(nullptr);
     if (!main) return 0;
     UINT found = 0;
-    EnumResourceNamesW(main, RT_ACCELERATOR,
+    // Use the explicit wide form instead of RT_ACCELERATOR: the macro resolves
+    // to LPSTR vs. LPWSTR based on the TU's UNICODE state, which we can't
+    // assume from a header. MAKEINTRESOURCEW(9) is the wide-string equivalent.
+    EnumResourceNamesW(main, MAKEINTRESOURCEW(9),
         [](HMODULE mod, LPCWSTR, LPWSTR name, LONG_PTR param) -> BOOL {
             auto* out = reinterpret_cast<UINT*>(param);
             HACCEL h = LoadAcceleratorsW(mod, name);
