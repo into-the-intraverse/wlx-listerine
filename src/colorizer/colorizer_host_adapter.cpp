@@ -833,6 +833,14 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         }
 
         if (handled) return 0;
+
+        // Unhandled keys fall to DefWindowProcW. TC's TranslateAccelerator runs on
+        // the message loop ahead of DispatchMessage, so F5/F7/N/P/W are claimed
+        // upstream and never reach this point. F2 is the exception — TC consumes
+        // it before TranslateAccelerator, which is why we intercept it via the
+        // WH_GETMESSAGE hook (see wlx_host_common.h). If a new accel key ever
+        // reaches this branch, the trace below will surface it.
+        WLX_TRACE(L"WM_KEYDOWN unhandled, falling through vk=0x%X", (unsigned)wp);
         break;
     }
 
