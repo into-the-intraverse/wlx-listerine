@@ -49,12 +49,13 @@ jobs:
           $url = "https://github.com/microsoft/cascadia-code/releases/download/v2404.23/CascadiaCode-2404.23.zip"
           Invoke-WebRequest -Uri $url -OutFile cascadia.zip
           Expand-Archive cascadia.zip -DestinationPath cascadia
-          $shell = New-Object -ComObject Shell.Application
-          $fonts = $shell.Namespace(0x14)
+          $fontDir = "$env:LOCALAPPDATA\Microsoft\Windows\Fonts"
+          New-Item -ItemType Directory -Path $fontDir -Force | Out-Null
           Get-ChildItem cascadia/ttf/static/*.ttf | ForEach-Object {
-              Copy-Item $_.FullName "$env:LOCALAPPDATA\Microsoft\Windows\Fonts\" -Force
+              $dest = Join-Path $fontDir $_.Name
+              Copy-Item $_.FullName $dest -Force
               New-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts" `
-                  -Name $_.BaseName -Value $_.FullName -PropertyType String -Force | Out-Null
+                  -Name $_.BaseName -Value $dest -PropertyType String -Force | Out-Null
           }
 
       - name: Run visual regression tests
