@@ -169,11 +169,13 @@ add_executable(tests
     tests/test_text_selection.cpp
     tests/test_search_engine.cpp
     tests/test_search_ops.cpp
+    tests/test_wlx_host_common.cpp
 )
 
 target_link_libraries(tests PRIVATE
     wlx-core
     doctest::doctest
+    comctl32
 )
 
 # --- Grammar DLLs via FetchContent ---
