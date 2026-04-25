@@ -55,7 +55,8 @@ private:
     void paint_text_runs(const LayoutBlock& block, float offset_y);
     void paint_selection_highlight(const LayoutBlock& block, int block_index,
                                    float offset_y, TextPosition sel_start, TextPosition sel_end);
-    void paint_search_highlights(const LayoutBlock& block, int block_index, float offset_y);
+    void paint_search_highlights(const LayoutBlock& block, int block_index,
+                                 float offset_y, size_t& match_cursor);
     void paint_copy_button(const LayoutBlock& block, int block_index, float offset_y);
     void paint_whitespace_markers(const LayoutBlock& block, float offset_y);
     void paint_indent_guides(const LayoutBlock& block, float offset_y);
