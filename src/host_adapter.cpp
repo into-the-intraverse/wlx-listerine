@@ -11,7 +11,6 @@
 #include <windows.h>
 #include <windowsx.h>
 #include <shellapi.h>
-#include <commctrl.h>
 #include <dwmapi.h>
 #include <uxtheme.h>
 #include <d2d1.h>
@@ -30,6 +29,8 @@
 #include "cache_service.h"
 #include "colorizer.h"
 #include "search_engine.h"
+#include "search_ops.h"
+#include "wlx_host_common.h"
 
 #define WLX_TRACE_TAG L"wlx-md"
 #include "wlx_trace.h"
@@ -73,6 +74,8 @@ struct ViewState {
     bool index_dirty = true;
 };
 
+static_assert(SearchState<ViewState>);
+
 // ---------- globals ----------
 
 static HMODULE g_hModule = nullptr;
@@ -87,32 +90,11 @@ static ATOM g_window_class = 0;
 static std::string g_default_ini_path;
 static std::unique_ptr<Colorizer> g_colorizer;
 
-// WH_GETMESSAGE hook: TC's message pump runs TranslateAccelerator before
-// DispatchMessage, which consumes F2 (Lister's "Reload File" accelerator)
-// and posts WM_COMMAND to the parent — a no-op for plugin windows, so F2
-// effectively vanishes before our WndProc sees it. Hooking on the UI thread
-// lets us inspect and rewrite the message *before* TranslateAccelerator runs.
-// Refcounted so multiple plugin windows share one hook installation.
-static HHOOK g_msg_hook = nullptr;
-static int g_hook_refcount = 0;
+// Forward decl so the HostView<ViewState> concept is satisfied at the point
+// where HostIntegration<ViewState> is instantiated (below).
+static void reload_view(ViewState& vs, const wchar_t* path);
 
-// Parent (Lister) subclass state — used to intercept the File→Reload menu
-// click. WM_INITMENUPOPUP lets us discover the reload menu ID lazily by
-// scanning the popup for an item whose accelerator suffix is "F2"; the
-// resulting WM_COMMAND then gets converted into our load_document call.
-// Refcounted per parent HWND so multiple plugin windows under the same
-// Lister parent share one subclass installation.
-static constexpr UINT_PTR PARENT_SUBCLASS_ID = 0x574C5850;  // 'WLXP'
-static UINT g_reload_menu_id = 0;
-static bool g_pending_f2_capture = false;  // F2 just leaked through; next accel WM_COMMAND is its
-// Menu-then-F2 discovery: when an unknown menu cmd arrives we hold it as a
-// candidate. If F2 fires within the TTL, the user just did "click menu →
-// nothing → press F2", so the candidate IS the reload command. This avoids
-// guessing wrong by trusting an isolated menu click (which could be any item).
-static UINT g_candidate_reload_id = 0;
-static DWORD g_candidate_time = 0;
-static constexpr DWORD CANDIDATE_TTL_MS = 5000;
-static std::unordered_map<HWND, int> g_parent_refcount;
+static HostIntegration<ViewState> g_integration;
 
 // ---------- helpers ----------
 
@@ -245,273 +227,12 @@ static void load_document(ViewState* vs, const wchar_t* path) {
     do_layout(vs);
 }
 
-// ---------- F2 reload hook ----------
-//
-// Sits on the UI thread's message queue *ahead of* TranslateAccelerator so we
-// can intercept VK_F2 before TC's accelerator table converts it into the
-// silent-no-op WM_COMMAND.  Only acts on F2 messages targeting one of OUR
-// plugin windows (looked up in g_views) — leaves every other key untouched.
-static LRESULT CALLBACK GetMsgHookProc(int code, WPARAM wp, LPARAM lp) {
-    if (code == HC_ACTION && wp == PM_REMOVE) {
-        MSG* m = reinterpret_cast<MSG*>(lp);
-        if (m && m->message == WM_KEYDOWN && m->wParam == VK_F2) {
-            auto it = g_views.find(m->hwnd);
-            if (it != g_views.end()) {
-                ViewState* vs = it->second;
-                WLX_TRACE(L"F2 reload via hook hwnd=%p file=%s",
-                          m->hwnd,
-                          vs->file_path.empty() ? L"(empty)" : vs->file_path.c_str());
-                if (!vs->file_path.empty()) {
-                    load_document(vs, vs->file_path.c_str());
-                    InvalidateRect(vs->hwnd, nullptr, FALSE);
-                }
-                // Menu-then-F2 discovery: if a recent menu click left a
-                // candidate cmd, the user just did "click menu → no effect
-                // → press F2". That click was the reload menu — confirm.
-                if (g_reload_menu_id == 0
-                    && g_candidate_reload_id != 0
-                    && (GetTickCount() - g_candidate_time) < CANDIDATE_TTL_MS) {
-                    g_reload_menu_id = g_candidate_reload_id;
-                    WLX_TRACE(L"confirmed reload menu id=%u via menu→F2 sequence",
-                              g_reload_menu_id);
-                }
-                g_candidate_reload_id = 0;
-                if (g_reload_menu_id == 0) {
-                    // Fallback discovery path (in case TC ever uses
-                    // TranslateAccelerator): let it run so the resulting
-                    // WM_COMMAND can be captured by our parent subclass.
-                    g_pending_f2_capture = true;
-                } else {
-                    // ID known — eat to keep TC's no-op handler from firing.
-                    m->message = WM_NULL;
-                }
-            }
-        }
-    }
-    return CallNextHookEx(nullptr, code, wp, lp);
+static void reload_view(ViewState& vs, const wchar_t* path) {
+    load_document(&vs, path);
+    InvalidateRect(vs.hwnd, nullptr, FALSE);
 }
 
-static void install_msg_hook() {
-    if (g_hook_refcount++ == 0) {
-        g_msg_hook = SetWindowsHookExW(WH_GETMESSAGE, GetMsgHookProc,
-                                        nullptr, GetCurrentThreadId());
-        WLX_TRACE(L"WH_GETMESSAGE hook installed handle=%p", g_msg_hook);
-    }
-}
-
-static void uninstall_msg_hook() {
-    if (g_hook_refcount > 0 && --g_hook_refcount == 0 && g_msg_hook) {
-        UnhookWindowsHookEx(g_msg_hook);
-        WLX_TRACE(L"WH_GETMESSAGE hook uninstalled");
-        g_msg_hook = nullptr;
-    }
-}
-
-// ---------- File→Reload menu interception ----------
-
-// Scan every accelerator-table resource in TC's main executable looking for
-// a binding of `vk` (no Ctrl/Alt/Shift modifier). This is the most reliable
-// way to discover TC's reload command ID because TC's menu items are
-// owner-drawn (no text accessible via GetMenuStringW) and TC processes F2
-// itself before TranslateAccelerator ever runs (so we can't observe a
-// WM_COMMAND from a real F2 keystroke either).
-static BOOL CALLBACK accel_enum_proc_(HMODULE mod, LPCWSTR /*type*/, LPWSTR name, LONG_PTR param) {
-    auto* found = reinterpret_cast<UINT*>(param);
-    HACCEL h = LoadAcceleratorsW(mod, name);
-    if (!h) return TRUE;
-    int n = CopyAcceleratorTable(h, nullptr, 0);
-    if (n <= 0) return TRUE;
-    std::vector<ACCEL> accels(static_cast<size_t>(n));
-    CopyAcceleratorTable(h, accels.data(), n);
-    for (auto& a : accels) {
-        // Modifier-less F2: FVIRTKEY set, no FALT/FCONTROL/FSHIFT.
-        if (a.key == VK_F2
-            && (a.fVirt & FVIRTKEY)
-            && !(a.fVirt & (FALT | FCONTROL | FSHIFT))) {
-            *found = a.cmd;
-            return FALSE;  // stop enumeration
-        }
-    }
-    return TRUE;
-}
-
-static UINT find_reload_id_via_accel_resources() {
-    HMODULE main = GetModuleHandleW(nullptr);
-    if (!main) return 0;
-    UINT found = 0;
-    EnumResourceNamesW(main, RT_ACCELERATOR, accel_enum_proc_,
-                       reinterpret_cast<LONG_PTR>(&found));
-    return found;
-}
-
-// Look for a menu item whose accelerator hint after the tab is exactly the
-// given string (e.g. L"F2"). Returns 0 if none. We require the tail to be
-// the accel literally (with optional trailing whitespace) so "F20" doesn't
-// false-match for L"F2".
-static UINT find_menu_item_by_accel(HMENU menu, const wchar_t* accel) {
-    if (!menu) return 0;
-    int count = GetMenuItemCount(menu);
-    size_t accel_len = wcslen(accel);
-    for (int i = 0; i < count; i++) {
-        UINT id = GetMenuItemID(menu, i);
-        if (id == 0 || id == static_cast<UINT>(-1)) continue;  // separator/submenu
-        wchar_t buf[256];
-        int len = GetMenuStringW(menu, i, buf, _countof(buf), MF_BYPOSITION);
-        if (len <= 0) continue;
-        const wchar_t* tab = wcschr(buf, L'\t');
-        if (!tab) continue;
-        if (wcsncmp(tab + 1, accel, accel_len) != 0) continue;
-        wchar_t after = tab[1 + accel_len];
-        if (after == 0 || iswspace(after)) return id;
-    }
-    return 0;
-}
-
-static LRESULT CALLBACK ParentSubclassProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
-                                            UINT_PTR /*subclass_id*/, DWORD_PTR /*ref*/) {
-    // Backup discovery path: some menus include the accel hint in their text.
-    if (msg == WM_INITMENUPOPUP && g_reload_menu_id == 0) {
-        HMENU menu = reinterpret_cast<HMENU>(wp);
-        UINT id = find_menu_item_by_accel(menu, L"F2");
-        if (id) {
-            g_reload_menu_id = id;
-            WLX_TRACE(L"discovered reload menu id=%u via WM_INITMENUPOPUP parent=%p",
-                      id, hwnd);
-        }
-        // Diagnostic dump: log every item in the popup so we can see TC's menu
-        // structure and find the reload entry by text if accel hints are absent.
-        if (menu) {
-            int count = GetMenuItemCount(menu);
-            WLX_TRACE(L"  WM_INITMENUPOPUP menu=%p items=%d", menu, count);
-            for (int i = 0; i < count; i++) {
-                wchar_t buf[256] = {};
-                GetMenuStringW(menu, i, buf, _countof(buf), MF_BYPOSITION);
-                UINT iid = GetMenuItemID(menu, i);
-                WLX_TRACE(L"    [%d] id=%u text=\"%s\"", i, iid, buf);
-            }
-        }
-    }
-    if (msg == WM_COMMAND) {
-        UINT cmd = LOWORD(wp);
-        UINT src = HIWORD(wp);  // 0=menu, 1=accelerator
-        WLX_TRACE(L"  WM_COMMAND cmd=%u src=%u (%s)", cmd, src,
-                  src == 0 ? L"menu" : (src == 1 ? L"accel" : L"control"));
-
-        // Primary discovery path: catch the WM_COMMAND that our F2 hook
-        // deliberately let through. Whatever LOWORD(wp) is, that's the
-        // reload menu ID — TC's accelerator table told us so.
-        if (src == 1 && g_pending_f2_capture) {
-            if (g_reload_menu_id == 0) {
-                g_reload_menu_id = cmd;
-                WLX_TRACE(L"captured reload menu id=%u from F2 accelerator probe", cmd);
-            }
-            g_pending_f2_capture = false;
-            return 0;  // eat — TC's reload handler is a no-op for plugin windows
-        }
-
-        // Eat F2-derived WM_COMMAND in steady state too (hook already reloaded).
-        if (src == 1 && g_reload_menu_id != 0 && cmd == g_reload_menu_id) {
-            return 0;
-        }
-
-        // Menu click on the reload item — hook didn't fire, do the reload here.
-        if (src == 0 && g_reload_menu_id != 0 && cmd == g_reload_menu_id) {
-            for (auto& [pwnd, vs] : g_views) {
-                if (vs->subclass_target == hwnd) {
-                    WLX_TRACE(L"File→Reload via subclass owner=%p plugin=%p file=%s",
-                              hwnd, pwnd,
-                              vs->file_path.empty() ? L"(empty)" : vs->file_path.c_str());
-                    if (!vs->file_path.empty()) {
-                        load_document(vs, vs->file_path.c_str());
-                        InvalidateRect(vs->hwnd, nullptr, FALSE);
-                    }
-                    return 0;
-                }
-            }
-        }
-
-        // Unknown menu-source command — discovery logic with two confirmation
-        // paths:
-        //   1) menu→F2: F2 hook checks for a recent candidate and confirms it
-        //   2) menu→menu: same cmd seen twice within TTL → user is clicking
-        //      Reload, expecting it to work; confirm and act on this click
-        if (src == 0 && g_reload_menu_id == 0 && cmd != 0) {
-            DWORD now = GetTickCount();
-            if (g_candidate_reload_id == cmd
-                && (now - g_candidate_time) < CANDIDATE_TTL_MS) {
-                // Repeat-click confirmation
-                g_reload_menu_id = cmd;
-                WLX_TRACE(L"confirmed reload menu id=%u via repeated menu click", cmd);
-                g_candidate_reload_id = 0;
-                for (auto& [pwnd, vs] : g_views) {
-                    if (vs->subclass_target == hwnd) {
-                        if (!vs->file_path.empty()) {
-                            load_document(vs, vs->file_path.c_str());
-                            InvalidateRect(vs->hwnd, nullptr, FALSE);
-                        }
-                        return 0;
-                    }
-                }
-                return 0;
-            }
-            g_candidate_reload_id = cmd;
-            g_candidate_time = now;
-            WLX_TRACE(L"recorded candidate reload menu id=%u "
-                      L"(confirm via F2 or repeat-click)", cmd);
-        }
-
-        // Any other WM_COMMAND clears a stale pending flag (e.g. user pressed
-        // F2 then immediately clicked something else).
-        g_pending_f2_capture = false;
-    }
-    return DefSubclassProc(hwnd, msg, wp, lp);
-}
-
-// Walk up the parent chain looking for the window that actually owns a menu.
-// Lister's structure varies across TC versions: ParentWin may be a viewport
-// child while the menu lives on the top-level frame. WM_COMMAND from menu
-// clicks goes to the menu owner, not the immediate parent — so we must
-// subclass the owner. Returns nullptr if nothing in the chain has a menu.
-static HWND find_menu_owner(HWND start) {
-    HWND wnd = start;
-    int depth = 0;
-    while (wnd) {
-        HMENU m = GetMenu(wnd);
-        WLX_TRACE(L"  menu-owner walk depth=%d hwnd=%p menu=%p", depth, wnd, m);
-        if (m) return wnd;
-        HWND parent = GetParent(wnd);
-        if (!parent || parent == wnd) break;
-        wnd = parent;
-        ++depth;
-    }
-    return nullptr;
-}
-
-// Returns the hwnd actually subclassed (may differ from `parent_hint` if the
-// menu owner sits higher in the chain). Returns nullptr if subclassing is
-// inapplicable (no menu found anywhere). Caller must remember the returned
-// hwnd and pass it to uninstall_parent_subclass on close.
-static HWND install_parent_subclass(HWND parent_hint) {
-    if (!parent_hint) return nullptr;
-    HWND target = find_menu_owner(parent_hint);
-    if (!target) target = parent_hint;  // still subclass — WM_INITMENUPOPUP may yet appear
-    if (g_parent_refcount[target]++ == 0) {
-        SetWindowSubclass(target, ParentSubclassProc, PARENT_SUBCLASS_ID, 0);
-        WLX_TRACE(L"parent subclass installed target=%p (hint=%p)", target, parent_hint);
-    }
-    return target;
-}
-
-static void uninstall_parent_subclass(HWND target) {
-    if (!target) return;
-    auto it = g_parent_refcount.find(target);
-    if (it == g_parent_refcount.end()) return;
-    if (--it->second <= 0) {
-        RemoveWindowSubclass(target, ParentSubclassProc, PARENT_SUBCLASS_ID);
-        WLX_TRACE(L"parent subclass removed target=%p", target);
-        g_parent_refcount.erase(it);
-    }
-}
+static_assert(HostView<ViewState>);
 
 // ---------- WndProc ----------
 
@@ -977,6 +698,14 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
 
         if (handled) return 0;
+
+        // Unhandled keys fall to DefWindowProcW. TC's TranslateAccelerator runs on
+        // the message loop ahead of DispatchMessage, so F5/F7/N/P/W are claimed
+        // upstream and never reach this point. F2 is the exception — TC consumes
+        // it before TranslateAccelerator, which is why we intercept it via the
+        // WH_GETMESSAGE hook (see wlx_host_common.h). If a new accel key ever
+        // reaches this branch, the trace below will surface it.
+        WLX_TRACE(L"WM_KEYDOWN unhandled, falling through vk=0x%X", (unsigned)wp);
         break;
     }
 
@@ -1054,17 +783,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {
         g_views.clear();
 
         if (reserved == nullptr) {
-            // Remove every parent subclass before the DLL unloads — leaving
-            // a dangling subclass proc means the next message dispatched to
-            // the parent calls into freed code.
-            for (auto& [parent, _count] : g_parent_refcount) {
-                RemoveWindowSubclass(parent, ParentSubclassProc, PARENT_SUBCLASS_ID);
-            }
-            g_parent_refcount.clear();
-            if (g_msg_hook) {
-                UnhookWindowsHookEx(g_msg_hook);
-                g_msg_hook = nullptr;
-            }
+            g_integration.emergency_cleanup();
             if (g_window_class) {
                 UnregisterClassW(L"WlxListerineMdView", g_hModule);
                 g_window_class = 0;
@@ -1085,15 +804,54 @@ static void scroll_to_match(ViewState* vs, const SearchMatch& m) {
     const float block_top = block.rect.top;
     const float block_bot = block.rect.bottom;
 
-    // Already visible? leave scroll alone.
-    if (block_top >= vs->scroll_y && block_bot <= vs->scroll_y + viewport_h) return;
+    if (block_top >= vs->scroll_y && block_bot <= vs->scroll_y + viewport_h) {
+        // Block already fully visible — but match may still be off-screen
+        // in a tall block. Fall through to the precision pass below.
+    } else {
+        // Center the block vertically first.
+        const float target = block_top - (viewport_h - (block_bot - block_top)) * 0.5f;
+        vs->scroll_y = std::clamp(target, 0.0f, vs->max_scroll_y);
+    }
 
-    // Otherwise center the block vertically. Note: for blocks taller than the
-    // viewport this shows the block's middle — matches near the block edges
-    // may still be clipped. SearchMatch is block-level (no per-char y), so
-    // this is the best we can do at the current granularity.
-    const float target = block_top - (viewport_h - (block_bot - block_top)) * 0.5f;
-    vs->scroll_y = std::clamp(target, 0.0f, vs->max_scroll_y);
+    // Precision pass: hit-test the match's first rect. If the match is still
+    // outside the viewport after centering, place the match ~1/3 from top.
+    int cursor = 0;
+    for (const auto& run : block.text_runs) {
+        const int run_len = static_cast<int>(run.text.size());
+        const int run_start = cursor;
+        const int run_end   = cursor + run_len;
+        cursor = run_end;
+        if (m.char_end <= run_start || m.char_start >= run_end) continue;
+        if (!run.layout) continue;
+
+        const int local_start = std::max(m.char_start, run_start) - run_start;
+        const int local_end   = std::min(m.char_end,   run_end)   - run_start;
+        const UINT32 length   = static_cast<UINT32>(local_end - local_start);
+
+        UINT32 required = 0;
+        run.layout->HitTestTextRange(
+            static_cast<UINT32>(local_start), length,
+            run.rect.left, run.rect.top,
+            nullptr, 0, &required);
+        if (required == 0) break;
+
+        std::vector<DWRITE_HIT_TEST_METRICS> metrics(required);
+        UINT32 actual = 0;
+        run.layout->HitTestTextRange(
+            static_cast<UINT32>(local_start), length,
+            run.rect.left, run.rect.top,
+            metrics.data(), required, &actual);
+        if (actual == 0) break;
+
+        const float match_top = metrics[0].top;
+        const float match_bot = metrics[0].top + metrics[0].height;
+        if (match_top < vs->scroll_y || match_bot > vs->scroll_y + viewport_h) {
+            vs->scroll_y = std::clamp(match_top - viewport_h * 0.33f,
+                                       0.0f, vs->max_scroll_y);
+        }
+        break;
+    }
+
     update_scrollbar(vs);
 }
 
@@ -1145,20 +903,7 @@ HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
     load_document(vs, FileToLoad);
     InvalidateRect(hwnd, nullptr, FALSE);
 
-    install_msg_hook();
-    vs->subclass_target = install_parent_subclass(ParentWin);
-
-    // Discover the File→Reload command ID by reading TC's accelerator-table
-    // resources. This is more reliable than menu inspection (TC's menus are
-    // owner-drawn so item text is empty) and gives us the same cmd ID that
-    // both F2 (via accel) and the menu item post.
-    if (g_reload_menu_id == 0) {
-        UINT id = find_reload_id_via_accel_resources();
-        if (id) {
-            g_reload_menu_id = id;
-            WLX_TRACE(L"discovered reload menu id=%u via accelerator resource scan", id);
-        }
-    }
+    g_integration.attach(vs, ParentWin);
 
     return hwnd;
 }
@@ -1188,16 +933,13 @@ int __stdcall ListLoadNextW(HWND ParentWin, HWND PluginWin, wchar_t* FileToLoad,
 
 void __stdcall ListCloseWindow(HWND ListWin) {
     WLX_TRACE(L"ListCloseWindow hwnd=%p", ListWin);
-    HWND subclass_target = nullptr;
     auto it = g_views.find(ListWin);
     if (it != g_views.end()) {
-        subclass_target = it->second->subclass_target;
+        g_integration.detach(it->second);  // must come before delete
         delete it->second;
         g_views.erase(it);
     }
     DestroyWindow(ListWin);
-    uninstall_parent_subclass(subclass_target);
-    uninstall_msg_hook();
 }
 
 void __stdcall ListGetDetectString(char* DetectString, int maxlen) {
@@ -1290,45 +1032,14 @@ int __stdcall ListSearchTextW(HWND ListWin, wchar_t* SearchString, int SearchPar
     q.backwards    = (SearchParameter & lcs_backwards)  != 0;
     const bool findfirst = (SearchParameter & lcs_findfirst) != 0;
 
-    bool rebuilt = false;
-    if (vs->index_dirty) {
-        vs->search_index.build(*vs->layout);
-        vs->index_dirty = false;
-        rebuilt = true;
-    }
-
-    // Re-run find_all when the user started over, the layout changed,
-    // or needle / flags shifted. F5 with identical query reuses cached matches.
-    const bool requery = findfirst || rebuilt || q != vs->last_query;
-    if (requery) {
-        const bool query_changed = q != vs->last_query;
-        vs->matches = vs->search_index.find_all(q);
-        if (findfirst || query_changed) {
-            // Fresh search — reset cursor. Advancement below steps to match 0.
-            vs->current_match = -1;
-        } else if (vs->current_match >= static_cast<int>(vs->matches.size())) {
-            // Same query, index rebuilt after relayout: clamp cursor in range.
-            vs->current_match = static_cast<int>(vs->matches.size()) - 1;
-        }
-        vs->last_query = q;
-    }
-
-    if (vs->matches.empty()) {
-        vs->current_match = -1;
+    auto r = search_step(*vs, q, findfirst);
+    if (!r.has_match) {
         if (vs->renderer) vs->renderer->set_search_matches({}, -1);
         InvalidateRect(vs->hwnd, nullptr, FALSE);
         return LISTPLUGIN_ERROR;
     }
-
-    const int n = static_cast<int>(vs->matches.size());
-    if (q.backwards) {
-        vs->current_match = (vs->current_match <= 0) ? n - 1 : vs->current_match - 1;
-    } else {
-        vs->current_match = (vs->current_match + 1) % n;
-    }
-
-    scroll_to_match(vs, vs->matches[vs->current_match]);
-    if (vs->renderer) vs->renderer->set_search_matches(vs->matches, vs->current_match);
+    scroll_to_match(vs, r.matches[r.cursor]);
+    if (vs->renderer) vs->renderer->set_search_matches(r.matches, r.cursor);
     InvalidateRect(vs->hwnd, nullptr, FALSE);
     return LISTPLUGIN_OK;
 }

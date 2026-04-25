@@ -216,6 +216,7 @@ void RenderEngine::paint(const LayoutDocument& layout, float scroll_y,
     // Apply scroll transform
     rt_->SetTransform(D2D1::Matrix3x2F::Translation(0, -scroll_y));
 
+    size_t search_cursor = 0;
     for (int block_idx = 0; block_idx < static_cast<int>(layout.blocks.size()); block_idx++) {
         auto& block = layout.blocks[block_idx];
         // Visibility culling
@@ -229,7 +230,7 @@ void RenderEngine::paint(const LayoutDocument& layout, float scroll_y,
         paint_inline_code_bg(block, 0);
         paint_span_backgrounds(block, 0);
         paint_selection_highlight(block, block_idx, 0, sel_start, sel_end);
-        paint_search_highlights(block, block_idx, 0);
+        paint_search_highlights(block, block_idx, 0, search_cursor);
         paint_block_decoration(block, 0);
         paint_indent_guides(block, 0);
         paint_bullet(block, 0);
@@ -305,22 +306,23 @@ void RenderEngine::paint_selection_highlight(const LayoutBlock& block, int block
     }
 }
 
-void RenderEngine::paint_search_highlights(const LayoutBlock& block, int block_index, float offset_y) {
+void RenderEngine::paint_search_highlights(const LayoutBlock& block, int block_index,
+                                            float offset_y, size_t& match_cursor) {
     if (search_matches_.empty() || !rt_) return;
+
+    // Skip matches belonging to earlier blocks; they've already been handled
+    // (or skipped) by prior paint_search_highlights calls in this frame.
+    while (match_cursor < search_matches_.size()
+           && search_matches_[match_cursor].block_index < block_index) {
+        ++match_cursor;
+    }
 
     const auto& pal = theme_.palette(dark_mode_);
 
-    // Matches are in document order (see SearchIndex::find_all). Skip past
-    // earlier blocks and break once we pass block_index — keeps this O(matches
-    // for this block) instead of O(all matches × visible blocks) per frame.
-    for (size_t i = 0; i < search_matches_.size(); i++) {
+    for (size_t i = match_cursor; i < search_matches_.size(); i++) {
         const auto& m = search_matches_[i];
-        if (m.block_index < block_index) continue;
         if (m.block_index > block_index) break;
 
-        // Walk runs, find the overlap with [m.char_start, m.char_end).
-        // A match can span multiple runs in a block (e.g. across bold/regular
-        // boundaries) since SearchIndex concatenates run text without separators.
         int cursor = 0;
         for (const auto& run : block.text_runs) {
             const int run_len = static_cast<int>(run.text.size());
@@ -335,7 +337,6 @@ void RenderEngine::paint_search_highlights(const LayoutBlock& block, int block_i
             const int local_end   = std::min(m.char_end,   run_end)   - run_start;
             const UINT32 length   = static_cast<UINT32>(local_end - local_start);
 
-            // Two-call pattern: first for required buffer size.
             UINT32 required = 0;
             run.layout->HitTestTextRange(
                 static_cast<UINT32>(local_start), length,

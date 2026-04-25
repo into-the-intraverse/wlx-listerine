@@ -5,7 +5,7 @@ set(WLX_VERSION "dev" CACHE STRING "Plugin version string, overridden by CI")
 
 option(WLX_TRACE_ENABLE "Emit OutputDebugStringW traces from WLX entry points and WndProc (capture with DebugView)" OFF)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(md4c REQUIRED)
@@ -168,11 +168,14 @@ add_executable(tests
     tests/test_layout_engine.cpp
     tests/test_text_selection.cpp
     tests/test_search_engine.cpp
+    tests/test_search_ops.cpp
+    tests/test_wlx_host_common.cpp
 )
 
 target_link_libraries(tests PRIVATE
     wlx-core
     doctest::doctest
+    comctl32
 )
 
 # --- Grammar DLLs via FetchContent ---
@@ -364,6 +367,7 @@ FetchContent_Declare(ts-gitignore
     GIT_REPOSITORY git@github.com:shunsambongi/tree-sitter-gitignore.git
     GIT_TAG        main
     GIT_SHALLOW    TRUE
+    GIT_SUBMODULES ""  # upstream test submodule points to deleted toptal/gitignore; we only need the parser
 )
 
 # Download all grammar sources (no add_subdirectory — we only need the source files)
