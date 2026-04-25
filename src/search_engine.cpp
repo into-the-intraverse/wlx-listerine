@@ -14,6 +14,9 @@ static std::wstring to_lower(std::wstring s) {
     return s;
 }
 
+// Locale-dependent — iswalnum's behavior for non-ASCII alphanumerics (e.g.
+// Cyrillic, Greek) depends on the thread's C locale. Acceptable for a file
+// viewer's search UX; tightening this would require ICU or a custom table.
 static bool is_word_char(wchar_t c) {
     return iswalnum(static_cast<wint_t>(c)) || c == L'_';
 }
