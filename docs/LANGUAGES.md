@@ -2,65 +2,81 @@
 
 ## Shipped Grammars
 
-The colorizer plugin ships with grammars for:
+The colorizer plugin (`wlx-listerine-colorizer`) ships with 25+ tree-sitter grammars covering:
 
-| Language | Grammar DLL | Extensions |
-|----------|------------|------------|
-| C | `tree-sitter-c.dll` | `.c`, `.h` |
-| JSON | `tree-sitter-json.dll` | `.json` |
-| Python | `tree-sitter-python.dll` | `.py` |
+| Language     | Extensions                              |
+|--------------|-----------------------------------------|
+| Bash         | `.sh`, `.bash`, `.zsh`                  |
+| C / C++      | `.c`, `.h`, `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hxx` (all parsed by tree-sitter-cpp) |
+| C#           | `.cs`                                   |
+| CMake        | `.cmake`, `CMakeLists.txt`              |
+| CSS          | `.css`                                  |
+| Dockerfile   | `.dockerfile`, `Dockerfile`, `Containerfile`, `*dockerfile*` |
+| Git          | `.gitconfig`, `.gitignore`, `.gitattributes`, `git-rebase-todo` |
+| Go           | `.go`                                   |
+| HTML         | `.html`, `.htm`                         |
+| Java         | `.java`                                 |
+| JavaScript   | `.js`, `.mjs`, `.cjs`, `.jsx`           |
+| JSON         | `.json`, `.jsonc`                       |
+| Lua          | `.lua`                                  |
+| PHP          | `.php`                                  |
+| PowerShell   | `.ps1`, `.psm1`, `.psd1`                |
+| Python       | `.py`, `.pyi`                           |
+| Rust         | `.rs`                                   |
+| TOML         | `.toml`                                 |
+| TypeScript   | `.ts`, `.tsx`, `.mts`                   |
+| Vim          | `.vim`, `.vimrc`                        |
+| YAML         | `.yaml`, `.yml`                         |
 
-Files with other extensions are displayed as plain text with line numbers and whitespace markers, but without syntax highlighting.
+DLLs live at `grammars/<lang>/tree-sitter-<lang>.dll` next to the per-language `highlights.scm`.
 
-## Adding More Languages
+Files with extensions outside this set are displayed as plain text with line numbers and whitespace markers, but without syntax highlighting.
 
-The colorizer uses [tree-sitter](https://tree-sitter.github.io/) grammars. To add support for a new language:
+### Plugin boundary
 
-1. **Get the grammar DLL.** Either:
-   - Build it from a tree-sitter grammar repository (see below)
-   - Download a pre-built DLL if available
+`.md` and `.markdown` files are **not** handled by the colorizer — they are owned by the sibling plugin `wlx-listerine-md`, which renders rich markdown rather than tokenized syntax.
 
-2. **Drop it in `grammars/`.** Name it `tree-sitter-<language>.dll` (e.g., `tree-sitter-rust.dll`).
+## Adding a New Language
 
-3. **Add the extension mapping** in `wlx-listerine-colorizer.toml`:
-   ```toml
-   [general]
-   extensions = ["c", "cpp", "h", "hpp", "py", "json", "rs"]  # add "rs" for Rust
-   ```
+The grammar list is hardcoded in CMake (fetched at build time) and the extension map is hardcoded in C++. Adding a language requires three edits and a rebuild:
 
-4. **Restart Total Commander.**
-
-## Building a Grammar DLL
-
-Requires CMake, MSVC, and the tree-sitter library (already available if you build the project from source).
-
-1. Clone the grammar repository:
-   ```bash
-   git clone --depth 1 https://github.com/tree-sitter/tree-sitter-rust build/grammars/rust
-   ```
-
-2. Add it to `CMakeLists.txt` (or use the `add_grammar` function already defined there):
+1. **Declare and fetch the grammar source in `CMakeLists.txt`:**
    ```cmake
-   add_grammar(rust "${CMAKE_SOURCE_DIR}/build/grammars/rust")
+   FetchContent_Declare(ts-foo
+       GIT_REPOSITORY https://github.com/owner/tree-sitter-foo.git
+       GIT_TAG        v1.0.0
+       GIT_SHALLOW    TRUE
+   )
+   fetch_grammar(ts-foo)
+   add_grammar(foo "${ts-foo_SOURCE_DIR}")
    ```
+   `add_grammar(foo …)` builds `grammars/foo/tree-sitter-foo.dll` and copies upstream `queries/highlights.scm` if no local override exists at `grammars/foo/highlights.scm`.
 
-3. Rebuild:
+2. **Map extensions to the language in `src/colorizer/colorizer_host_adapter.cpp`:**
+   ```cpp
+   static const struct { const wchar_t* ext; const char* lang; } kExtLangMap[] = {
+       // ...
+       { L"foo",  "foo" },
+   };
+   ```
+   Add an entry to `kDefaultDetectString` so Total Commander knows to route `.foo` files to the colorizer:
+   ```cpp
+   L"... | EXT=\"FOO\" | ...";
+   ```
+   For language detection by filename rather than extension (e.g., `Dockerfile`), extend `filename_to_language()` instead.
+
+3. **Rebuild and reload:**
    ```bash
-   cmake --preset conan-default
    cmake --build --preset conan-release
    ```
+   Restart Total Commander to reload the rebuilt `.wlx64`.
 
-The DLL appears in `grammars/tree-sitter-rust.dll`.
+## Local Highlight Overrides
+
+If an upstream grammar's `queries/highlights.scm` doesn't fit the Helix-compatible scope conventions used by `helix_theme.cpp`, drop a custom `highlights.scm` into `grammars/<lang>/` before building. CMake will skip the upstream copy step when a local file exists.
+
+The query language supports `; inherits: <other-lang>` on the first line — see `grammars/cpp/highlights.scm` for an example (it consumes `grammars/c/highlights.scm`).
 
 ## Tree-sitter Grammar Repositories
 
-Common grammars available at:
-- [tree-sitter-rust](https://github.com/tree-sitter/tree-sitter-rust)
-- [tree-sitter-go](https://github.com/tree-sitter/tree-sitter-go)
-- [tree-sitter-javascript](https://github.com/tree-sitter/tree-sitter-javascript)
-- [tree-sitter-typescript](https://github.com/tree-sitter/tree-sitter-typescript)
-- [tree-sitter-cpp](https://github.com/tree-sitter/tree-sitter-cpp)
-- [tree-sitter-java](https://github.com/tree-sitter/tree-sitter-java)
-- [tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash)
-
-Full list: [tree-sitter GitHub org](https://github.com/tree-sitter)
+Browse community grammars at the [tree-sitter GitHub org](https://github.com/tree-sitter) and the [tree-sitter-grammars org](https://github.com/tree-sitter-grammars).

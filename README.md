@@ -53,10 +53,7 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the full reference.
 
 ## 🚧 TODO
 
-### Deferred grammars
-- **Markdown** — tree-sitter-markdown uses split block/inline parsers with injection support; needs non-trivial integration
 - **Unreal C++** (`taku25/tree-sitter-unreal-cpp`) — exports `tree_sitter_cpp()` which collides with standard C++ grammar; needs custom export wrapper
-- ~~**Predicate evaluation**~~ — ✅ implemented (`#eq?`, `#match?`, `#any-of?`, `#not-eq?`, `#not-match?`)
 - **Theme modifiers** — Helix themes can specify text modifiers (bold, italic, underline) per scope; currently only foreground/background colors are applied
 
 ## 📄 License
