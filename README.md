@@ -54,6 +54,7 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the full reference.
 ## 🚧 TODO
 
 - **Theme modifiers** — Helix themes can specify text modifiers (bold, italic, underline) per scope; currently only foreground/background colors are applied
+- **CPP highlighting on GHA windows-2025** — the upstream tree-sitter-cpp v0.23.4 grammar (ABI 14) emits no named-node spans on the GitHub Actions windows-2025 image, so plain `.cpp` files render only keyword tokens. Local builds with the same MSVC 14.44 toolset and conan binary work fine; root cause not yet pinned. The `Grammar: unreal-cpp` "highlights query loads" subcase is disabled until upstream ships an ABI 15 release or we route cpp through the taku25 fork.
 
 ## 📄 License
 
