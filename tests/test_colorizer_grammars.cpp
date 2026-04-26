@@ -1,4 +1,5 @@
 #include <doctest/doctest.h>
+#include <algorithm>
 #include <filesystem>
 #include <string>
 #include <set>
@@ -500,5 +501,45 @@ TEST_CASE("Grammar diagnostics: span and color counts") {
         if (lang_str != "cpp") {  // cpp may produce fewer distinct colors with short samples
             CHECK(colors.size() >= 2);
         }
+    }
+}
+
+// --- Grammar: Unreal C++ ---
+TEST_CASE("Grammar: unreal-cpp"
+    * doctest::skip(!std::filesystem::exists("grammars/unreal-cpp/tree-sitter-unreal-cpp.dll"))) {
+    Colorizer c(L"grammars", L"config/themes");
+
+    SUBCASE("registry exposes unreal-cpp") {
+        CHECK(c.supports("unreal-cpp"));
+        auto langs = c.available_languages();
+        CHECK(std::find(langs.begin(), langs.end(), std::string("unreal-cpp")) != langs.end());
+    }
+
+    SUBCASE("parses Unreal-flavored snippet without errors") {
+        verify_colorize(c, R"(// Unreal-flavored sample
+#include "CoreMinimal.h"
+#include "GameFramework/Actor.h"
+#include "MyActor.generated.h"
+
+UCLASS(Blueprintable)
+class FOO_API AMyActor : public AActor {
+    GENERATED_BODY()
+public:
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
+    float Health = 100.0f;
+
+    UFUNCTION(BlueprintCallable, Category = "Combat")
+    void TakeDamage(float Amount);
+};
+)", "unreal-cpp");
+    }
+
+    SUBCASE("highlights query loads (inherits cpp resolves)") {
+        // colorize() exercises the full query path; if the inherits chain or
+        // any inherited rule fails to compile, spans would be empty or
+        // colorize() would return early. verify_colorize already asserts
+        // non-empty + sorted + non-overlapping spans.
+        auto result = c.colorize("class A {};", "unreal-cpp", false);
+        CHECK_FALSE(result.spans.empty());
     }
 }
