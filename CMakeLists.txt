@@ -194,7 +194,7 @@ endif()
 # Builds a grammar DLL from SOURCE_DIR/src/parser.c and copies highlights.scm.
 # Optional QUERY_DIR overrides where to look for highlights.scm (default: SOURCE_DIR/queries).
 function(add_grammar LANG SOURCE_DIR)
-    cmake_parse_arguments(AG "" "QUERY_DIR" "" ${ARGN})
+    cmake_parse_arguments(AG "" "QUERY_DIR;UPSTREAM_SYMBOL" "" ${ARGN})
     if(NOT EXISTS "${SOURCE_DIR}/src/parser.c")
         message(STATUS "Grammar ${LANG}: parser.c not found in ${SOURCE_DIR}/src — skipping")
         return()
@@ -205,6 +205,22 @@ function(add_grammar LANG SOURCE_DIR)
     elseif(EXISTS "${SOURCE_DIR}/src/scanner.cc")
         list(APPEND GRAMMAR_SOURCES "${SOURCE_DIR}/src/scanner.cc")
     endif()
+
+    # When upstream exports a different symbol than tree_sitter_<LANG>, generate
+    # an alias TU that forwards tree_sitter_<LANG>() to the upstream symbol.
+    if(AG_UPSTREAM_SYMBOL)
+        string(REPLACE "-" "_" _lang_underscored "${LANG}")
+        set(_alias_path "${CMAKE_CURRENT_BINARY_DIR}/grammars/${LANG}_alias.c")
+        file(WRITE "${_alias_path}"
+"#include \"tree_sitter/api.h\"\n"
+"extern const TSLanguage *${AG_UPSTREAM_SYMBOL}(void);\n"
+"__declspec(dllexport) const TSLanguage *tree_sitter_${_lang_underscored}(void) {\n"
+"    return ${AG_UPSTREAM_SYMBOL}();\n"
+"}\n"
+        )
+        list(APPEND GRAMMAR_SOURCES "${_alias_path}")
+    endif()
+
     add_library(tree-sitter-${LANG} SHARED ${GRAMMAR_SOURCES})
     target_include_directories(tree-sitter-${LANG} PRIVATE "${SOURCE_DIR}/src")
     target_link_libraries(tree-sitter-${LANG} PRIVATE tree-sitter::tree-sitter)
