@@ -30,6 +30,7 @@
 #include "string_util.h"
 #include "colorizer.h"
 #include "colorizer_layout.h"
+#include "colorizer_routing.h"
 #include "wlx_host_common.h"
 
 #include <toml++/toml.hpp>
@@ -277,6 +278,19 @@ static void ensure_theme() {
                 g_display_cfg.show_indent_guides = *v;
             if (auto v = tbl["display"]["highlight_trailing"].value<bool>())
                 g_display_cfg.highlight_trailing = *v;
+
+            // [colorizer].cpp_grammar — "standard" (default) | "unreal"
+            if (auto v = tbl["colorizer"]["cpp_grammar"].value<std::string>()) {
+                if (*v == "unreal") {
+                    g_display_cfg.cpp_grammar = CppGrammar::Unreal;
+                } else if (*v == "standard") {
+                    g_display_cfg.cpp_grammar = CppGrammar::Standard;
+                } else {
+                    WLX_TRACE(L"unknown cpp_grammar value '%hs', defaulting to standard",
+                              v->c_str());
+                    g_display_cfg.cpp_grammar = CppGrammar::Standard;
+                }
+            }
         } catch (...) {
             // Parse failure — use defaults
         }
@@ -358,6 +372,7 @@ static void load_document(ColorViewState* vs, const wchar_t* path) {
     std::string language = ext_to_language(vs->file_path);
     if (language.empty())
         language = filename_to_language(vs->file_path);
+    language = apply_cpp_variant(language, g_display_cfg.cpp_grammar, g_colorizer.get());
     vs->cached_colors = {};
     if (!language.empty() && g_colorizer && g_colorizer->supports(language)) {
         vs->cached_colors = g_colorizer->colorize(vs->cached_raw_utf8, language, vs->dark_mode);
@@ -1053,6 +1068,7 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
             // Re-colorize with new palette (no file re-read)
             std::string language = ext_to_language(vs->file_path);
             if (language.empty()) language = filename_to_language(vs->file_path);
+            language = apply_cpp_variant(language, g_display_cfg.cpp_grammar, g_colorizer.get());
             vs->cached_colors = {};
             if (!language.empty() && g_colorizer && g_colorizer->supports(language)) {
                 vs->cached_colors = g_colorizer->colorize(vs->cached_raw_utf8, language, vs->dark_mode);
