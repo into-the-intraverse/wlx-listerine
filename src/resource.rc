@@ -2,8 +2,8 @@
 #include "resource.h"
 
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION 2,0,0,0
-PRODUCTVERSION 2,0,0,0
+FILEVERSION 1,1,0,0
+PRODUCTVERSION 1,1,0,0
 FILEFLAGSMASK 0x3fL
 FILEFLAGS 0
 FILEOS VOS_NT_WINDOWS32
@@ -14,11 +14,11 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "FileDescription", "Listerine Markdown Viewer for Total Commander"
-            VALUE "FileVersion", "2.0.0.0"
+            VALUE "FileVersion", "1.1.0.0"
             VALUE "InternalName", "wlx-listerine-md"
             VALUE "OriginalFilename", "wlx-listerine-md.wlx64"
             VALUE "ProductName", "WLX Listerine MD"
-            VALUE "ProductVersion", "2.0.0.0"
+            VALUE "ProductVersion", "1.1.0.0"
         END
     END
     BLOCK "VarFileInfo"
