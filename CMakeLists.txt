@@ -334,6 +334,7 @@ FetchContent_Declare(ts-yaml
     GIT_REPOSITORY git@github.com:tree-sitter-grammars/tree-sitter-yaml.git
     GIT_TAG        v0.7.2
     GIT_SHALLOW    TRUE
+    GIT_SUBMODULES ""  # upstream yaml-test-suite submodule only used for testing; we only need the parser
 )
 FetchContent_Declare(ts-lua
     GIT_REPOSITORY git@github.com:MunifTanjim/tree-sitter-lua.git
@@ -354,6 +355,7 @@ FetchContent_Declare(ts-gitattributes
     GIT_REPOSITORY git@github.com:ObserverOfTime/tree-sitter-gitattributes.git
     GIT_TAG        v0.1.6
     GIT_SHALLOW    TRUE
+    GIT_SUBMODULES ""  # upstream gitattributes submodule only used for testing; we only need the parser
 )
 FetchContent_Declare(ts-gitconfig
     GIT_REPOSITORY git@github.com:the-mikedavis/tree-sitter-git-config.git
