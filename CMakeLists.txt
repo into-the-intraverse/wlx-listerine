@@ -3,6 +3,29 @@ project(wlx-listerine LANGUAGES C CXX)
 
 set(WLX_VERSION "dev" CACHE STRING "Plugin version string, overridden by CI")
 
+# Parse WLX_VERSION into major.minor.patch components for the Win32 VERSIONINFO
+# resource. Non-numeric values (e.g. "dev") fall back to 0.0.0.
+if(WLX_VERSION MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)")
+    set(WLX_VERSION_MAJOR "${CMAKE_MATCH_1}")
+    set(WLX_VERSION_MINOR "${CMAKE_MATCH_2}")
+    set(WLX_VERSION_PATCH "${CMAKE_MATCH_3}")
+else()
+    set(WLX_VERSION_MAJOR 0)
+    set(WLX_VERSION_MINOR 0)
+    set(WLX_VERSION_PATCH 0)
+endif()
+
+configure_file(
+    "${CMAKE_SOURCE_DIR}/src/resource.rc.in"
+    "${CMAKE_BINARY_DIR}/generated/resource.rc"
+    @ONLY
+)
+configure_file(
+    "${CMAKE_SOURCE_DIR}/src/colorizer/colorizer_resource.rc.in"
+    "${CMAKE_BINARY_DIR}/generated/colorizer_resource.rc"
+    @ONLY
+)
+
 option(WLX_TRACE_ENABLE "Emit OutputDebugStringW traces from WLX entry points and WndProc (capture with DebugView)" OFF)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -57,8 +80,9 @@ target_link_libraries(colorizer-core
 add_library(wlx-listerine-md SHARED
     src/host_adapter.cpp
     src/plugin.def
-    src/resource.rc
+    "${CMAKE_BINARY_DIR}/generated/resource.rc"
 )
+target_include_directories(wlx-listerine-md PRIVATE src)
 
 target_link_libraries(wlx-listerine-md PRIVATE
     wlx-core
@@ -100,8 +124,9 @@ add_library(wlx-listerine-colorizer SHARED
     src/colorizer/colorizer_host_adapter.cpp
     src/colorizer/colorizer_layout.cpp
     src/colorizer/colorizer_plugin.def
-    src/colorizer/colorizer_resource.rc
+    "${CMAKE_BINARY_DIR}/generated/colorizer_resource.rc"
 )
+target_include_directories(wlx-listerine-colorizer PRIVATE src/colorizer)
 
 target_link_libraries(wlx-listerine-colorizer PRIVATE
     wlx-core
