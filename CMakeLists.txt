@@ -393,6 +393,11 @@ FetchContent_Declare(ts-gitignore
     GIT_SHALLOW    TRUE
     GIT_SUBMODULES ""  # upstream test submodule points to deleted toptal/gitignore; we only need the parser
 )
+FetchContent_Declare(ts-unreal-cpp
+    GIT_REPOSITORY git@github.com:taku25/tree-sitter-unreal-cpp.git
+    GIT_TAG        92eee7d        # 2026-04-10 — pinned SHA, no upstream tags
+    GIT_SHALLOW    FALSE          # GIT_SHALLOW + arbitrary-SHA pin is unreliable
+)
 
 # Download all grammar sources (no add_subdirectory — we only need the source files)
 fetch_grammar(ts-c)
@@ -420,6 +425,7 @@ fetch_grammar(ts-php)
 fetch_grammar(ts-vim)
 fetch_grammar(ts-powershell)
 fetch_grammar(ts-gitignore)
+fetch_grammar(ts-unreal-cpp)
 
 # --- Build standard grammars ---
 add_grammar(c           "${ts-c_SOURCE_DIR}")
@@ -458,6 +464,9 @@ add_grammar(powershell  "${ts-powershell_SOURCE_DIR}")
 
 # gitignore: no upstream highlights.scm — use our bundled one
 add_grammar(gitignore   "${ts-gitignore_SOURCE_DIR}")
+
+# Unreal C++ — fork that exports tree_sitter_cpp; alias TU bridges the name.
+add_grammar(unreal-cpp "${ts-unreal-cpp_SOURCE_DIR}" UPSTREAM_SYMBOL tree_sitter_cpp)
 
 # --- Colorizer tests ---
 add_executable(colorizer-tests
