@@ -105,6 +105,12 @@ Same keys as the markdown plugin (see above).
 |-----|---------|-------------|
 | `default` | `"default"` | Syntax color theme name |
 
+### [colorizer]
+
+| Key            | Type     | Default      | Description |
+|----------------|----------|--------------|-------------|
+| `cpp_grammar`  | string   | `"standard"` | Which tree-sitter grammar handles `.c/.h/.cpp/.cc/.cxx/.hpp/.hxx`. `"standard"` uses upstream tree-sitter-cpp; `"unreal"` uses the taku25 Unreal-aware fork. See [LANGUAGES.md → Switching to Unreal C++](LANGUAGES.md#switching-to-unreal-c). |
+
 ## Syntax Color Themes
 
 Theme files live in the `themes/` directory. The default theme (`themes/default.toml`) defines colors for both light and dark modes:

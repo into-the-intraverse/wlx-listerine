@@ -49,6 +49,8 @@ Syntax highlighting engine used by both the colorizer and md plugins (for code b
 
 **Theme system:** Helix editor-compatible TOML themes in `config/themes/`. Theme files use the same format as Helix (flat scope-to-style entries, `[palette]` section, `inherits` key). Config keys: `theme` (dark/default), `theme_light` (optional light override). If only `theme = "foo"` is set, the system auto-detects `foo_light.toml` for light mode.
 
+Some languages support multiple grammar variants selected at runtime via TOML config (e.g. `[colorizer].cpp_grammar = "standard" | "unreal"` swaps standard tree-sitter-cpp for taku25's Unreal-aware fork via a build-time alias TU; the routing primitive is `apply_cpp_variant(...)` in `src/colorizer/colorizer_routing.h`).
+
 ## WLX exports (Unicode-only)
 
 `ListLoadW`, `ListLoadNextW`, `ListCloseWindow`, `ListGetDetectString`, `ListSendCommand`, `ListSetDefaultParams`. Defined in `plugin.def`. API constants in `include/listerplugin.h`.

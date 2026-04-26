@@ -7,7 +7,7 @@ The colorizer plugin (`wlx-listerine-colorizer`) ships with 25+ tree-sitter gram
 | Language     | Extensions                              |
 |--------------|-----------------------------------------|
 | Bash         | `.sh`, `.bash`, `.zsh`                  |
-| C / C++      | `.c`, `.h`, `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hxx` (all parsed by tree-sitter-cpp) |
+| C / C++      | `.c`, `.h`, `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hxx` (default: tree-sitter-cpp; opt-in Unreal variant — see below) |
 | C#           | `.cs`                                   |
 | CMake        | `.cmake`, `CMakeLists.txt`              |
 | CSS          | `.css`                                  |
@@ -35,6 +35,21 @@ Files with extensions outside this set are displayed as plain text with line num
 ### Plugin boundary
 
 `.md` and `.markdown` files are **not** handled by the colorizer — they are owned by the sibling plugin `wlx-listerine-md`, which renders rich markdown rather than tokenized syntax.
+
+## Switching to Unreal C++
+
+Unreal Engine's reflection macros (`UCLASS`, `UPROPERTY`, `UFUNCTION`, `GENERATED_BODY`, `PROJECTNAME_API`, Blueprint property specifiers) parse as ordinary identifiers under the standard C++ grammar. The colorizer ships a second, opt-in grammar from [`taku25/tree-sitter-unreal-cpp`](https://github.com/taku25/tree-sitter-unreal-cpp) that adds dedicated parsing for these.
+
+Enable it in `config/wlx-listerine-colorizer.toml`:
+
+```toml
+[colorizer]
+cpp_grammar = "unreal"
+```
+
+Restart Total Commander. All C/C++ files now route to the Unreal grammar. The Unreal grammar is a strict superset of plain C++, so non-Unreal files continue to parse correctly — they just have no extra macros to highlight.
+
+The fork is **SHA-pinned** in `CMakeLists.txt` (no upstream releases yet). Bumping it is a manual edit of `GIT_TAG`. The build-side mechanism that resolves the fork's `tree_sitter_cpp()` symbol export to `tree_sitter_unreal_cpp` is the `add_grammar(..., UPSTREAM_SYMBOL <name>)` keyword — reusable for any future fork that retains its parent's exported name.
 
 ## Adding a New Language
 
