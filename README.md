@@ -18,7 +18,7 @@
 ### 🖍️ wlx-listerine-colorizer — Syntax colorizer
 - **Tree-sitter** based tokenization
 - Line numbers, indent guides, whitespace markers
-- Ships with **25+ grammars** (git, vim, c++, UE and more)
+- Ships with **25+ grammars** (git, vim, c++, Unreal C++ opt-in, and more)
 - **Easily extendable** — drop tree-sitter grammar DLLs into `grammars/`
 - **Helix-compatible** color themes — drop in themes from the [Helix community](https://github.com/helix-editor/helix/tree/master/runtime/themes)
 
@@ -53,7 +53,6 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the full reference.
 
 ## 🚧 TODO
 
-- **Unreal C++** (`taku25/tree-sitter-unreal-cpp`) — exports `tree_sitter_cpp()` which collides with standard C++ grammar; needs custom export wrapper
 - **Theme modifiers** — Helix themes can specify text modifiers (bold, italic, underline) per scope; currently only foreground/background colors are applied
 
 ## 📄 License
