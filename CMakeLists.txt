@@ -190,9 +190,15 @@ if(POLICY CMP0169)
     cmake_policy(SET CMP0169 OLD)
 endif()
 
-# add_grammar(LANG SOURCE_DIR [QUERY_DIR path])
+# add_grammar(LANG SOURCE_DIR
+#             [QUERY_DIR path]
+#             [UPSTREAM_SYMBOL name])
 # Builds a grammar DLL from SOURCE_DIR/src/parser.c and copies highlights.scm.
 # Optional QUERY_DIR overrides where to look for highlights.scm (default: SOURCE_DIR/queries).
+# Optional UPSTREAM_SYMBOL: when the upstream grammar exports `name` rather than
+# tree_sitter_<LANG> (with `-` -> `_`), generates an alias translation unit that
+# forwards tree_sitter_<LANG>() to `name()`. Used for forks that retain their
+# parent's exported symbol (e.g. taku25/tree-sitter-unreal-cpp exports tree_sitter_cpp).
 function(add_grammar LANG SOURCE_DIR)
     cmake_parse_arguments(AG "" "QUERY_DIR;UPSTREAM_SYMBOL" "" ${ARGN})
     if(NOT EXISTS "${SOURCE_DIR}/src/parser.c")
