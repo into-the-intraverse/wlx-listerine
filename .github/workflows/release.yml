@@ -2,13 +2,8 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*", "[0-9]*"]
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Plugin version (e.g. 1.1.0). Used as the WLX_VERSION source of truth."
-        required: true
-        type: string
 
 jobs:
   release:
@@ -21,15 +16,13 @@ jobs:
         shell: bash
         run: git config --global url."https://github.com/".insteadOf "git@github.com:"
 
-      - name: Resolve version
+      - name: Resolve version from tag
         id: version
         shell: bash
         run: |
-          if [[ -n "${{ inputs.version }}" ]]; then
-            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-          fi
+          # workflow_dispatch from a tag and tag-push both expose the tag name
+          # via GITHUB_REF_NAME. Strip optional leading "v".
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -48,6 +41,9 @@ jobs:
         run: conan install . --output-folder=build --build=missing -s build_type=Release -s compiler.cppstd=20
 
       - name: Configure CMake
+        # Run under bash: PowerShell's expression parser mangles dotted args
+        # like `-DWLX_VERSION=1.2.0` (it sees `1.2.0` as member-access on a decimal).
+        shell: bash
         run: cmake --preset conan-default -DWLX_VERSION=${{ steps.version.outputs.version }}
 
       - name: Build
@@ -79,7 +75,7 @@ jobs:
 
       - name: Package plugin ZIPs
         shell: pwsh
-        run: ./scripts/package.ps1 ${{ steps.version.outputs.version }}
+        run: ./scripts/package.ps1 '${{ steps.version.outputs.version }}'
 
       - name: Upload plugin ZIPs
         uses: actions/upload-artifact@v4
