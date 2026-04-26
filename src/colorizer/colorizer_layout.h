@@ -8,6 +8,7 @@
 #include <string>
 
 enum class ShowWhitespace { None, All, Boundary };
+enum class CppGrammar { Standard, Unreal };
 
 struct ColorizerDisplayConfig {
     bool line_numbers = true;
@@ -17,6 +18,7 @@ struct ColorizerDisplayConfig {
     ShowWhitespace show_whitespace = ShowWhitespace::Boundary;
     bool show_indent_guides = true;
     bool highlight_trailing = true;
+    CppGrammar cpp_grammar = CppGrammar::Standard;
 };
 
 // Convert source code lines + color spans into a LayoutDocument the RenderEngine can paint.
