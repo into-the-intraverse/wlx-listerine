@@ -105,9 +105,10 @@ static HostIntegration<ColorViewState> g_integration;
 // ---------- extension -> language map ----------
 
 static const struct { const wchar_t* ext; const char* lang; } kExtLangMap[] = {
-    // C / C++
-    { L"c",           "c"          },
-    { L"h",           "c"          },
+    // C / C++ — both .c and .h route to cpp; the C grammar stays on disk
+    // because cpp/highlights.scm `; inherits: c` consumes it.
+    { L"c",           "cpp"        },
+    { L"h",           "cpp"        },
     { L"cpp",         "cpp"        },
     { L"cc",          "cpp"        },
     { L"cxx",         "cpp"        },
@@ -159,8 +160,8 @@ static const struct { const wchar_t* ext; const char* lang; } kExtLangMap[] = {
     { L"xml",         "xml"        },
     { L"svg",         "xml"        },
     { L"css",         "css"        },
-    { L"md",          "markdown"   },
-    { L"markdown",    "markdown"   },
+    // .md / .markdown intentionally NOT handled here — the wlx-listerine-md
+    // plugin owns markdown rendering.
     // Build / DevOps
     { L"cmake",       "cmake"      },
     { L"dockerfile",  "dockerfile" },
@@ -245,7 +246,7 @@ static constexpr wchar_t kDefaultDetectString[] =
     L"EXT=\"ZSH\" | EXT=\"PS1\" | EXT=\"PSM1\" | EXT=\"PSD1\" | EXT=\"VIM\" | "
     L"EXT=\"VIMRC\" | EXT=\"JSON\" | EXT=\"JSONC\" | EXT=\"TOML\" | EXT=\"YAML\" | "
     L"EXT=\"YML\" | EXT=\"HTML\" | EXT=\"HTM\" | EXT=\"XML\" | EXT=\"SVG\" | EXT=\"CSS\" | "
-    L"EXT=\"MD\" | EXT=\"MARKDOWN\" | EXT=\"CMAKE\" | EXT=\"SQL\" | EXT=\"DOCKERFILE\" | "
+    L"EXT=\"CMAKE\" | EXT=\"SQL\" | EXT=\"DOCKERFILE\" | "
     L"EXT=\"GITCONFIG\" | EXT=\"GITIGNORE\" | EXT=\"GITATTRIBUTES\"";
 
 static void ensure_theme() {
