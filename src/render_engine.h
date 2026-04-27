@@ -45,6 +45,10 @@ public:
     float pixel_to_dip_x(float px) const;
     float pixel_to_dip_y(float py) const;
 
+    // Underlying D2D target. Used by tools that need to composite an overlay
+    // (e.g. screenshot_tool painting the search HUD on top of the document).
+    ID2D1RenderTarget* render_target() const { return rt_.Get(); }
+
 private:
     ID2D1SolidColorBrush* get_brush(uint32_t color);
     ID2D1SolidColorBrush* get_brush(uint32_t color, float alpha);

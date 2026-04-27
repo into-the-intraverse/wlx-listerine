@@ -22,6 +22,8 @@
 #include "render_engine.h"
 #include "theme_service.h"
 #include "colorizer.h"
+#include "search_engine.h"
+#include "search_hud_painter.h"
 
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
@@ -35,6 +37,9 @@ struct Options {
     bool full = false;
     bool dark = false;
     bool bench = false;
+
+    std::wstring search;     // empty == no search
+    int search_step = 0;     // number of post-findfirst advancements
 };
 
 // ---------- high-resolution timer ----------
@@ -100,7 +105,9 @@ static void print_usage() {
         "  --scroll <px>    Scroll offset in viewport mode (default: 0)\n"
         "  --config <path>  TOML config path (default: config/wlx-listerine-md.toml)\n"
         "  --dark           Force dark mode\n"
-        "  --bench          Print timing and memory stats\n");
+        "  --bench          Print timing and memory stats\n"
+        "  --search <term>  Run a search for <term> after layout\n"
+        "  --search-step N  Advance the search cursor by N steps (default 0)\n");
 }
 
 static std::wstring to_wstring(const char* s) {
@@ -131,6 +138,10 @@ static bool parse_args(int argc, char* argv[], Options& opts) {
             opts.dark = true;
         } else if (std::strcmp(argv[i], "--bench") == 0) {
             opts.bench = true;
+        } else if (std::strcmp(argv[i], "--search") == 0 && i + 1 < argc) {
+            opts.search = to_wstring(argv[++i]);
+        } else if (std::strcmp(argv[i], "--search-step") == 0 && i + 1 < argc) {
+            opts.search_step = std::atoi(argv[++i]);
         } else {
             std::fprintf(stderr, "Unknown option: %s\n", argv[i]);
             return false;
@@ -267,6 +278,52 @@ int main(int argc, char* argv[]) {
 
         // Paint
         renderer.paint(layout, scroll_y);
+
+        // Optional: run a search and overlay the HUD.
+        if (!opts.search.empty()) {
+            SearchIndex idx;
+            idx.build(layout);
+            SearchQuery q;
+            q.needle      = opts.search;
+            q.match_case  = false;
+            q.whole_words = false;
+            q.backwards   = false;
+            auto matches = idx.find_all(q);
+
+            int total = static_cast<int>(matches.size());
+            int cursor = -1;
+            if (total > 0) {
+                cursor = std::min(opts.search_step, total - 1);
+            }
+            renderer.set_search_matches(matches, cursor);
+
+            // Re-paint document with match highlights baked in.
+            renderer.paint(layout, scroll_y);
+
+            // Overlay the HUD via the painter.
+            ID2D1RenderTarget* rt = renderer.render_target();
+            if (rt) {
+                SearchHudPainter hud_painter(dwrite_factory.Get(), theme);
+                SearchHudState s{};
+                s.current_one_based = (total > 0) ? (cursor + 1) : 0;
+                s.total             = total;
+                auto rects = hud_painter.layout(s);
+
+                rt->BeginDraw();
+                D2D1_MATRIX_3X2_F prev_xform;
+                rt->GetTransform(&prev_xform);
+                float bx = static_cast<float>(bmp_width)  - rects.width  - 12.0f;
+                float by = static_cast<float>(bmp_height) - rects.height - 12.0f;
+                rt->SetTransform(D2D1::Matrix3x2F::Translation(bx, by));
+                hud_painter.paint(rt, s, rects, opts.dark);
+                rt->SetTransform(prev_xform);
+                HRESULT hr_e = rt->EndDraw();
+                if (FAILED(hr_e)) {
+                    std::fprintf(stderr, "HUD overlay EndDraw failed: 0x%08lx\n", hr_e);
+                }
+            }
+        }
+
         if (renderer.needs_recreate()) {
             std::fprintf(stderr, "Render target lost during paint\n");
             return {};
