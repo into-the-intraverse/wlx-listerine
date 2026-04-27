@@ -1010,6 +1010,7 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
         if (new_dark != vs->dark_mode) {
             vs->dark_mode = new_dark;
             vs->renderer->set_dark_mode(new_dark);
+            if (vs->hud) vs->hud->set_dark_mode(new_dark);
             need_relayout = true;
         }
         if (new_wrap != vs->wrap_text) {

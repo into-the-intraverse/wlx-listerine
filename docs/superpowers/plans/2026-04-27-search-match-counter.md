@@ -816,6 +816,22 @@ In `ListLoadNextW` (line ~911), inside the function, after dark-mode handling an
     load_document(vs, FileToLoad);
 ```
 
+There is also a *second* dark-mode propagation path in `ListSendCommand`'s `lc_newparams` branch (around line 1006) — TC pushes runtime parameter changes (including dark-mode) through that command rather than `ListLoadNextW`. Add the HUD propagation there too:
+
+```cpp
+    case lc_newparams: {
+        bool new_dark = (Parameter & lcp_darkmode) != 0;
+        ...
+        if (new_dark != vs->dark_mode) {
+            vs->dark_mode = new_dark;
+            vs->renderer->set_dark_mode(new_dark);
+            if (vs->hud) vs->hud->set_dark_mode(new_dark);
+            need_relayout = true;
+        }
+        ...
+    }
+```
+
 Additionally, locate the existing search-clear helper near line ~196 (where `vs->matches.clear()` appears with `vs->current_match = -1` and `vs->renderer->set_search_matches({}, -1)`) and add a HUD clear there too:
 
 ```cpp
