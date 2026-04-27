@@ -14,8 +14,6 @@
 #include <algorithm>
 #include <cmath>
 
-using Microsoft::WRL::ComPtr;
-
 namespace {
 constexpr wchar_t kClassName[] = L"WlxListerineSearchHud";
 constexpr int    kMargin      = 12;
