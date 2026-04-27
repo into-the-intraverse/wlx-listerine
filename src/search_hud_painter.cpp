@@ -1,7 +1,6 @@
 #include "search_hud_painter.h"
 #include "search_counter_format.h"
 
-#include <algorithm>
 #include <cmath>
 
 using Microsoft::WRL::ComPtr;
@@ -85,7 +84,7 @@ void SearchHudPainter::paint(ID2D1RenderTarget* rt, const SearchHudState& s,
     auto bar_bg = make_brush(rt, colors.code_bg, kPillAlpha);
     fill_rounded(rt, rects.bounds, kPillCornerR, bar_bg.Get());
 
-    // Counter pill — same color tone, slightly inset visually via text.
+    // Counter text — drawn over the bar background.
     auto text_brush = make_brush(rt, colors.text, 1.0f);
     if (text_format_ && text_brush) {
         std::wstring counter_text = format_counter(s.current_one_based, s.total);
