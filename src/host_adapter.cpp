@@ -30,6 +30,7 @@
 #include "colorizer.h"
 #include "search_engine.h"
 #include "search_ops.h"
+#include "search_hud.h"
 #include "wlx_host_common.h"
 
 #define WLX_TRACE_TAG L"wlx-md"
@@ -51,6 +52,7 @@ struct ViewState {
     std::shared_ptr<LayoutDocument> layout;
     std::unique_ptr<RenderEngine> renderer;
     std::unique_ptr<InteractionEngine> interaction;
+    std::unique_ptr<SearchHud> hud;
 
     float scroll_y = 0;
     float max_scroll_y = 0;
@@ -202,6 +204,7 @@ static void load_document(ViewState* vs, const wchar_t* path) {
     // file's layout. Any repaint before the next F7 would walk them against
     // the new layout and could draw spurious highlight rects.
     if (vs->renderer) vs->renderer->set_search_matches({}, -1);
+    if (vs->hud) vs->hud->clear();
 
     auto content = g_file_service.read(path);
     if (!content) return;
@@ -372,6 +375,7 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (vs && vs->renderer && w > 0 && h > 0) {
             vs->renderer->resize(w, h);
             do_layout(vs);
+            if (vs->hud) vs->hud->on_parent_resize();
             InvalidateRect(hwnd, nullptr, FALSE);
         }
         return 0;
@@ -671,6 +675,7 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 vs->matches.clear();
                 vs->current_match = -1;
                 if (vs->renderer) vs->renderer->set_search_matches({}, -1);
+                if (vs->hud) vs->hud->clear();
                 InvalidateRect(hwnd, nullptr, FALSE);
                 handled = true;
             }
@@ -762,6 +767,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {
     case DLL_PROCESS_ATTACH:
         g_hModule = hModule;
         DisableThreadLibraryCalls(hModule);
+        SearchHud::register_class(hModule);
         break;
 
     case DLL_PROCESS_DETACH:
@@ -788,6 +794,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {
                 UnregisterClassW(L"WlxListerineMdView", g_hModule);
                 g_window_class = 0;
             }
+            SearchHud::unregister_class(g_hModule);
         }
         break;
     }
@@ -899,6 +906,21 @@ HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
         g_d2d_factory.Get(), g_dwrite_factory.Get(), g_theme, dark);
     vs->renderer->create_device_resources(hwnd);
 
+    // Create search HUD (initially hidden)
+    vs->hud = std::make_unique<SearchHud>(
+        hwnd, g_d2d_factory.Get(), g_dwrite_factory.Get(), g_theme, dark);
+    vs->hud->on_navigate = [vs](bool backwards) {
+        if (vs->matches.empty() || !vs->layout) return;
+        SearchQuery q = vs->last_query;
+        q.backwards = backwards;
+        auto r = search_step(*vs, q, /*findfirst=*/false);
+        if (!r.has_match) return;
+        scroll_to_match(vs, r.matches[r.cursor]);
+        if (vs->renderer) vs->renderer->set_search_matches(r.matches, r.cursor);
+        vs->hud->update(r.cursor + 1, static_cast<int>(r.matches.size()));
+        InvalidateRect(vs->hwnd, nullptr, FALSE);
+    };
+
     // Load and render document
     load_document(vs, FileToLoad);
     InvalidateRect(hwnd, nullptr, FALSE);
@@ -921,6 +943,7 @@ int __stdcall ListLoadNextW(HWND ParentWin, HWND PluginWin, wchar_t* FileToLoad,
     if (new_dark != vs->dark_mode) {
         vs->dark_mode = new_dark;
         vs->renderer->set_dark_mode(new_dark);
+        if (vs->hud) vs->hud->set_dark_mode(new_dark);
         apply_dark_mode(vs->hwnd, new_dark);
     }
     vs->wrap_text = new_wrap;
@@ -1035,11 +1058,13 @@ int __stdcall ListSearchTextW(HWND ListWin, wchar_t* SearchString, int SearchPar
     auto r = search_step(*vs, q, findfirst);
     if (!r.has_match) {
         if (vs->renderer) vs->renderer->set_search_matches({}, -1);
+        if (vs->hud) vs->hud->update(0, 0);
         InvalidateRect(vs->hwnd, nullptr, FALSE);
         return LISTPLUGIN_ERROR;
     }
     scroll_to_match(vs, r.matches[r.cursor]);
     if (vs->renderer) vs->renderer->set_search_matches(r.matches, r.cursor);
+    if (vs->hud) vs->hud->update(r.cursor + 1, static_cast<int>(r.matches.size()));
     InvalidateRect(vs->hwnd, nullptr, FALSE);
     return LISTPLUGIN_OK;
 }
