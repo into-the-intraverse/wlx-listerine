@@ -1,0 +1,62 @@
+#pragma once
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
+#include "search_hud_painter.h"
+
+#include <windows.h>
+#include <d2d1.h>
+#include <dwrite.h>
+#include <wrl/client.h>
+
+#include <functional>
+#include <memory>
+
+class SearchHud {
+public:
+    SearchHud(HWND parent,
+              ID2D1Factory* d2d_factory,
+              IDWriteFactory* dwrite_factory,
+              const ThemeService& theme,
+              bool dark_mode);
+    ~SearchHud();
+
+    SearchHud(const SearchHud&) = delete;
+    SearchHud& operator=(const SearchHud&) = delete;
+
+    void update(int current_one_based, int total);
+    void clear();
+    void on_parent_resize();
+    void set_dark_mode(bool dark);
+
+    std::function<void(bool backwards)> on_navigate;
+
+    // Used by the global WndProc dispatcher. Don't call directly.
+    LRESULT handle_message(UINT msg, WPARAM wp, LPARAM lp);
+
+    static void register_class(HMODULE module);
+    static void unregister_class(HMODULE module);
+
+private:
+    void paint();
+    void recreate_target();
+    void reposition_to_parent();
+    void update_hover(int new_hover);
+    int  hit_test(int x, int y) const;
+
+    HWND parent_ = nullptr;
+    HWND hwnd_   = nullptr;
+    ID2D1Factory* d2d_factory_ = nullptr;
+    IDWriteFactory* dwrite_factory_ = nullptr;
+    const ThemeService* theme_ = nullptr;
+    bool dark_mode_ = false;
+
+    Microsoft::WRL::ComPtr<ID2D1HwndRenderTarget> rt_;
+
+    SearchHudPainter painter_;
+    SearchHudState state_;
+    SearchHudHitRects rects_;
+    bool tracking_mouse_ = false;
+};

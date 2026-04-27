@@ -80,6 +80,7 @@ target_link_libraries(colorizer-core
 # --- Plugin DLL ---
 add_library(wlx-listerine-md SHARED
     src/host_adapter.cpp
+    src/search_hud.cpp
     src/plugin.def
     "${CMAKE_BINARY_DIR}/generated/resource.rc"
 )
