@@ -45,6 +45,7 @@ add_library(wlx-core STATIC
     src/cache_service.cpp
     src/text_selection.cpp
     src/search_engine.cpp
+    src/search_hud_painter.cpp
 )
 
 target_include_directories(wlx-core PUBLIC include src src/colorizer)
