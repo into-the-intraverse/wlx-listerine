@@ -12,7 +12,6 @@
 #include <wrl/client.h>
 
 #include <functional>
-#include <memory>
 
 class SearchHud {
 public:

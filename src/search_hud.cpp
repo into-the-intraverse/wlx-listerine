@@ -9,6 +9,7 @@
 #endif
 
 #include "search_hud.h"
+#include "wlx_trace.h"
 
 #include <windowsx.h>
 #include <algorithm>
@@ -39,7 +40,9 @@ void SearchHud::register_class(HMODULE module) {
     wc.hInstance     = module;
     wc.hCursor       = LoadCursorW(nullptr, IDC_ARROW);
     wc.lpszClassName = kClassName;
-    RegisterClassExW(&wc);
+    if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+        WLX_TRACE(L"SearchHud::register_class failed err=%lu", GetLastError());
+    }
 }
 
 void SearchHud::unregister_class(HMODULE module) {
@@ -84,6 +87,9 @@ void SearchHud::recreate_target() {
         static_cast<UINT32>(std::max<LONG>(1, rc.right - rc.left)),
         static_cast<UINT32>(std::max<LONG>(1, rc.bottom - rc.top)));
     rt_.Reset();
+    // Default 96 DPI matches RenderEngine::create_device_resources; under
+    // Per-Monitor V2 the bar appears physically smaller on high-DPI displays.
+    // Fix here together with RenderEngine when/if DPI scaling is wired through.
     d2d_factory_->CreateHwndRenderTarget(
         D2D1::RenderTargetProperties(),
         D2D1::HwndRenderTargetProperties(hwnd_, size),
