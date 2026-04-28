@@ -63,12 +63,12 @@ async function main() {
 
   console.log(`=== Updating ${files.length} golden PNG(s) ===\n`);
 
-  const server = await startServer();
-  const browser = await chromium.launch();
-  const context = await browser.newContext({
-    viewport: { width: 800, height: 600 },
-    deviceScaleFactor: 1,
-  });
+  // Browser + HTTP server are only needed for Chrome-reference cases.
+  // Bring them up lazily so a single .flags case (or a Playwright outage)
+  // doesn't gate the whole script.
+  let server: ReturnType<typeof createServer> | null = null;
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null;
+  let context: Awaited<ReturnType<NonNullable<typeof browser>["newContext"]>> | null = null;
 
   for (const file of files) {
     const name = basename(file, ".md");
@@ -97,6 +97,15 @@ async function main() {
       continue;
     }
 
+    if (!context) {
+      server = await startServer();
+      browser = await chromium.launch();
+      context = await browser.newContext({
+        viewport: { width: 800, height: 600 },
+        deviceScaleFactor: 1,
+      });
+    }
+
     const page = await context.newPage();
 
     await page.goto(
@@ -111,8 +120,8 @@ async function main() {
     await page.close();
   }
 
-  await browser.close();
-  server.close();
+  if (browser) await browser.close();
+  if (server) server.close();
 
   console.log(`\nDone. Review the updated goldens, then commit:`);
   console.log(`  git add test_data/cases/*_chrome.png`);
