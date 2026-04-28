@@ -86,11 +86,17 @@ void SearchHud::recreate_target() {
         static_cast<UINT32>(std::max<LONG>(1, rc.right - rc.left)),
         static_cast<UINT32>(std::max<LONG>(1, rc.bottom - rc.top)));
     rt_.Reset();
-    // Default 96 DPI matches RenderEngine::create_device_resources; under
-    // Per-Monitor V2 the bar appears physically smaller on high-DPI displays.
-    // Fix here together with RenderEngine when/if DPI scaling is wired through.
+    // Pick up the parent's effective DPI so the painter's DIP-based constants
+    // render at the correct physical-pixel size on Per-Monitor V2 displays
+    // (e.g. 144 at 150% scaling, 192 at 200%). Falling back to 96 keeps the
+    // unscaled defaults if the API is unavailable for any reason.
+    UINT dpi = GetDpiForWindow(hwnd_);
+    if (dpi == 0) dpi = 96;
+    auto props = D2D1::RenderTargetProperties();
+    props.dpiX = static_cast<float>(dpi);
+    props.dpiY = static_cast<float>(dpi);
     d2d_factory_->CreateHwndRenderTarget(
-        D2D1::RenderTargetProperties(),
+        props,
         D2D1::HwndRenderTargetProperties(hwnd_, size),
         rt_.GetAddressOf());
 }
@@ -98,12 +104,19 @@ void SearchHud::recreate_target() {
 void SearchHud::reposition_to_parent() {
     if (!hwnd_ || !parent_) return;
     rects_ = painter_.layout(state_);
-    int w = static_cast<int>(std::ceil(rects_.width));
-    int h = static_cast<int>(std::ceil(rects_.height));
+    // Painter constants are DIPs; the HWND lives in physical pixels. Scale by
+    // the parent's DPI so the bar's physical footprint matches the painted
+    // surface (otherwise the right-hand chevron clips off-window at >100%).
+    UINT dpi = GetDpiForWindow(hwnd_);
+    if (dpi == 0) dpi = 96;
+    float scale = static_cast<float>(dpi) / 96.0f;
+    int w = static_cast<int>(std::ceil(rects_.width  * scale));
+    int h = static_cast<int>(std::ceil(rects_.height * scale));
+    int margin = static_cast<int>(std::ceil(kMargin * scale));
     RECT pr;
     GetClientRect(parent_, &pr);
-    int x = pr.right - w - kMargin;
-    int y = pr.bottom - h - kMargin;
+    int x = pr.right - w - margin;
+    int y = pr.bottom - h - margin;
     SetWindowPos(hwnd_, HWND_TOP, x, y, w, h,
                  SWP_NOACTIVATE | SWP_NOZORDER);
     if (rt_) {
