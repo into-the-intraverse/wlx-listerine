@@ -24,7 +24,13 @@ gen_fail=0
 gen_ok=0
 for md_file in "$CASES_DIR"/*.md; do
     name="$(basename "$md_file" .md)"
-    if "$SCREENSHOT_TOOL" "$md_file" --full > /dev/null 2>&1; then
+    flags_file="$CASES_DIR/${name}.flags"
+    extra_args=()
+    if [[ -f "$flags_file" ]]; then
+        # shellcheck disable=SC2207
+        extra_args=($(cat "$flags_file"))
+    fi
+    if "$SCREENSHOT_TOOL" "$md_file" --full "${extra_args[@]}" > /dev/null 2>&1; then
         echo "  OK   $name"
         gen_ok=$((gen_ok + 1))
     else

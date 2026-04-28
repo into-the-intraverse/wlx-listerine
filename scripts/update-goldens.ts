@@ -2,7 +2,8 @@ import { chromium } from "playwright";
 import { readdir } from "fs/promises";
 import { join, basename, extname } from "path";
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, copyFileSync } from "fs";
+import { spawnSync } from "child_process";
 
 const ROOT = join(import.meta.dir, "..");
 const TEST_DATA = join(ROOT, "test_data");
@@ -71,6 +72,27 @@ async function main() {
 
   for (const file of files) {
     const name = basename(file, ".md");
+
+    // Self-snapshot path: case has a `.flags` sidecar listing extra
+    // screenshot_tool args. Skip Playwright; run the tool, copy output
+    // to <name>_golden.png.
+    const flagsPath = join(CASES_DIR, `${name}.flags`);
+    if (existsSync(flagsPath)) {
+      const flags = readFileSync(flagsPath, "utf8").trim().split(/\s+/).filter(Boolean);
+      const tool = join(ROOT, "build", "Release", "screenshot_tool.exe");
+      const mdPath = join(CASES_DIR, file);
+      const result = spawnSync(tool, [mdPath, "--full", ...flags], { stdio: "inherit" });
+      if (result.status !== 0) {
+        console.error(`  FAIL  ${name} (screenshot_tool exited ${result.status})`);
+        continue;
+      }
+      const ourPng = join(CASES_DIR, `${name}.png`);
+      const goldenPng = join(CASES_DIR, `${name}_golden.png`);
+      copyFileSync(ourPng, goldenPng);
+      console.log(`  OK    ${name} -> ${name}_golden.png`);
+      continue;
+    }
+
     const page = await context.newPage();
 
     await page.goto(

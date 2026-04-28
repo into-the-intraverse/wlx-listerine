@@ -88,20 +88,28 @@ def main():
             continue
 
         ours_path = CASES_DIR / f"{name}.png"
+        golden_path = CASES_DIR / f"{name}_golden.png"
         chrome_path = CASES_DIR / f"{name}_chrome.png"
 
         if not ours_path.exists():
             print(f"  SKIP  {name} (no tool screenshot)")
             continue
-        if not chrome_path.exists():
-            print(f"  SKIP  {name} (no chrome screenshot)")
+
+        if golden_path.exists():
+            ref_path = golden_path
+            threshold = 99.5
+        elif chrome_path.exists():
+            ref_path = chrome_path
+            threshold = 95.0
+        else:
+            print(f"  SKIP  {name} (no reference image)")
             continue
 
-        similarity, diff_img = compare_images(ours_path, chrome_path)
+        similarity, diff_img = compare_images(ours_path, ref_path)
         diff_path = CASES_DIR / f"{name}_diff.png"
         diff_img.save(diff_path)
 
-        status = "PASS" if similarity >= 95 else "WARN" if similarity >= 80 else "FAIL"
+        status = "PASS" if similarity >= threshold else "WARN" if similarity >= threshold - 15 else "FAIL"
         results.append((name, similarity, status))
         print(f"  {status}  {similarity:5.1f}%  {name}")
 
@@ -112,7 +120,7 @@ def main():
     avg = sum(s for _, s, _ in results) / len(results)
     passes = sum(1 for _, _, st in results if st == "PASS")
     fails = sum(1 for _, _, st in results if st == "FAIL")
-    print(f"\n  {passes}/{len(results)} pass (>= 95% similar), avg similarity: {avg:.1f}%")
+    print(f"\n  {passes}/{len(results)} pass, avg similarity: {avg:.1f}%")
 
     if fails > 0:
         sys.exit(1)
