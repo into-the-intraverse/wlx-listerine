@@ -125,6 +125,7 @@ add_custom_command(TARGET wlx-listerine-md POST_BUILD
 add_library(wlx-listerine-colorizer SHARED
     src/colorizer/colorizer_host_adapter.cpp
     src/colorizer/colorizer_layout.cpp
+    src/search_hud.cpp
     src/colorizer/colorizer_plugin.def
     "${CMAKE_BINARY_DIR}/generated/colorizer_resource.rc"
 )
