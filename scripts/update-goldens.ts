@@ -82,8 +82,12 @@ async function main() {
       const tool = join(ROOT, "build", "Release", "screenshot_tool.exe");
       const mdPath = join(CASES_DIR, file);
       const result = spawnSync(tool, [mdPath, "--full", ...flags], { stdio: "inherit" });
+      if (result.error) {
+        console.error(`  FAIL  ${name} (${result.error.message})`);
+        continue;
+      }
       if (result.status !== 0) {
-        console.error(`  FAIL  ${name} (screenshot_tool exited ${result.status})`);
+        console.error(`  FAIL  ${name} (screenshot_tool exited ${result.signal ?? result.status})`);
         continue;
       }
       const ourPng = join(CASES_DIR, `${name}.png`);

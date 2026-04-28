@@ -24,11 +24,14 @@ gen_fail=0
 gen_ok=0
 for md_file in "$CASES_DIR"/*.md; do
     name="$(basename "$md_file" .md)"
+    # Optional <name>.flags sidecar: one line of whitespace-separated extra
+    # CLI args appended to the screenshot_tool invocation. Strip CR so files
+    # saved with CRLF on Windows don't leak \r into the last token.
     flags_file="$CASES_DIR/${name}.flags"
     extra_args=()
     if [[ -f "$flags_file" ]]; then
         # shellcheck disable=SC2207
-        extra_args=($(cat "$flags_file"))
+        extra_args=($(tr -d '\r' < "$flags_file"))
     fi
     if "$SCREENSHOT_TOOL" "$md_file" --full "${extra_args[@]}" > /dev/null 2>&1; then
         echo "  OK   $name"
