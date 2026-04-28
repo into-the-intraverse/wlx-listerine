@@ -155,20 +155,8 @@ void SearchHud::set_dark_mode(bool dark) {
 }
 
 int SearchHud::hit_test(int x, int y) const {
-    // Mouse coordinates arrive in physical pixels under Per-Monitor V2; the
-    // painter's rects are in DIPs. Scale the input down so the comparison
-    // matches the visible button rather than the DIP-space coordinates.
     UINT dpi = hwnd_ ? GetDpiForWindow(hwnd_) : 96;
-    if (dpi == 0) dpi = 96;
-    float scale = static_cast<float>(dpi) / 96.0f;
-    float fx = static_cast<float>(x) / scale;
-    float fy = static_cast<float>(y) / scale;
-    auto inside = [&](const D2D1_RECT_F& r) {
-        return fx >= r.left && fx < r.right && fy >= r.top && fy < r.bottom;
-    };
-    if (inside(rects_.prev)) return 0;
-    if (inside(rects_.next)) return 1;
-    return -1;
+    return hit_test_button(rects_, x, y, dpi);
 }
 
 void SearchHud::update_hover(int new_hover) {

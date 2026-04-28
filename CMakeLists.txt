@@ -198,6 +198,7 @@ add_executable(tests
     tests/test_search_ops.cpp
     tests/test_wlx_host_common.cpp
     tests/test_search_counter_format.cpp
+    tests/test_search_hud_hit.cpp
 )
 
 target_link_libraries(tests PRIVATE
