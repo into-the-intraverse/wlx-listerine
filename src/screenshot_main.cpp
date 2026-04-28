@@ -276,10 +276,10 @@ int main(int argc, char* argv[]) {
 
         double t_target = now_ms();
 
-        // Paint
-        renderer.paint(layout, scroll_y);
-
-        // Optional: run a search and overlay the HUD.
+        // Optional: run a search before painting so the document and the
+        // match highlights are baked into a single paint pass.
+        int hud_total  = -1;
+        int hud_cursor = -1;
         if (!opts.search.empty()) {
             SearchIndex idx;
             idx.build(layout);
@@ -290,33 +290,32 @@ int main(int argc, char* argv[]) {
             q.backwards   = false;
             auto matches = idx.find_all(q);
 
-            int total = static_cast<int>(matches.size());
-            int cursor = -1;
-            if (total > 0) {
-                cursor = std::min(opts.search_step, total - 1);
-            }
-            renderer.set_search_matches(matches, cursor);
+            hud_total = static_cast<int>(matches.size());
+            hud_cursor = (hud_total > 0)
+                ? std::clamp(opts.search_step, 0, hud_total - 1)
+                : -1;
+            renderer.set_search_matches(matches, hud_cursor);
+        }
 
-            // Re-paint document with match highlights baked in.
-            renderer.paint(layout, scroll_y);
+        // Paint
+        renderer.paint(layout, scroll_y);
 
-            // Overlay the HUD via the painter.
+        // Overlay the HUD via the painter.
+        if (!opts.search.empty()) {
             ID2D1RenderTarget* rt = renderer.render_target();
             if (rt) {
                 SearchHudPainter hud_painter(dwrite_factory.Get(), theme);
                 SearchHudState s{};
-                s.current_one_based = (total > 0) ? (cursor + 1) : 0;
-                s.total             = total;
+                s.current_one_based = (hud_total > 0) ? (hud_cursor + 1) : 0;
+                s.total             = hud_total;
                 auto rects = hud_painter.layout(s);
 
                 rt->BeginDraw();
-                D2D1_MATRIX_3X2_F prev_xform;
-                rt->GetTransform(&prev_xform);
                 float bx = static_cast<float>(bmp_width)  - rects.width  - 12.0f;
                 float by = static_cast<float>(bmp_height) - rects.height - 12.0f;
                 rt->SetTransform(D2D1::Matrix3x2F::Translation(bx, by));
                 hud_painter.paint(rt, s, rects, opts.dark);
-                rt->SetTransform(prev_xform);
+                rt->SetTransform(D2D1::Matrix3x2F::Identity());
                 HRESULT hr_e = rt->EndDraw();
                 if (FAILED(hr_e)) {
                     std::fprintf(stderr, "HUD overlay EndDraw failed: 0x%08lx\n", hr_e);
