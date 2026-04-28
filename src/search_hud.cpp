@@ -196,6 +196,12 @@ void SearchHud::paint() {
 
 LRESULT SearchHud::handle_message(UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
+    case WM_SETCURSOR:
+        // Parent's WlxListerineMdView serves an I-beam for text selection;
+        // override with the standard arrow over the HUD's clickable surface.
+        SetCursor(LoadCursorW(nullptr, IDC_ARROW));
+        return TRUE;
+
     case WM_PAINT: {
         PAINTSTRUCT ps;
         BeginPaint(hwnd_, &ps);

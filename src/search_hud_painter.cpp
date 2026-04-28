@@ -96,7 +96,10 @@ void SearchHudPainter::paint(ID2D1RenderTarget* rt, const SearchHudState& s,
     auto paint_button = [&](const D2D1_RECT_F& r, bool down_chevron, int idx) {
         const float alpha = disabled ? kDisabledAlpha : 1.0f;
         if (!disabled && s.hovered_button == idx) {
-            auto hover_bg = make_brush(rt, colors.code_bg, 0.6f);
+            // Use text color tinted at low alpha so the highlight contrasts
+            // with the bar's code_bg background in both light and dark themes
+            // (text is always the opposite-pole hue from code_bg).
+            auto hover_bg = make_brush(rt, colors.text, kHoverAlpha);
             fill_rounded(rt, r, kCornerR, hover_bg.Get());
         }
         auto stroke = make_brush(rt, colors.text, alpha);

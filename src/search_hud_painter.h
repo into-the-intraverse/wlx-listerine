@@ -53,8 +53,13 @@ private:
     static constexpr float kPillPadX = 6.0f;   // horizontal padding inside counter pill
     static constexpr float kBtnSize  = 24.0f;
     static constexpr float kCornerR  = 4.0f;
-    static constexpr float kPillCornerR = 6.0f;
+    // Bar corners are square: HwndRenderTarget can't render alpha outside the
+    // rounded path, so any radius >0 leaves the parent's bg showing through
+    // (or black for an opaque parent) at the corners. Square keeps the chip
+    // crisp without needing a layered window.
+    static constexpr float kPillCornerR = 0.0f;
     static constexpr float kFontSize = 13.0f;
     static constexpr float kPillAlpha    = 0.85f;
+    static constexpr float kHoverAlpha    = 0.18f;
     static constexpr float kDisabledAlpha = 0.3f;
 };
