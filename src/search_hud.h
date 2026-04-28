@@ -48,7 +48,6 @@ private:
     HWND parent_ = nullptr;
     HWND hwnd_   = nullptr;
     ID2D1Factory* d2d_factory_ = nullptr;
-    IDWriteFactory* dwrite_factory_ = nullptr;
     const ThemeService* theme_ = nullptr;
     bool dark_mode_ = false;
 

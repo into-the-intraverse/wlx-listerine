@@ -54,7 +54,6 @@ SearchHud::SearchHud(HWND parent, ID2D1Factory* d2d_factory,
                      bool dark_mode)
     : parent_(parent),
       d2d_factory_(d2d_factory),
-      dwrite_factory_(dwrite_factory),
       theme_(&theme),
       dark_mode_(dark_mode),
       painter_(dwrite_factory, theme) {
@@ -164,7 +163,8 @@ void SearchHud::paint() {
         ValidateRect(hwnd_, nullptr);
         return;
     }
-    rects_ = painter_.layout(state_);
+    // rects_ was populated by the most recent update()/reposition_to_parent;
+    // state_ hasn't changed since, so reuse without re-laying-out.
     rt_->BeginDraw();
     rt_->Clear(D2D1::ColorF(0, 0, 0, 0));
     painter_.paint(rt_.Get(), state_, rects_, dark_mode_);
