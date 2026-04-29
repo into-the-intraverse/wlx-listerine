@@ -36,8 +36,13 @@ HRESULT RenderEngine::create_device_resources(HWND hwnd) {
     width_ = static_cast<UINT>(rc.right - rc.left);
     height_ = static_cast<UINT>(rc.bottom - rc.top);
 
+    UINT dpi = GetDpiForWindow(hwnd);
+    if (dpi == 0) dpi = 96;
+
     D2D1_SIZE_U size = D2D1::SizeU(width_, height_);
     D2D1_RENDER_TARGET_PROPERTIES rtProps = D2D1::RenderTargetProperties();
+    rtProps.dpiX = static_cast<float>(dpi);
+    rtProps.dpiY = static_cast<float>(dpi);
     D2D1_HWND_RENDER_TARGET_PROPERTIES hwndProps = D2D1::HwndRenderTargetProperties(hwnd, size);
 
     ComPtr<ID2D1HwndRenderTarget> hwnd_rt;

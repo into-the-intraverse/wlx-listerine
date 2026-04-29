@@ -591,6 +591,17 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         return 0;
     }
 
+    case WM_DPICHANGED: {
+        if (vs && vs->renderer) {
+            vs->renderer->discard_device_resources();
+            vs->renderer->create_device_resources(hwnd);
+            relayout(vs);
+            if (vs->hud) vs->hud->on_parent_resize();
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        return 0;
+    }
+
     case WM_VSCROLL: {
         if (!vs) break;
         float page = vs->renderer ? vs->renderer->dip_height() : 100.0f;
