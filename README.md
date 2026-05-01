@@ -20,7 +20,7 @@
 - Line numbers, indent guides, whitespace markers
 - Ships with **25+ grammars** (git, vim, c++, Unreal C++ opt-in, and more)
 - **Easily extendable** — drop tree-sitter grammar DLLs into [grammars/](grammars)
-- **Helix-compatible** color themes — drop in themes from the [Helix community](https://github.com/helix-editor/helix/tree/master/runtime/themes)
+- **Helix-compatible** color themes with **text modifiers** (bold, italic, underline, strikethrough) — drop in themes from the [Helix community](https://github.com/helix-editor/helix/tree/master/runtime/themes)
 
 ---
 

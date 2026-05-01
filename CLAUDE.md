@@ -45,7 +45,9 @@ HostAdapter (host_adapter.cpp)         WLX exports, WndProc, scroll, D2D/DWrite 
 
 ### colorizer-core (static lib)
 
-Syntax highlighting engine used by both the colorizer and md plugins (for code blocks). Components: `GrammarRegistry` (loads tree-sitter grammars), `QueryHighlighter` (executes tree-sitter queries, resolves colors via theme), `HelixTheme` (loads Helix-compatible TOML themes with hierarchical scope resolution). Input: source code + grammar; output: colored spans for rendering.
+Syntax highlighting engine used by both the colorizer and md plugins (for code blocks). Components: `GrammarRegistry` (loads tree-sitter grammars), `QueryHighlighter` (executes tree-sitter queries, resolves colors and modifiers via theme), `HelixTheme` (loads Helix-compatible TOML themes with hierarchical scope resolution). Input: source code + grammar; output: colored spans (with optional bold/italic/underline/strikethrough bits) for rendering.
+
+**Text modifiers:** `ResolvedStyle`, `ColorSpan`, and `ColorRange` carry a `uint8_t modifiers` byte (`MOD_BOLD`/`MOD_ITALIC`/`MOD_UNDERLINE`/`MOD_STRIKETHROUGH` from `src/text_modifiers.h`). `parse_style` reads both `modifiers = ["italic", ...]` arrays and the `underline = { ... }` table form; terminal-only Helix modifiers (`reversed`/`dim`/`blink`/`hidden`) are silently dropped. `RenderEngine::paint_text_runs` applies `IDWriteTextLayout::SetFontWeight`/`SetFontStyle`/`SetUnderline`/`SetStrikethrough` per range alongside `SetDrawingEffect`. Default `make_default` themes set italic on `comment` and bold on `keyword.directive`. The markdown plugin has its own `ColorSpan`→`ColorRange` converter at `layout_engine.cpp` for fenced code blocks; the standalone colorizer uses `colorizer_layout.cpp` — both must propagate `span.modifiers`.
 
 **Theme system:** Helix editor-compatible TOML themes in `config/themes/`. Theme files use the same format as Helix (flat scope-to-style entries, `[palette]` section, `inherits` key). Config keys: `theme` (dark/default), `theme_light` (optional light override). If only `theme = "foo"` is set, the system auto-detects `foo_light.toml` for light mode.
 
