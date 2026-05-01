@@ -1,19 +1,22 @@
 #pragma once
 
+#include "../text_modifiers.h"
+
 #include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <unordered_map>
 
-// A resolved style from a Helix theme.  Only fg/bg colors are applied;
-// modifiers (bold, italic, underline, …) are parsed but ignored for now.
-// TODO: support text modifiers in a future version.
+// A resolved style from a Helix theme. Carries fg/bg colors and a bitset
+// of text modifiers (bold/italic/underline/strikethrough); see TextModifier
+// in text_modifiers.h.
 struct ResolvedStyle {
-    uint32_t fg = 0;       // 0x00RRGGBB
-    uint32_t bg = 0;       // 0x00RRGGBB
+    uint32_t fg = 0;        // 0x00RRGGBB
+    uint32_t bg = 0;        // 0x00RRGGBB
     bool has_fg = false;
     bool has_bg = false;
+    uint8_t modifiers = 0;  // OR of TextModifier bits
 };
 
 // Loads and resolves a Helix-format TOML theme file.
