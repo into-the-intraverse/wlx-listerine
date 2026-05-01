@@ -464,12 +464,23 @@ void RenderEngine::paint_text_runs(const LayoutBlock& block, float offset_y) {
         auto* brush = get_brush(run.color);
         if (!brush) continue;
 
-        // Apply per-range color overrides (e.g., link color)
+        // Apply per-range overrides: foreground brush + bold/italic/underline/strikethrough.
         for (auto& cr : run.color_ranges) {
-            auto* cr_brush = get_brush(cr.color);
-            if (cr_brush) {
-                DWRITE_TEXT_RANGE range = {cr.start, cr.length};
+            DWRITE_TEXT_RANGE range = {cr.start, cr.length};
+            if (auto* cr_brush = get_brush(cr.color)) {
                 run.layout->SetDrawingEffect(cr_brush, range);
+            }
+            if (cr.modifiers & MOD_BOLD) {
+                run.layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, range);
+            }
+            if (cr.modifiers & MOD_ITALIC) {
+                run.layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, range);
+            }
+            if (cr.modifiers & MOD_UNDERLINE) {
+                run.layout->SetUnderline(TRUE, range);
+            }
+            if (cr.modifiers & MOD_STRIKETHROUGH) {
+                run.layout->SetStrikethrough(TRUE, range);
             }
         }
 
