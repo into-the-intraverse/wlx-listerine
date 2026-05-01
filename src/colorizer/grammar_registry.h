@@ -1,5 +1,7 @@
 #pragma once
 
+#include "wlx_core_api.h"
+
 #include <tree_sitter/api.h>
 #include <string>
 #include <unordered_map>
@@ -10,7 +12,7 @@
 #endif
 #include <windows.h>
 
-class GrammarRegistry {
+class WLX_CORE_API GrammarRegistry {
 public:
     explicit GrammarRegistry(const std::wstring& grammar_dir);
     ~GrammarRegistry();

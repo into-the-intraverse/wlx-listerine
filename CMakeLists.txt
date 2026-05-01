@@ -54,27 +54,45 @@ target_link_libraries(wlx-core
         md4c::md4c
         d2d1
         dwrite
-        colorizer-core
+        wlx-listerine-core
     PRIVATE
         tomlplusplus::tomlplusplus
 )
 
-# --- Colorizer core static library ---
+# --- Core shared library (wlx-listerine-core.dll) ---
 find_package(tree-sitter REQUIRED)
 
-add_library(colorizer-core STATIC
+add_library(wlx-listerine-core SHARED
     src/colorizer/colorizer.cpp
     src/colorizer/helix_theme.cpp
     src/colorizer/grammar_registry.cpp
     src/colorizer/query_highlighter.cpp
 )
 
-target_include_directories(colorizer-core PUBLIC src/colorizer src)
-target_link_libraries(colorizer-core
+target_include_directories(wlx-listerine-core
+    PUBLIC src/colorizer src include
+)
+target_link_libraries(wlx-listerine-core
     PUBLIC
         tree-sitter::tree-sitter
     PRIVATE
         tomlplusplus::tomlplusplus
+)
+target_compile_definitions(wlx-listerine-core PRIVATE WLX_CORE_BUILDING)
+
+set_target_properties(wlx-listerine-core PROPERTIES
+    PREFIX ""
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/output"
+    LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/output"
+)
+
+# Mirror the DLL alongside test exes / screenshot_tool so they can find it on
+# the loader search path (the exes live in ${CMAKE_BINARY_DIR}/<cfg>/, the DLL
+# ships in output/).
+add_custom_command(TARGET wlx-listerine-core POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:wlx-listerine-core>"
+        "${CMAKE_BINARY_DIR}/$<CONFIG>/wlx-listerine-core.dll"
 )
 
 # --- Plugin DLL ---
@@ -88,7 +106,7 @@ target_include_directories(wlx-listerine-md PRIVATE src)
 
 target_link_libraries(wlx-listerine-md PRIVATE
     wlx-core
-    colorizer-core
+    wlx-listerine-core
     shell32
     dwmapi
     uxtheme
@@ -133,7 +151,7 @@ target_include_directories(wlx-listerine-colorizer PRIVATE src/colorizer)
 
 target_link_libraries(wlx-listerine-colorizer PRIVATE
     wlx-core
-    colorizer-core
+    wlx-listerine-core
     tomlplusplus::tomlplusplus
     shell32
     dwmapi
@@ -512,6 +530,6 @@ add_executable(colorizer-tests
 )
 
 target_link_libraries(colorizer-tests PRIVATE
-    colorizer-core
+    wlx-listerine-core
     doctest::doctest
 )

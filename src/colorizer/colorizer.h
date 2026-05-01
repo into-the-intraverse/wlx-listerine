@@ -1,12 +1,14 @@
 #pragma once
 
+#include "wlx_core_api.h"
+
 #include <cstdint>
 #include <string>
 #include <vector>
 #include <memory>
 #include "helix_theme.h"
 
-struct ColorSpan {
+struct WLX_CORE_API ColorSpan {
     uint32_t start = 0;       // byte offset in UTF-8 source
     uint32_t length = 0;
     uint32_t color = 0;       // foreground 0x00RRGGBB
@@ -15,13 +17,13 @@ struct ColorSpan {
     uint8_t modifiers = 0;    // OR of TextModifier bits
 };
 
-struct ColorizeResult {
+struct WLX_CORE_API ColorizeResult {
     std::vector<ColorSpan> spans;  // sorted by start, non-overlapping
 };
 
 class GrammarRegistry;
 
-class Colorizer {
+class WLX_CORE_API Colorizer {
 public:
     // theme_dir: directory containing Helix-format .toml theme files
     // theme_name: default theme (used for dark mode, or both modes)

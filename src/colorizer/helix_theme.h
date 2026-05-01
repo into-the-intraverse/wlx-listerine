@@ -1,5 +1,7 @@
 #pragma once
 
+#include "wlx_core_api.h"
+
 #include "../text_modifiers.h"
 
 #include <cstdint>
@@ -11,7 +13,7 @@
 // A resolved style from a Helix theme. Carries fg/bg colors and a bitset
 // of text modifiers (bold/italic/underline/strikethrough); see TextModifier
 // in text_modifiers.h.
-struct ResolvedStyle {
+struct WLX_CORE_API ResolvedStyle {
     uint32_t fg = 0;        // 0x00RRGGBB
     uint32_t bg = 0;        // 0x00RRGGBB
     bool has_fg = false;
@@ -29,7 +31,7 @@ struct ResolvedStyle {
 //
 // Scope resolution uses hierarchical fallback:
 //   "function.method.private" -> "function.method" -> "function"
-class HelixTheme {
+class WLX_CORE_API HelixTheme {
 public:
     // Load a theme by name from the given directory.
     // Follows `inherits` chains.  Returns a default theme on failure.

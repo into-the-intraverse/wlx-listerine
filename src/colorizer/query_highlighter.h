@@ -1,11 +1,13 @@
 #pragma once
 
+#include "wlx_core_api.h"
+
 #include <tree_sitter/api.h>
 #include "colorizer.h"
 #include "helix_theme.h"
 #include <vector>
 
-class QueryHighlighter {
+class WLX_CORE_API QueryHighlighter {
 public:
     static std::vector<ColorSpan> highlight(
         const TSTree* tree,
