@@ -1,6 +1,6 @@
 #pragma once
 
-#include "wlx_core_api.h"
+#include "wlx_core/abi.h"
 
 #include <tree_sitter/api.h>
 #include "colorizer.h"

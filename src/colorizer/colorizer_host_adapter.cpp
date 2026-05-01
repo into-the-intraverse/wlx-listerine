@@ -322,7 +322,7 @@ static void ensure_theme() {
 
         // The core DLL owns the colorizer singleton and discovers its install
         // dir via GetModuleFileNameW. Plugins just acquire a handle.
-        g_colorizer_handle = wlx_core_acquire();
+        g_colorizer_handle = wlx_core::acquire_compatible();
     }
 }
 

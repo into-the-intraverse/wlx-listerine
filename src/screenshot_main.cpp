@@ -226,7 +226,7 @@ int main(int argc, char* argv[]) {
         // Acquire the shared core singleton (lazy-init via GetModuleFileNameW
         // inside wlx-listerine-core.dll). Grammars/themes are mirrored next
         // to the DLL by a CMake POST_BUILD step.
-        WlxCore* core = wlx_core_acquire();
+        WlxCore* core = wlx_core::acquire_compatible();
 
         double t_theme = now_ms();
 

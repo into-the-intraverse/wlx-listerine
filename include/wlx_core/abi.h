@@ -55,13 +55,31 @@ WLX_CORE_API int       wlx_core_theme_color(WlxCore*,
 #ifdef __cplusplus
 } // extern "C"
 
-// --- Inline C++ RAII shim for span ownership ---
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #include <memory>
+
 namespace wlx_core {
+    // --- Inline C++ RAII shim for span ownership ---
     struct SpanDeleter {
         void operator()(WlxColorSpan* p) const noexcept { wlx_core_free_spans(p); }
     };
     using SpansPtr = std::unique_ptr<WlxColorSpan, SpanDeleter>;
+
+    // Acquire the core handle, verifying the ABI version matches what this
+    // plugin was compiled against. Returns nullptr on version mismatch
+    // (logged via OutputDebugStringW); plugins should fall back to plain-
+    // text rendering in that case.
+    inline WlxCore* acquire_compatible() {
+        if (wlx_core_abi_version() != WLX_CORE_ABI_VERSION) {
+            ::OutputDebugStringW(
+                L"[wlx-core] ABI version mismatch - core unavailable\n");
+            return nullptr;
+        }
+        return wlx_core_acquire();
+    }
 }
 #endif
 
