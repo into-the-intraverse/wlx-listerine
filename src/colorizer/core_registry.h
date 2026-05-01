@@ -1,6 +1,7 @@
 #pragma once
 
 #include "colorizer.h"
+#include "core_config.h"
 #include "helix_theme.h"
 #include <memory>
 #include <mutex>
@@ -33,6 +34,7 @@ private:
     static std::wstring resolve_core_dir();
 
     mutable std::mutex mu_;
-    std::unique_ptr<Colorizer> colorizer_;  // replaced piece-by-piece in later tasks
     std::wstring core_dir_;
+    CoreConfig cfg_;
+    std::unique_ptr<Colorizer> colorizer_;  // replaced piece-by-piece in later tasks
 };

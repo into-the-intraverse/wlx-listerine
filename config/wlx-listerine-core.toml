@@ -1,0 +1,12 @@
+# wlx-listerine-core configuration
+# Shared by both plugins (md + colorizer). Lives next to wlx-listerine-core.dll.
+# All values shown are the built-in defaults.
+# The core works without this file — only edit to override.
+
+[grammar_cache]
+cap = 8              # soft cap on loaded grammars (count); evicts on miss when exceeded AND tail is stale
+ttl_minutes = 5      # grammars idle longer than this become eviction candidates
+
+[theme]
+dark  = "default"        # Helix-format theme used in dark mode
+light = ""               # optional light-mode override; "" auto-detects "<dark>_light.toml"

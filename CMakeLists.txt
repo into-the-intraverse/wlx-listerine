@@ -70,6 +70,7 @@ add_library(wlx-listerine-core SHARED
     src/colorizer/wlx_core_abi.cpp
     src/colorizer/dllmain.cpp
     src/colorizer/core_registry.cpp
+    src/colorizer/core_config.cpp
 )
 
 target_include_directories(wlx-listerine-core
@@ -108,6 +109,19 @@ add_custom_command(TARGET wlx-listerine-core POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
         "${CMAKE_SOURCE_DIR}/config/themes"
         "${CMAKE_BINARY_DIR}/$<CONFIG>/themes"
+)
+
+# Task 4: ship wlx-listerine-core.toml next to the core DLL — both in the
+# production output/ install dir AND alongside the test rig DLL mirror in
+# build/<cfg>/. The CoreConfig::load() call in the registry singleton looks
+# for this file at $<TARGET_FILE_DIR:wlx-listerine-core>/wlx-listerine-core.toml.
+add_custom_command(TARGET wlx-listerine-core POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/config/wlx-listerine-core.toml"
+        "${CMAKE_SOURCE_DIR}/output/wlx-listerine-core.toml"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/config/wlx-listerine-core.toml"
+        "${CMAKE_BINARY_DIR}/$<CONFIG>/wlx-listerine-core.toml"
 )
 
 # --- Plugin DLL ---
@@ -543,6 +557,7 @@ add_executable(colorizer-tests
     tests/test_colorizer_grammars.cpp
     tests/test_colorizer_routing.cpp
     tests/test_wlx_core_abi.cpp
+    tests/test_core_config.cpp
 )
 
 target_link_libraries(colorizer-tests PRIVATE
