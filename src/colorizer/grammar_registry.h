@@ -13,7 +13,8 @@ public:
                     uint32_t cap = 8,
                     std::chrono::seconds ttl = std::chrono::seconds(5 * 60),
                     GrammarCache::Clock clock = std::chrono::steady_clock::now,
-                    GrammarCache::Loader loader = {});
+                    GrammarCache::Loader loader = {},
+                    GrammarCache::Releaser releaser = {});
 
     GrammarRegistry(const GrammarRegistry&) = delete;
     GrammarRegistry& operator=(const GrammarRegistry&) = delete;

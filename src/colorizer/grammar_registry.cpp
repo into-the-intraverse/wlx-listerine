@@ -10,10 +10,9 @@ GrammarRegistry::GrammarRegistry(const std::wstring& grammar_dir,
                                  uint32_t cap,
                                  std::chrono::seconds ttl,
                                  GrammarCache::Clock clock,
-                                 GrammarCache::Loader loader)
-    : cache_(cap, ttl,
-             clock ? clock : std::chrono::steady_clock::now,
-             loader ? loader : GrammarCache::Loader{})
+                                 GrammarCache::Loader loader,
+                                 GrammarCache::Releaser releaser)
+    : cache_(cap, ttl, std::move(clock), std::move(loader), std::move(releaser))
 {
     scan_directory(grammar_dir);
 }

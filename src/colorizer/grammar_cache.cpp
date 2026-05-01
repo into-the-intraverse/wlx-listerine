@@ -6,11 +6,13 @@
 GrammarCache::GrammarCache(uint32_t cap,
                            std::chrono::seconds ttl,
                            Clock clock,
-                           Loader loader)
+                           Loader loader,
+                           Releaser releaser)
     : cap_(cap)
     , ttl_(ttl)
     , clock_(clock ? std::move(clock) : std::chrono::steady_clock::now)
     , loader_(loader ? std::move(loader) : default_loader())
+    , releaser_(releaser ? std::move(releaser) : default_releaser())
 {}
 
 GrammarCache::~GrammarCache() {
@@ -18,8 +20,12 @@ GrammarCache::~GrammarCache() {
     // the cache is owned by the leaked CoreRegistry and never destructs.
     for (auto& [name, e] : entries_) {
         if (e.query) ts_query_delete(e.query);
-        if (e.handle) FreeLibrary(e.handle);
+        if (e.handle) releaser_(e.handle);
     }
+}
+
+GrammarCache::Releaser GrammarCache::default_releaser() {
+    return [](HMODULE h) { FreeLibrary(h); };
 }
 
 GrammarCache::Loader GrammarCache::default_loader() {
@@ -166,7 +172,7 @@ void GrammarCache::evict_locked() {
         if (age < ttl_) break;  // youngest of tail is fresh - stop.
 
         if (e.query) { ts_query_delete(e.query); e.query = nullptr; }
-        if (e.handle) { FreeLibrary(e.handle); e.handle = nullptr; }
+        if (e.handle) { releaser_(e.handle); e.handle = nullptr; }
         e.language = nullptr;
         e.load_attempted = false;
         e.query_compiled = false;

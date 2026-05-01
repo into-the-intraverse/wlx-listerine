@@ -29,10 +29,16 @@ public:
     using Loader = std::function<LoadResult(const std::wstring& dll_path,
                                             const std::string& language)>;
 
+    // Releases an HMODULE returned by Loader. Default is FreeLibrary; tests
+    // override with a no-op so synthetic handles don't get passed to the
+    // Windows loader.
+    using Releaser = std::function<void(HMODULE handle)>;
+
     GrammarCache(uint32_t cap,
                  std::chrono::seconds ttl,
                  Clock clock = std::chrono::steady_clock::now,
-                 Loader loader = default_loader());
+                 Loader loader = default_loader(),
+                 Releaser releaser = default_releaser());
 
     ~GrammarCache();
 
@@ -48,6 +54,11 @@ public:
     // Returns the loaded TSLanguage, loading the DLL on first call. Updates
     // LRU/last_used. Triggers eviction sweep if (cap exceeded AND tail
     // stale). Returns nullptr if entry unknown or load failed previously.
+    //
+    // Failures are sticky: once load_attempted is set with no handle (e.g.
+    // LoadLibraryW returned null, or the export wasn't found), subsequent
+    // calls return nullptr without retrying. An evict-and-reload sequence
+    // is the only way to retry.
     const TSLanguage* get_grammar(const std::string& language);
 
     // Returns compiled query, lazily compiling from the registered
@@ -68,6 +79,7 @@ public:
 
 private:
     static Loader default_loader();
+    static Releaser default_releaser();
     void evict_locked();
 
     struct Entry {
@@ -80,6 +92,9 @@ private:
         bool         query_compiled = false;
         SteadyTp     last_used{};
         std::list<std::string>::iterator lru_pos{};
+        // Invariant: lru_pos is valid iff handle != nullptr. After eviction
+        // the iterator is dangling but handle is also nulled, so the next
+        // get_grammar reseats both atomically.
     };
 
     std::unordered_map<std::string, Entry> entries_;
@@ -89,4 +104,5 @@ private:
     std::chrono::seconds ttl_;
     Clock    clock_;
     Loader   loader_;
+    Releaser releaser_;
 };

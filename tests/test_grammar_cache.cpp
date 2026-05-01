@@ -20,12 +20,16 @@ GrammarCache::Loader make_loader(int& counter) {
         return GrammarCache::LoadResult{ fake_handle(id), fake_lang(id) };
     };
 }
+
+GrammarCache::Releaser noop_releaser() {
+    return [](HMODULE) {};  // synthetic handles must not reach FreeLibrary
+}
 } // namespace
 
 TEST_CASE("GrammarCache: get_grammar loads on first call") {
     GrammarCache::SteadyTp now{};
     int counter = 0;
-    GrammarCache c(8, 5min, [&] { return now; }, make_loader(counter));
+    GrammarCache c(8, 5min, [&] { return now; }, make_loader(counter), noop_releaser());
     c.register_entry("a", L"a.dll", "");
     CHECK(c.get_grammar("a") == fake_lang(0));
     CHECK(c.is_loaded("a"));
@@ -35,7 +39,7 @@ TEST_CASE("GrammarCache: get_grammar loads on first call") {
 TEST_CASE("GrammarCache: lru promotion on repeat hits") {
     GrammarCache::SteadyTp now{};
     int counter = 0;
-    GrammarCache c(8, 5min, [&] { return now; }, make_loader(counter));
+    GrammarCache c(8, 5min, [&] { return now; }, make_loader(counter), noop_releaser());
     c.register_entry("a", L"a.dll", "");
     c.register_entry("b", L"b.dll", "");
     c.register_entry("c", L"c.dll", "");
@@ -50,7 +54,7 @@ TEST_CASE("GrammarCache: lru promotion on repeat hits") {
 TEST_CASE("GrammarCache: soft cap with fresh tail keeps everything") {
     GrammarCache::SteadyTp now{};
     int counter = 0;
-    GrammarCache c(2, 5min, [&] { return now; }, make_loader(counter));
+    GrammarCache c(2, 5min, [&] { return now; }, make_loader(counter), noop_releaser());
     c.register_entry("a", L"a.dll", "");
     c.register_entry("b", L"b.dll", "");
     c.register_entry("c", L"c.dll", "");
@@ -64,7 +68,7 @@ TEST_CASE("GrammarCache: soft cap with fresh tail keeps everything") {
 TEST_CASE("GrammarCache: evicts when tail is stale") {
     GrammarCache::SteadyTp now{};
     int counter = 0;
-    GrammarCache c(2, 5min, [&] { return now; }, make_loader(counter));
+    GrammarCache c(2, 5min, [&] { return now; }, make_loader(counter), noop_releaser());
     c.register_entry("a", L"a.dll", "");
     c.register_entry("b", L"b.dll", "");
     c.register_entry("c", L"c.dll", "");
@@ -84,7 +88,7 @@ TEST_CASE("GrammarCache: evicts when tail is stale") {
 TEST_CASE("GrammarCache: evict sweep stops at first fresh entry") {
     GrammarCache::SteadyTp now{};
     int counter = 0;
-    GrammarCache c(1, 5min, [&] { return now; }, make_loader(counter));
+    GrammarCache c(1, 5min, [&] { return now; }, make_loader(counter), noop_releaser());
     c.register_entry("a", L"a.dll", "");
     c.register_entry("b", L"b.dll", "");
     c.register_entry("c", L"c.dll", "");
@@ -106,7 +110,7 @@ TEST_CASE("GrammarCache: failed load not on LRU and not retried") {
     auto failing_loader = [](const std::wstring&, const std::string&) {
         return GrammarCache::LoadResult{};
     };
-    GrammarCache c(8, 5min, [&] { return now; }, failing_loader);
+    GrammarCache c(8, 5min, [&] { return now; }, failing_loader, noop_releaser());
     c.register_entry("a", L"a.dll", "");
 
     CHECK(c.get_grammar("a") == nullptr);
@@ -119,7 +123,7 @@ TEST_CASE("GrammarCache: failed load not on LRU and not retried") {
 TEST_CASE("GrammarCache: reload after evict") {
     GrammarCache::SteadyTp now{};
     int counter = 0;
-    GrammarCache c(1, 5min, [&] { return now; }, make_loader(counter));
+    GrammarCache c(1, 5min, [&] { return now; }, make_loader(counter), noop_releaser());
     c.register_entry("a", L"a.dll", "");
     c.register_entry("b", L"b.dll", "");
 
