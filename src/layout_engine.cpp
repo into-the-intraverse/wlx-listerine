@@ -1,5 +1,5 @@
 #include "layout_engine.h"
-#include "colorizer.h"
+#include "colorizer.h"  // ColorSpan / ColorizeResult definitions
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -12,13 +12,13 @@
 static const float kHeadingSizes[] = {28.0f, 24.0f, 20.0f, 17.0f, 14.0f, 12.0f};
 
 LayoutEngine::LayoutEngine(IDWriteFactory* dwrite, const ThemeService& theme, bool dark_mode,
-                           Colorizer* colorizer)
+                           WlxCore* core)
     : dwrite_(dwrite)
     , theme_(theme)
     , colors_(theme.palette(dark_mode))
     , spacing_(theme.spacing())
     , fonts_(theme.fonts())
-    , colorizer_(colorizer)
+    , core_(core)
     , dark_mode_(dark_mode) {
     // Create cached text formats
     dwrite_->CreateTextFormat(
@@ -521,7 +521,7 @@ void LayoutEngine::layout_code_fence(const BlockNode& node, float& y, float left
 
     // --- Syntax highlighting ---
     std::vector<ColorRange> color_ranges;
-    if (colorizer_) {
+    if (core_) {
         std::string lang;
         if (!node.code_language.empty()) {
             // Convert wstring to narrow string (language tags are ASCII)
@@ -531,7 +531,7 @@ void LayoutEngine::layout_code_fence(const BlockNode& node, float& y, float left
             lang = theme_.config().code_default_language;
         }
 
-        if (!lang.empty() && colorizer_->supports(lang)) {
+        if (!lang.empty() && wlx_core_supports(core_, lang.c_str()) == 1) {
             // Convert wstring to UTF-8
             std::string utf8_source;
             for (wchar_t wc : code_text) {
@@ -547,7 +547,24 @@ void LayoutEngine::layout_code_fence(const BlockNode& node, float& y, float left
                 }
             }
 
-            auto cr = colorizer_->colorize(utf8_source, lang, dark_mode_);
+            ColorizeResult cr;
+            WlxColorSpan* spans = nullptr;
+            uint32_t count = 0;
+            if (wlx_core_colorize(core_, utf8_source.c_str(),
+                                  static_cast<uint32_t>(utf8_source.size()),
+                                  lang.c_str(), dark_mode_ ? 1 : 0,
+                                  &spans, &count) == 0 && count > 0) {
+                cr.spans.reserve(count);
+                for (uint32_t i = 0; i < count; ++i) {
+                    const auto& s = spans[i];
+                    ColorSpan cs;
+                    cs.start = s.start; cs.length = s.length;
+                    cs.color = s.color; cs.bg_color = s.bg_color;
+                    cs.has_bg = s.has_bg != 0; cs.modifiers = s.modifiers;
+                    cr.spans.push_back(cs);
+                }
+                wlx_core_free_spans(spans);
+            }
 
             // Build wchar offset lookup table (wchar index -> cumulative byte offset)
             std::vector<uint32_t> wchar_to_byte;

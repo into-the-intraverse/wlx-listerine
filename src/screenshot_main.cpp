@@ -21,7 +21,7 @@
 #include "layout_engine.h"
 #include "render_engine.h"
 #include "theme_service.h"
-#include "colorizer.h"
+#include "wlx_core/abi.h"
 #include "search_engine.h"
 #include "search_hud_painter.h"
 
@@ -223,11 +223,10 @@ int main(int argc, char* argv[]) {
         ThemeService theme;
         theme.load(opts.config_path);
 
-        // Initialize colorizer for code fence highlighting
-        // Grammar/theme dirs are relative to CWD (matching plugin behavior where they're
-        // relative to the module directory, which is typically where the tool runs from)
-        Colorizer colorizer(theme.config().code_grammar_dir, theme.config().code_theme_dir,
-                            theme.config().code_theme, theme.config().code_theme_light);
+        // Acquire the shared core singleton (lazy-init via GetModuleFileNameW
+        // inside wlx-listerine-core.dll). Grammars/themes are mirrored next
+        // to the DLL by a CMake POST_BUILD step.
+        WlxCore* core = wlx_core_acquire();
 
         double t_theme = now_ms();
 
@@ -247,7 +246,7 @@ int main(int argc, char* argv[]) {
         double t_parse = now_ms();
 
         // Layout
-        LayoutEngine layout_engine(dwrite_factory.Get(), theme, opts.dark, &colorizer);
+        LayoutEngine layout_engine(dwrite_factory.Get(), theme, opts.dark, core);
         float viewport_width = static_cast<float>(opts.width);
         auto layout = layout_engine.layout(doc, viewport_width);
 

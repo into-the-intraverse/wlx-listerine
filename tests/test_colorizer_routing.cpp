@@ -36,6 +36,13 @@ TEST_CASE("apply_cpp_variant: non-cpp lang is untouched"
 }
 
 TEST_CASE("apply_cpp_variant: null colorizer is defensive") {
-    CHECK(apply_cpp_variant("cpp", CppGrammar::Unreal, nullptr) == "cpp");
-    CHECK(apply_cpp_variant("cpp", CppGrammar::Standard, nullptr) == "cpp");
+    CHECK(apply_cpp_variant("cpp", CppGrammar::Unreal,
+                            static_cast<const Colorizer*>(nullptr)) == "cpp");
+    CHECK(apply_cpp_variant("cpp", CppGrammar::Standard,
+                            static_cast<const Colorizer*>(nullptr)) == "cpp");
+    // Same defensive behavior for the WlxCore* overload used by host plugins.
+    CHECK(apply_cpp_variant("cpp", CppGrammar::Unreal,
+                            static_cast<WlxCore*>(nullptr)) == "cpp");
+    CHECK(apply_cpp_variant("cpp", CppGrammar::Standard,
+                            static_cast<WlxCore*>(nullptr)) == "cpp");
 }

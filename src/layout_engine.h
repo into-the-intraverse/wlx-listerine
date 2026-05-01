@@ -3,8 +3,7 @@
 #include "document_model.h"
 #include "theme_service.h"
 #include "text_modifiers.h"
-
-class Colorizer;
+#include "wlx_core/abi.h"
 
 #include <d2d1.h>
 #include <dwrite.h>
@@ -124,7 +123,7 @@ std::pair<int, int> find_word_boundaries(const std::wstring& text, int offset);
 class LayoutEngine {
 public:
     LayoutEngine(IDWriteFactory* dwrite, const ThemeService& theme, bool dark_mode,
-                 Colorizer* colorizer = nullptr);
+                 WlxCore* core = nullptr);
 
     LayoutDocument layout(const Document& doc, float viewport_width, bool wrap_code = false);
 
@@ -168,7 +167,7 @@ private:
     const ColorPalette& colors_;
     const SpacingConfig& spacing_;
     const FontConfig& fonts_;
-    Colorizer* colorizer_;
+    WlxCore* core_;
     bool dark_mode_;
 
     LayoutDocument result_;

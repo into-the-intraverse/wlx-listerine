@@ -68,6 +68,8 @@ add_library(wlx-listerine-core SHARED
     src/colorizer/grammar_registry.cpp
     src/colorizer/query_highlighter.cpp
     src/colorizer/wlx_core_abi.cpp
+    src/colorizer/dllmain.cpp
+    src/colorizer/core_registry.cpp
 )
 
 target_include_directories(wlx-listerine-core
@@ -93,6 +95,19 @@ add_custom_command(TARGET wlx-listerine-core POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:wlx-listerine-core>"
         "${CMAKE_BINARY_DIR}/$<CONFIG>/wlx-listerine-core.dll"
+)
+
+# After Task 3, the CoreRegistry singleton derives its install dir from the
+# core DLL's actual filesystem location (GetModuleFileNameW). Mirror grammars
+# and themes alongside the DLL so the test rig running from build/<cfg>/ finds
+# them at the same DLL-relative paths the production install uses.
+add_custom_command(TARGET wlx-listerine-core POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+        "${CMAKE_SOURCE_DIR}/grammars"
+        "${CMAKE_BINARY_DIR}/$<CONFIG>/grammars"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+        "${CMAKE_SOURCE_DIR}/config/themes"
+        "${CMAKE_BINARY_DIR}/$<CONFIG>/themes"
 )
 
 # --- Plugin DLL ---

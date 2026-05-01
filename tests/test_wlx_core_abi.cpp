@@ -2,28 +2,12 @@
 #include <wlx_core/abi.h>
 #include <cstring>
 #include <filesystem>
-#include <memory>
-#include <string>
-
-#include "colorizer.h"
-
-// Test fixture: install a Colorizer for the test harness, mirroring what a
-// plugin would do. Must come before any TEST_CASE that calls acquire/colorize.
-extern "C" __declspec(dllimport) void
-wlx_core_install_for_task2(std::unique_ptr<Colorizer>);
+#include <thread>
+#include <vector>
 
 static bool has_grammars() {
     return std::filesystem::exists("grammars/c/tree-sitter-c.dll");
 }
-
-static struct TestCoreInit {
-    TestCoreInit() {
-        if (has_grammars()) {
-            wlx_core_install_for_task2(std::make_unique<Colorizer>(
-                L"grammars", L"config/themes", "default", ""));
-        }
-    }
-} g_test_core_init;
 
 TEST_CASE("ABI version constant matches DLL export") {
     CHECK(wlx_core_abi_version() == WLX_CORE_ABI_VERSION);
@@ -32,12 +16,24 @@ TEST_CASE("ABI version constant matches DLL export") {
 TEST_CASE("acquire is idempotent") {
     auto* a = wlx_core_acquire();
     auto* b = wlx_core_acquire();
-    if (has_grammars()) {
-        CHECK(a != nullptr);
-    }
+    CHECK(a != nullptr);
     CHECK(a == b);
     wlx_core_release(a);
     wlx_core_release(b);
+}
+
+TEST_CASE("singleton initialized once across threads") {
+    std::vector<WlxCore*> handles(8, nullptr);
+    std::vector<std::thread> ts;
+    for (int i = 0; i < 8; ++i) {
+        ts.emplace_back([&, i] { handles[i] = wlx_core_acquire(); });
+    }
+    for (auto& t : ts) t.join();
+    for (auto* h : handles) {
+        CHECK(h != nullptr);
+        CHECK(h == handles[0]);
+    }
+    for (auto* h : handles) wlx_core_release(h);
 }
 
 TEST_CASE("supports returns 1 for known languages"
