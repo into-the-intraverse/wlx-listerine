@@ -31,9 +31,9 @@
 
 ## 📥 Installation
 
-1. Download the plugin ZIPs from [**Releases**](../../releases)
-2. Open each ZIP in Total Commander — it will offer to auto-install
-3. ✅ Done — the plugins work out of the box with built-in defaults
+1. Download `wlx-listerine-<version>.zip` from [**Releases**](../../releases)
+2. Open the ZIP in Total Commander — it will register both plugins (markdown + colorizer)
+3. ✅ Done — themes and grammars install alongside the plugins
 
 ## ⚙️ Configuration
 
@@ -54,7 +54,6 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the full reference.
 ## 🚧 TODO
 
 - **CPP highlighting on GHA windows-2025** — the upstream tree-sitter-cpp v0.23.4 grammar (ABI 14) emits no named-node spans on the GitHub Actions windows-2025 image, so plain `.cpp` files render only keyword tokens. Local builds with the same MSVC 14.44 toolset and conan binary work fine; root cause not yet pinned. The `Grammar: unreal-cpp` "highlights query loads" subcase is disabled until upstream ships an ABI 15 release or we route cpp through the taku25 fork.
-- **Lazy grammar loading for the colorizer** — the colorizer currently keeps every grammar DLL loaded for the lifetime of the view; switch to load-on-demand and unload (or LRU-evict) idle grammars so memory does not scale with the total number of installed grammars.
 
 ## 📄 License
 

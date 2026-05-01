@@ -55,10 +55,11 @@ Each release includes a `.toml.sample` showing all defaults. To customize, renam
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `grammar_dir` | `"grammars"` | Directory for tree-sitter grammar DLLs (relative to plugin) |
-| `theme_dir` | `"themes"` | Directory for syntax color themes (relative to plugin) |
 | `default_language` | `""` | Default language for unfenced code blocks |
-| `theme` | `"default"` | Syntax color theme name |
+
+Theme selection and grammar/theme directories now live in the shared
+`wlx-listerine-core.toml` — see [wlx-listerine-core.toml](#wlx-listerine-coretoml)
+below.
 
 ## Colorizer Plugin (wlx-listerine-colorizer.toml)
 
@@ -68,8 +69,6 @@ Each release includes a `.toml.sample` showing all defaults. To customize, renam
 |-----|---------|-------------|
 | `extensions` | `["c", "cpp", "h", "hpp", "py", "js", ...]` | File extensions to handle (30+ languages) |
 | `detect_string` | `EXT="C" \| EXT="CPP" \| ...` | TC detect string |
-| `grammar_dir` | `"grammars"` | Directory for tree-sitter grammar DLLs |
-| `theme_dir` | `"themes"` | Directory for syntax color themes |
 
 ### [display]
 
@@ -99,11 +98,8 @@ Each release includes a `.toml.sample` showing all defaults. To customize, renam
 
 Same keys as the markdown plugin (see above).
 
-### [themes]
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `default` | `"default"` | Syntax color theme name |
+Theme selection lives in the shared `wlx-listerine-core.toml` — see
+[wlx-listerine-core.toml](#wlx-listerine-coretoml) below.
 
 ### [colorizer]
 
@@ -131,4 +127,30 @@ Theme files live in the `themes/` directory. The default theme (`themes/default.
 | `punctuation` | Punctuation (braces, semicolons) |
 | `plain` | Default/unmatched text |
 
-To create a custom theme, copy `themes/default.toml` to a new name and set `theme = "yourname"` in the config.
+To create a custom theme, copy `themes/default.toml` to a new name and set
+`[theme] dark = "yourname"` in `wlx-listerine-core.toml`.
+
+## wlx-listerine-core.toml
+
+Shared by both plugins. Lives next to `wlx-listerine-core.dll` in the install
+directory. All values optional — defaults shown.
+
+```toml
+[grammar_cache]
+cap = 8              # soft LRU cap on loaded grammar DLLs
+ttl_minutes = 5      # entries idle longer than this are eviction candidates
+
+[theme]
+dark  = "default"    # Helix-format theme used in dark mode
+light = ""           # optional light-mode override; "" auto-detects "<dark>_light.toml"
+```
+
+`cap` is a *soft* cap: the cache may briefly exceed it if every entry on
+the LRU tail is younger than `ttl_minutes`. The eviction sweep runs only
+on a miss that pushes the cache above `cap`, and stops at the first fresh
+entry from the LRU tail. This means a busy session never thrashes; an
+idle session releases stale grammars on the next miss.
+
+Themes live in the shared `wlx-listerine/themes/` directory. Drop additional
+Helix-compatible `.toml` files there and reference them by name (without
+the `.toml` suffix) in `[theme] dark` / `[theme] light`.

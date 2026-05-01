@@ -43,15 +43,17 @@ HostAdapter (host_adapter.cpp)         WLX exports, WndProc, scroll, D2D/DWrite 
 
 **Per-window state** (`ViewState` in host_adapter.cpp) stored in `g_views` map. Holds Document, LayoutDocument, RenderEngine, InteractionEngine, scroll state.
 
-### colorizer-core (static lib)
+### wlx-listerine-core (shared DLL)
 
-Syntax highlighting engine used by both the colorizer and md plugins (for code blocks). Components: `GrammarRegistry` (loads tree-sitter grammars), `QueryHighlighter` (executes tree-sitter queries, resolves colors and modifiers via theme), `HelixTheme` (loads Helix-compatible TOML themes with hierarchical scope resolution). Input: source code + grammar; output: colored spans (with optional bold/italic/underline/strikethrough bits) for rendering.
+Syntax highlighting engine used by both the colorizer and md plugins (for code blocks). Built as a real Windows DLL (`wlx-listerine-core.dll`) shared by both plugin `.wlx64`s. The plugins talk to it through a C ABI in `include/wlx_core/abi.h` (extern "C" + an inline C++ shim for RAII span ownership). Components: `GrammarRegistry` (loads tree-sitter grammars), `QueryHighlighter` (executes tree-sitter queries, resolves colors and modifiers via theme), `HelixTheme` (loads Helix-compatible TOML themes with hierarchical scope resolution). Input: source code + grammar; output: colored spans (with optional bold/italic/underline/strikethrough bits) for rendering.
 
 **Text modifiers:** `ResolvedStyle`, `ColorSpan`, and `ColorRange` carry a `uint8_t modifiers` byte (`MOD_BOLD`/`MOD_ITALIC`/`MOD_UNDERLINE`/`MOD_STRIKETHROUGH` from `src/text_modifiers.h`). `parse_style` reads both `modifiers = ["italic", ...]` arrays and the `underline = { ... }` table form; terminal-only Helix modifiers (`reversed`/`dim`/`blink`/`hidden`) are silently dropped. `RenderEngine::paint_text_runs` applies `IDWriteTextLayout::SetFontWeight`/`SetFontStyle`/`SetUnderline`/`SetStrikethrough` per range alongside `SetDrawingEffect`. Default `make_default` themes set italic on `comment` and bold on `keyword.directive`. The markdown plugin has its own `ColorSpan`→`ColorRange` converter at `layout_engine.cpp` for fenced code blocks; the standalone colorizer uses `colorizer_layout.cpp` — both must propagate `span.modifiers`.
 
 **Theme system:** Helix editor-compatible TOML themes in `config/themes/`. Theme files use the same format as Helix (flat scope-to-style entries, `[palette]` section, `inherits` key). Config keys: `theme` (dark/default), `theme_light` (optional light override). If only `theme = "foo"` is set, the system auto-detects `foo_light.toml` for light mode.
 
 Some languages support multiple grammar variants selected at runtime via TOML config (e.g. `[colorizer].cpp_grammar = "standard" | "unreal"` swaps standard tree-sitter-cpp for taku25's Unreal-aware fork via a build-time alias TU; the routing primitive is `apply_cpp_variant(...)` in `src/colorizer/colorizer_routing.h`).
+
+**Process-wide grammar cache:** `CoreRegistry` is a singleton inside the core DLL, lazy-initialized via `std::call_once` on first ABI call. It owns one `GrammarCache` (LRU + TTL eviction) shared across both plugins, plus dark/light themes. A single `std::mutex` is held for the duration of each `colorize()` call — since trees are torn down inside the same locked region, eviction can never race with active language pointers. Cache config lives in `wlx-listerine-core.toml` next to the DLL: `[grammar_cache] cap` (soft cap, default 8) and `ttl_minutes` (eviction freshness gate, default 5). The `wlx-listerine-core.dll`, both `.wlx64`s, themes, and grammars all ship together as one bundle — versions are pinned lockstep.
 
 ## WLX exports (Unicode-only)
 

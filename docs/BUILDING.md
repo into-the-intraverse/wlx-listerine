@@ -18,10 +18,17 @@ cmake --build --preset conan-release
 Build outputs land in `output/`:
 - `wlx-listerine-md.wlx64` — Markdown renderer plugin
 - `wlx-listerine-colorizer.wlx64` — Syntax colorizer plugin
+- `wlx-listerine-core.dll` — Shared core DLL (tree-sitter engine, themes, grammar cache)
 - `wlx-listerine-md.toml` — Markdown plugin config
 - `wlx-listerine-colorizer.toml` — Colorizer plugin config
+- `wlx-listerine-core.toml` — Shared core config (grammar cache + theme selection)
 - `themes/default.toml` — Default syntax color theme
 - `grammars/*.dll` — Tree-sitter grammar DLLs (if built)
+
+The build produces three DLL artifacts in `output/`: `wlx-listerine-md.wlx64`,
+`wlx-listerine-colorizer.wlx64`, and `wlx-listerine-core.dll` (shared by both
+plugins). All three are versioned lockstep — never mix builds. The plugins
+link against the core's import lib (`wlx-listerine-core.lib`).
 
 ## Tests
 

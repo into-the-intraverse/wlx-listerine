@@ -30,6 +30,8 @@ The colorizer plugin (`wlx-listerine-colorizer`) ships with 25+ tree-sitter gram
 
 DLLs live at `grammars/<lang>/tree-sitter-<lang>.dll` next to the per-language `highlights.scm`.
 
+At install time, drop new grammar subdirectories into `<TC plugin dir>/wlx-listerine/grammars/<lang>/`. Both plugins pick them up from this single shared location — there is no per-plugin grammar directory anymore.
+
 Files with extensions outside this set are displayed as plain text with line numbers and whitespace markers, but without syntax highlighting.
 
 ### Plugin boundary
