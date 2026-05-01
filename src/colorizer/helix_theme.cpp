@@ -85,7 +85,7 @@ static ResolvedStyle parse_style(
             style.has_fg = true;
         }
     } else if (auto* tbl = node.as_table()) {
-        // Table form: { fg = "...", bg = "...", modifiers = [...] }
+        // Table form: { fg = "...", bg = "...", modifiers = [...], underline = {...} }
         if (auto fg_val = (*tbl)["fg"].value<std::string>()) {
             auto color = resolve_color(*fg_val, palette);
             if (color) {
@@ -100,7 +100,24 @@ static ResolvedStyle parse_style(
                 style.has_bg = true;
             }
         }
-        // modifiers, underline — parsed but ignored (TODO: future version)
+        if (auto* mods = (*tbl)["modifiers"].as_array()) {
+            for (auto&& m : *mods) {
+                if (auto* s = m.as_string()) {
+                    const std::string& v = s->get();
+                    if      (v == "bold")        style.modifiers |= MOD_BOLD;
+                    else if (v == "italic")      style.modifiers |= MOD_ITALIC;
+                    else if (v == "underlined")  style.modifiers |= MOD_UNDERLINE;
+                    else if (v == "crossed_out") style.modifiers |= MOD_STRIKETHROUGH;
+                    // others (reversed/dim/blink/hidden) — terminal-only, ignored
+                }
+            }
+        }
+        if ((*tbl)["underline"].is_table()) {
+            // Helix's table form: underline = { color = "...", style = "..." }.
+            // DWrite has only one underline kind, painted in the run's foreground
+            // brush, so color and style are intentionally ignored.
+            style.modifiers |= MOD_UNDERLINE;
+        }
     }
 
     return style;
@@ -180,7 +197,7 @@ static void load_impl(
         }
 
         auto style = parse_style(val, palette);
-        if (style.has_fg || style.has_bg) {
+        if (style.has_fg || style.has_bg || style.modifiers) {
             styles[key_str] = style;  // Child overrides parent
         }
     }

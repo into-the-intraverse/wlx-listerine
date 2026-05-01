@@ -262,15 +262,87 @@ TEST_CASE("HelixTheme load: ui scopes are ignored") {
     CHECK(!theme.resolve("ui.cursor").has_value());
 }
 
-TEST_CASE("HelixTheme load: modifiers are parsed but fg still works") {
+TEST_CASE("HelixTheme load: modifiers are parsed and fg still works") {
     TempThemeDir tmp;
     tmp.write("test_mod", R"(
         "keyword" = { fg = "#CC00CC", modifiers = ["bold", "italic"] }
     )");
 
     auto theme = HelixTheme::load("test_mod", tmp.path().string());
-    // modifiers ignored, but fg should work
     CHECK(theme.resolve_fg("keyword", 0) == 0xCC00CC);
+    auto s = theme.resolve("keyword");
+    REQUIRE(s.has_value());
+    CHECK(s->modifiers == (MOD_BOLD | MOD_ITALIC));
+}
+
+// ===========================================================================
+// Modifier parsing
+// ===========================================================================
+
+TEST_CASE("HelixTheme load: modifiers array sets bold/italic/underline/strikethrough") {
+    TempThemeDir tmp;
+    tmp.write("test_mods", R"(
+        "a" = { fg = "#FFFFFF", modifiers = ["bold"] }
+        "b" = { fg = "#FFFFFF", modifiers = ["italic"] }
+        "c" = { fg = "#FFFFFF", modifiers = ["underlined"] }
+        "d" = { fg = "#FFFFFF", modifiers = ["crossed_out"] }
+        "e" = { fg = "#FFFFFF", modifiers = ["bold", "italic", "underlined", "crossed_out"] }
+    )");
+
+    auto theme = HelixTheme::load("test_mods", tmp.path().string());
+
+    auto a = theme.resolve("a"); REQUIRE(a.has_value());
+    auto b = theme.resolve("b"); REQUIRE(b.has_value());
+    auto c = theme.resolve("c"); REQUIRE(c.has_value());
+    auto d = theme.resolve("d"); REQUIRE(d.has_value());
+    auto e = theme.resolve("e"); REQUIRE(e.has_value());
+
+    CHECK(a->modifiers == MOD_BOLD);
+    CHECK(b->modifiers == MOD_ITALIC);
+    CHECK(c->modifiers == MOD_UNDERLINE);
+    CHECK(d->modifiers == MOD_STRIKETHROUGH);
+    CHECK(e->modifiers == (MOD_BOLD | MOD_ITALIC | MOD_UNDERLINE | MOD_STRIKETHROUGH));
+}
+
+TEST_CASE("HelixTheme load: underline table form sets MOD_UNDERLINE") {
+    TempThemeDir tmp;
+    tmp.write("test_uline", R"(
+        "scope_a" = { fg = "#AAAAAA", underline = { color = "#FF0000", style = "curl" } }
+    )");
+
+    auto theme = HelixTheme::load("test_uline", tmp.path().string());
+    auto s = theme.resolve("scope_a");
+    REQUIRE(s.has_value());
+    CHECK(s->fg == 0xAAAAAA);
+    CHECK((s->modifiers & MOD_UNDERLINE) != 0);
+    // color and style are intentionally ignored — no assertion on them.
+}
+
+TEST_CASE("HelixTheme load: terminal-only modifiers are silently ignored") {
+    TempThemeDir tmp;
+    tmp.write("test_term", R"(
+        "scope_b" = { fg = "#BBBBBB", modifiers = ["reversed", "dim", "slow_blink", "rapid_blink", "hidden"] }
+    )");
+
+    auto theme = HelixTheme::load("test_term", tmp.path().string());
+    auto s = theme.resolve("scope_b");
+    REQUIRE(s.has_value());
+    CHECK(s->fg == 0xBBBBBB);
+    CHECK(s->modifiers == 0);
+}
+
+TEST_CASE("HelixTheme load: modifier-only entry survives empty-style guard") {
+    TempThemeDir tmp;
+    tmp.write("test_modonly", R"(
+        "scope_c" = { modifiers = ["bold"] }
+    )");
+
+    auto theme = HelixTheme::load("test_modonly", tmp.path().string());
+    auto s = theme.resolve("scope_c");
+    REQUIRE(s.has_value());
+    CHECK(!s->has_fg);
+    CHECK(!s->has_bg);
+    CHECK(s->modifiers == MOD_BOLD);
 }
 
 TEST_CASE("HelixTheme load: dotted scope names work") {
