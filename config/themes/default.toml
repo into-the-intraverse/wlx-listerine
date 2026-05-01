@@ -3,7 +3,7 @@
 
 # --- Keywords ---
 "keyword"            = "#C586C0"
-"keyword.directive"  = "#C586C0"
+"keyword.directive"  = { fg = "#C586C0", modifiers = ["bold"] }
 "keyword.storage"    = "#569CD6"
 "keyword.control"    = "#C586C0"
 "keyword.function"   = "#569CD6"
@@ -47,10 +47,10 @@
 "boolean"            = "#569CD6"
 
 # --- Comments ---
-"comment"            = "#6A9955"
-"comment.line"       = "#6A9955"
-"comment.block"      = "#6A9955"
-"comment.block.documentation" = "#6A9955"
+"comment"            = { fg = "#6A9955", modifiers = ["italic"] }
+"comment.line"       = { fg = "#6A9955", modifiers = ["italic"] }
+"comment.block"      = { fg = "#6A9955", modifiers = ["italic"] }
+"comment.block.documentation" = { fg = "#6A9955", modifiers = ["italic"] }
 
 # --- Operators & Punctuation ---
 "operator"           = "#D4D4D4"

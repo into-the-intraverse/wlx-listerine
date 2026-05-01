@@ -3,7 +3,7 @@
 
 # --- Keywords ---
 "keyword"            = "#AF00DB"
-"keyword.directive"  = "#AF00DB"
+"keyword.directive"  = { fg = "#AF00DB", modifiers = ["bold"] }
 "keyword.storage"    = "#0000FF"
 "keyword.control"    = "#AF00DB"
 "keyword.function"   = "#0000FF"
@@ -47,10 +47,10 @@
 "boolean"            = "#0000FF"
 
 # --- Comments ---
-"comment"            = "#008000"
-"comment.line"       = "#008000"
-"comment.block"      = "#008000"
-"comment.block.documentation" = "#008000"
+"comment"            = { fg = "#008000", modifiers = ["italic"] }
+"comment.line"       = { fg = "#008000", modifiers = ["italic"] }
+"comment.block"      = { fg = "#008000", modifiers = ["italic"] }
+"comment.block.documentation" = { fg = "#008000", modifiers = ["italic"] }
 
 # --- Operators & Punctuation ---
 "operator"           = "#000000"
