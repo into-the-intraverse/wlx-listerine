@@ -11,6 +11,7 @@ struct RawSpan {
     uint32_t color;
     uint32_t bg_color;
     bool has_bg;
+    uint8_t modifiers;
 };
 
 // Get the text for a capture within a match, given the source string.
@@ -158,6 +159,7 @@ std::vector<ColorSpan> QueryHighlighter::highlight(
         uint32_t bg = 0;
         bool has_fg = false;
         bool has_bg = false;
+        uint8_t modifiers = 0;
     };
     std::vector<CaptureStyle> capture_styles(capture_count);
     for (uint32_t i = 0; i < capture_count; i++) {
@@ -170,6 +172,7 @@ std::vector<ColorSpan> QueryHighlighter::highlight(
             capture_styles[i].has_fg = style->has_fg;
             capture_styles[i].bg = style->bg;
             capture_styles[i].has_bg = style->has_bg;
+            capture_styles[i].modifiers = style->modifiers;
         }
     }
 
@@ -190,8 +193,8 @@ std::vector<ColorSpan> QueryHighlighter::highlight(
         uint32_t end = ts_node_end_byte(cap.node);
         if (cap.index >= capture_count) continue;
         const auto& cs = capture_styles[cap.index];
-        if (!cs.has_fg && !cs.has_bg) continue;
-        raw.push_back({start, end, match.pattern_index, cs.fg, cs.bg, cs.has_bg});
+        if (!cs.has_fg && !cs.has_bg && cs.modifiers == 0) continue;
+        raw.push_back({start, end, match.pattern_index, cs.fg, cs.bg, cs.has_bg, cs.modifiers});
     }
 
     ts_query_cursor_delete(cursor);
@@ -208,7 +211,7 @@ std::vector<ColorSpan> QueryHighlighter::highlight(
     for (const auto& span : raw) {
         uint32_t eff_start = std::max(span.start, covered_until);
         if (eff_start >= span.end) continue;
-        result.push_back({eff_start, span.end - eff_start, span.color, span.bg_color, span.has_bg});
+        result.push_back({eff_start, span.end - eff_start, span.color, span.bg_color, span.has_bg, span.modifiers});
         covered_until = span.end;
     }
 

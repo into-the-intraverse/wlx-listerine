@@ -204,3 +204,32 @@ TEST_CASE("QueryHighlighter: dark mode produces different colors"
 
     ts_tree_delete(tree);
 }
+
+TEST_CASE("QueryHighlighter: theme modifier bits surface on ColorSpan"
+    * doctest::skip(!has_c_grammar())) {
+    GrammarRegistry reg(L"grammars");
+
+    // Build a theme where comment is italic.
+    auto theme = HelixTheme::make_default(true);
+    REQUIRE((theme.resolve("comment")->modifiers & MOD_ITALIC) != 0);
+
+    const char* source = "// hi\nint x = 1;";
+    auto* tree = reg.parse("c", source);
+    auto* query = reg.get_query("c");
+    REQUIRE(tree != nullptr);
+    REQUIRE(query != nullptr);
+
+    auto spans = QueryHighlighter::highlight(tree, query, theme, source);
+
+    // At least one span over the comment range [0, 5) ("// hi") must carry MOD_ITALIC.
+    bool found_italic_comment = false;
+    for (const auto& s : spans) {
+        if (s.start < 5 && s.start + s.length <= 5 && (s.modifiers & MOD_ITALIC)) {
+            found_italic_comment = true;
+            break;
+        }
+    }
+    CHECK(found_italic_comment);
+
+    ts_tree_delete(tree);
+}
