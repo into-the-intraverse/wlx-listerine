@@ -1,5 +1,5 @@
 [plugininstall]
-description=Tree-sitter syntax colorizer with Helix-compatible themes. Self-contained ZIP: bundles the shared wlx-listerine-core.dll, themes and grammars alongside the colorizer plugin. Installs into the same folder as the wlx-listerine-md plugin (TC will offer to overwrite shared files).
+description=Fast, lightweight syntax colorizer (tree-sitter, Helix themes).
 type=wlx
 file=wlx-listerine-colorizer.wlx64
 defaultdir=wlx-listerine
