@@ -1,6 +1,9 @@
 #include "core_config.h"
+#define NOMINMAX
+#include <windows.h>
 #include <toml++/toml.hpp>
 #include <filesystem>
+#include <string>
 
 CoreConfig CoreConfig::load(const std::wstring& core_dir) {
     CoreConfig cfg;
@@ -10,7 +13,7 @@ CoreConfig CoreConfig::load(const std::wstring& core_dir) {
     if (!std::filesystem::exists(path, ec)) return cfg;
 
     try {
-        auto tbl = toml::parse_file(path.string());
+        auto tbl = toml::parse_file(path.wstring());
 
         if (auto v = tbl["grammar_cache"]["cap"].value<int64_t>()) {
             int64_t n = *v;
@@ -28,8 +31,17 @@ CoreConfig CoreConfig::load(const std::wstring& core_dir) {
         if (auto v = tbl["theme"]["light"].value<std::string>()) {
             cfg.theme_light = *v;
         }
+    } catch (const toml::parse_error& e) {
+        std::wstring msg = L"[wlx-core] CoreConfig parse error: ";
+        const char* what = e.what();
+        while (what && *what) {
+            msg += static_cast<wchar_t>(static_cast<unsigned char>(*what));
+            ++what;
+        }
+        msg += L"\n";
+        OutputDebugStringW(msg.c_str());
     } catch (...) {
-        // Bad TOML: defaults already applied.
+        OutputDebugStringW(L"[wlx-core] CoreConfig: unknown parse failure\n");
     }
     return cfg;
 }

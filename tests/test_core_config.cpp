@@ -62,3 +62,9 @@ TEST_CASE("CoreConfig defaults theme when missing") {
     CHECK(cfg.theme == "default");
     CHECK(cfg.theme_light == "");
 }
+
+TEST_CASE("CoreConfig empty dark theme keeps default") {
+    auto dir = make_temp_toml("[theme]\ndark = \"\"\n");
+    auto cfg = CoreConfig::load(dir);
+    CHECK(cfg.theme == "default");
+}
