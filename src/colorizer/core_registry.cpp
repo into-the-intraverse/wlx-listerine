@@ -38,7 +38,8 @@ CoreRegistry::CoreRegistry()
     std::wstring grammar_dir = core_dir_ + L"grammars";
     std::wstring theme_dir   = core_dir_ + L"themes";
     colorizer_ = std::make_unique<Colorizer>(
-        grammar_dir, theme_dir, cfg_.theme, cfg_.theme_light);
+        grammar_dir, theme_dir, cfg_.theme, cfg_.theme_light,
+        cfg_.cap, cfg_.ttl_minutes);
 }
 
 ColorizeResult CoreRegistry::colorize(const std::string& source,

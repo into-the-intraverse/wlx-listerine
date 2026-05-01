@@ -31,7 +31,9 @@ public:
     Colorizer(const std::wstring& grammar_dir,
               const std::wstring& theme_dir,
               const std::string& theme_name = "default",
-              const std::string& theme_light_name = "");
+              const std::string& theme_light_name = "",
+              uint32_t grammar_cap = 8,
+              uint32_t grammar_ttl_minutes = 5);
     ~Colorizer();
 
     ColorizeResult colorize(const std::string& source,

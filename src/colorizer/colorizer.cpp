@@ -3,13 +3,18 @@
 #include "query_highlighter.h"
 
 #include <tree_sitter/api.h>
+#include <chrono>
 #include <filesystem>
 
 Colorizer::Colorizer(const std::wstring& grammar_dir,
                      const std::wstring& theme_dir,
                      const std::string& theme_name,
-                     const std::string& theme_light_name)
-    : grammar_registry_(std::make_unique<GrammarRegistry>(grammar_dir))
+                     const std::string& theme_light_name,
+                     uint32_t grammar_cap,
+                     uint32_t grammar_ttl_minutes)
+    : grammar_registry_(std::make_unique<GrammarRegistry>(
+          grammar_dir, grammar_cap,
+          std::chrono::seconds(grammar_ttl_minutes * 60)))
 {
     std::filesystem::path dir(theme_dir);
 

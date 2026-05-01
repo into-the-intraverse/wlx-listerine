@@ -9,8 +9,8 @@ GrammarCache::GrammarCache(uint32_t cap,
                            Loader loader)
     : cap_(cap)
     , ttl_(ttl)
-    , clock_(std::move(clock))
-    , loader_(std::move(loader))
+    , clock_(clock ? std::move(clock) : std::chrono::steady_clock::now)
+    , loader_(loader ? std::move(loader) : default_loader())
 {}
 
 GrammarCache::~GrammarCache() {

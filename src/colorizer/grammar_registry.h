@@ -1,21 +1,19 @@
 #pragma once
 
 #include "wlx_core_api.h"
-
-#include <tree_sitter/api.h>
+#include "grammar_cache.h"
+#include <chrono>
 #include <string>
-#include <unordered_map>
 #include <vector>
-
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
+#include <tree_sitter/api.h>
 
 class WLX_CORE_API GrammarRegistry {
 public:
-    explicit GrammarRegistry(const std::wstring& grammar_dir);
-    ~GrammarRegistry();
+    GrammarRegistry(const std::wstring& grammar_dir,
+                    uint32_t cap = 8,
+                    std::chrono::seconds ttl = std::chrono::seconds(5 * 60),
+                    GrammarCache::Clock clock = std::chrono::steady_clock::now,
+                    GrammarCache::Loader loader = {});
 
     GrammarRegistry(const GrammarRegistry&) = delete;
     GrammarRegistry& operator=(const GrammarRegistry&) = delete;
@@ -23,35 +21,12 @@ public:
     bool supports(const std::string& language) const;
     std::vector<std::string> available_languages() const;
 
-    // Returns nullptr if language not available or DLL fails to load.
-    // Returned pointer is valid for the lifetime of this GrammarRegistry.
     const TSLanguage* get_grammar(const std::string& language);
-
-    // Returns compiled query for the language, lazily compiled from highlights.scm.
-    // Returns nullptr if language not available or query fails to compile.
-    // Returned pointer is valid for the lifetime of this GrammarRegistry.
-    const TSQuery* get_query(const std::string& language);
-
-    // Parse source code with the given language grammar. Returns a new tree.
-    // Caller owns the returned tree and must call ts_tree_delete().
-    // Returns nullptr if language not available.
-    TSTree* parse(const std::string& language, const std::string& source);
+    const TSQuery*    get_query(const std::string& language);
+    TSTree*           parse(const std::string& language, const std::string& source);
 
 private:
-    void scan_directory();
-    std::string resolve_query_source(const std::string& language, int depth = 0);
+    void scan_directory(const std::wstring& grammar_dir);
 
-    std::wstring grammar_dir_;
-
-    struct GrammarEntry {
-        std::wstring dll_path;
-        HMODULE handle = nullptr;
-        const TSLanguage* language = nullptr;
-        bool load_attempted = false;
-        std::string query_source;
-        TSQuery* query = nullptr;
-        bool query_compiled = false;
-    };
-
-    std::unordered_map<std::string, GrammarEntry> grammars_;
+    GrammarCache cache_;
 };
