@@ -30,6 +30,8 @@ typedef struct WlxColorSpan {
 WLX_CORE_API int       wlx_core_abi_version(void);
 
 WLX_CORE_API WlxCore*  wlx_core_acquire(void);
+// No-op: the core is a process-wide singleton owned by the core DLL.
+// Provided only so the ABI shape is symmetric with acquire().
 WLX_CORE_API void      wlx_core_release(WlxCore*);
 
 // Return-code convention across this ABI:

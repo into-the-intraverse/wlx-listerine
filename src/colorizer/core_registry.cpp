@@ -2,7 +2,6 @@
 #include "core_registry.h"
 
 #include <windows.h>
-#include <filesystem>
 
 extern HMODULE g_core_module;  // defined in dllmain.cpp
 
@@ -14,12 +13,22 @@ CoreRegistry& CoreRegistry::instance() {
 }
 
 std::wstring CoreRegistry::resolve_core_dir() {
-    wchar_t buf[MAX_PATH];
-    DWORD n = GetModuleFileNameW(g_core_module, buf, MAX_PATH);
-    if (n == 0) return L"";
-    std::wstring path(buf, n);
-    auto slash = path.find_last_of(L"\\/");
-    return (slash == std::wstring::npos) ? L"" : path.substr(0, slash + 1);
+    std::wstring buf(MAX_PATH, L'\0');
+    for (;;) {
+        DWORD n = GetModuleFileNameW(g_core_module, buf.data(),
+                                     static_cast<DWORD>(buf.size()));
+        if (n == 0) return L"";
+        if (n < buf.size()) {
+            buf.resize(n);
+            break;
+        }
+        // Truncated: grow and retry. Sanity ceiling at 32768 wchars
+        // (Windows long-path absolute limit).
+        buf.resize(buf.size() * 2);
+        if (buf.size() > 32768) return L"";
+    }
+    auto slash = buf.find_last_of(L"\\/");
+    return (slash == std::wstring::npos) ? L"" : buf.substr(0, slash + 1);
 }
 
 CoreRegistry::CoreRegistry()

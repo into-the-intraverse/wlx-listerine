@@ -13,7 +13,11 @@
 // All public entry points take the registry's mutex so a colorize() call
 // holds the lock for the full parse + query + tree-delete flow. Trees are
 // caller-owned and torn down inside the same locked region — eviction
-// (added in Task 5) cannot race with active use.
+// (added in Task 5) cannot race with active use. Because the lock spans
+// parse + query + tree-delete, two windows colorizing concurrently
+// serialize through this mutex. Acceptable given typical markdown
+// code-block sizes are sub-KB; a fine-grained scheme is possible but
+// defers to a future iteration.
 class CoreRegistry {
 public:
     static CoreRegistry& instance();
