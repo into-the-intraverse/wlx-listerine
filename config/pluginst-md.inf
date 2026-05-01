@@ -1,5 +1,5 @@
 [plugininstall]
-description=Fast, lightweight Markdown renderer (Direct2D/DirectWrite). Ships with the shared wlx-listerine-core.dll, themes, and grammars used by the sibling colorizer plugin.
+description=Fast, lightweight Markdown renderer (Direct2D/DirectWrite). Self-contained ZIP: bundles the shared wlx-listerine-core.dll, themes and grammars alongside the markdown plugin. Installs into the same folder as the sibling colorizer plugin (TC will offer to overwrite shared files).
 type=wlx
 file=wlx-listerine-md.wlx64
 defaultdir=wlx-listerine
