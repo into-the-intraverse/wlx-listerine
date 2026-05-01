@@ -48,9 +48,6 @@ selection = "#264F78"
 search_highlight = "#A87800"
 search_highlight_current = "#E89820"
 
-[themes]
-default = "default"
-
 # C++ grammar selection.
 #
 # "standard" (default) — use tree-sitter/tree-sitter-cpp for all .c/.h/.cpp/.cc/.cxx/.hpp/.hxx.
