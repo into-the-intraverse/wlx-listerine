@@ -50,7 +50,4 @@ search_highlight = "#A87800"
 search_highlight_current = "#E89820"
 
 [code]
-grammar_dir = "grammars"
-theme_dir = "themes"
 default_language = ""
-theme = "default"

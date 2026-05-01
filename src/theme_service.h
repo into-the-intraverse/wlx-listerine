@@ -53,11 +53,7 @@ struct ThemeConfig {
     ColorPalette dark;
 
     // Code highlighting
-    std::wstring code_grammar_dir = L"grammars";
-    std::wstring code_theme_dir = L"themes";
     std::string code_default_language;  // empty = no highlighting for untagged blocks
-    std::string code_theme = "default";       // Helix theme for dark mode (or both)
-    std::string code_theme_light;             // optional light-mode override
 };
 
 class ThemeService {

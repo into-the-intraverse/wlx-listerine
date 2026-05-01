@@ -3,8 +3,6 @@ version = 1
 [general]
 extensions = ["c", "h", "cpp", "cc", "cxx", "hpp", "hxx", "py", "pyi", "js", "mjs", "cjs", "jsx", "ts", "tsx", "mts", "rs", "go", "java", "cs", "php", "lua", "sh", "bash", "zsh", "ps1", "psm1", "psd1", "vim", "vimrc", "json", "jsonc", "toml", "yaml", "yml", "html", "htm", "xml", "svg", "css", "md", "markdown", "cmake", "sql", "gitconfig", "gitignore", "gitattributes"]
 detect_string = 'EXT="C" | EXT="H" | EXT="CPP" | EXT="CC" | EXT="CXX" | EXT="HPP" | EXT="HXX" | EXT="PY" | EXT="PYI" | EXT="JS" | EXT="MJS" | EXT="CJS" | EXT="JSX" | EXT="TS" | EXT="TSX" | EXT="MTS" | EXT="RS" | EXT="GO" | EXT="JAVA" | EXT="CS" | EXT="PHP" | EXT="LUA" | EXT="SH" | EXT="BASH" | EXT="ZSH" | EXT="PS1" | EXT="PSM1" | EXT="PSD1" | EXT="VIM" | EXT="VIMRC" | EXT="JSON" | EXT="JSONC" | EXT="TOML" | EXT="YAML" | EXT="YML" | EXT="HTML" | EXT="HTM" | EXT="XML" | EXT="SVG" | EXT="CSS" | EXT="MD" | EXT="MARKDOWN" | EXT="CMAKE" | EXT="SQL" | EXT="GITCONFIG" | EXT="GITIGNORE" | EXT="GITATTRIBUTES"'
-grammar_dir = "grammars"
-theme_dir = "themes"
 
 [display]
 line_numbers = true
