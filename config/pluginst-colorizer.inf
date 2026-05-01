@@ -1,0 +1,5 @@
+[plugininstall]
+description=Tree-sitter syntax colorizer with Helix-compatible themes. Install the wlx-listerine-md plugin first — this ZIP only carries the colorizer .wlx64; the shared core DLL, themes, and grammars come from the md install.
+type=wlx
+file=wlx-listerine-colorizer.wlx64
+defaultdir=wlx-listerine

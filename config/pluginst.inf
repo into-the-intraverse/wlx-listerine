@@ -1,6 +1,0 @@
-[plugininstall]
-description=Fast, lightweight Markdown renderer + syntax colorizer (tree-sitter). Two TC plugins shipped together.
-type=wlx
-file=wlx-listerine-md.wlx64
-file2=wlx-listerine-colorizer.wlx64
-defaultdir=wlx-listerine

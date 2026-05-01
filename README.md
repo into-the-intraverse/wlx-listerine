@@ -31,9 +31,12 @@
 
 ## 📥 Installation
 
-1. Download `wlx-listerine-<version>.zip` from [**Releases**](../../releases)
-2. Open the ZIP in Total Commander — it will register both plugins (markdown + colorizer)
-3. ✅ Done — themes and grammars install alongside the plugins
+1. Download both `wlx-listerine-md-<version>.zip` and `wlx-listerine-colorizer-<version>.zip` from [**Releases**](../../releases)
+2. Open `wlx-listerine-md-<version>.zip` in Total Commander first — it carries the shared core DLL, themes, and grammars alongside the markdown plugin
+3. Then open `wlx-listerine-colorizer-<version>.zip` to register the colorizer — it lands in the same `wlx-listerine\` folder and reuses the shared payload
+4. ✅ Done — both plugins share one folder, no duplication on disk
+
+> Two ZIPs (instead of one) because Total Commander's `pluginst.inf` only auto-registers a single WLX plugin per install. Both ZIPs target the same `defaultdir`, so the install layout stays unified.
 
 ## ⚙️ Configuration
 
