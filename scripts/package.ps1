@@ -23,6 +23,12 @@ $header = @"
 $config = Get-Content "$root/config/wlx-listerine-md.toml" -Raw
 Set-Content -Path "$md/wlx-listerine-md.toml.sample" -Value ($header + $config) -NoNewline
 
+# md plugin instantiates its own Colorizer for fenced code blocks; ship the
+# grammars and themes alongside so a fresh install renders highlighted code
+# out of the box.
+Copy-Item "$root/output/themes" "$md/themes" -Recurse
+Copy-Item "$root/output/grammars" "$md/grammars" -Recurse
+
 $mdZip = "$root/wlx-listerine-md-$Version.zip"
 Remove-Item $mdZip -ErrorAction SilentlyContinue
 Compress-Archive -Path "$md/*" -DestinationPath $mdZip
