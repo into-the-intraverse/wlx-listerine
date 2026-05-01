@@ -28,7 +28,15 @@ function Write-Sample($srcPath, $stagingDir, $name) {
 function Add-SharedPayload($stagingDir) {
     Copy-Item "$root/output/wlx-listerine-core.dll"     "$stagingDir/"
     Write-Sample "$root/config/wlx-listerine-core.toml" $stagingDir "wlx-listerine-core"
-    Copy-Item "$root/output/themes"   "$stagingDir/themes"   -Recurse
+
+    # Themes ship as .toml.sample so reinstalls don't clobber user customizations.
+    # If no .toml is present at runtime, the plugins fall back to the embedded
+    # HelixTheme::make_default colors (close to default.toml; see docs).
+    New-Item -ItemType Directory -Path "$stagingDir/themes" -Force | Out-Null
+    Get-ChildItem "$root/output/themes" -Filter "*.toml" | ForEach-Object {
+        Copy-Item $_.FullName "$stagingDir/themes/$($_.Name).sample"
+    }
+
     Copy-Item "$root/output/grammars" "$stagingDir/grammars" -Recurse
 }
 

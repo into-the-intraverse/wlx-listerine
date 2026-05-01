@@ -109,7 +109,7 @@ Theme selection lives in the shared `wlx-listerine-core.toml` — see
 
 ## Syntax Color Themes
 
-Theme files live in the `themes/` directory. The default theme (`themes/default.toml`) defines colors for both light and dark modes:
+Theme files live in the `themes/` directory. The install ships `themes/default.toml.sample` and `themes/default_light.toml.sample`; they are *not* loaded as-is. If no `themes/<name>.toml` exists, the plugin falls back to a built-in default that's close to `default.toml.sample` (the same VS Code Dark+/Light+ palette, with hierarchical-fallback covering most scope variants). To customize, rename a sample file (drop the `.sample` suffix) or copy it to a new name. The default theme defines colors for both light and dark modes:
 
 | Token | Description |
 |-------|-------------|
@@ -127,8 +127,7 @@ Theme files live in the `themes/` directory. The default theme (`themes/default.
 | `punctuation` | Punctuation (braces, semicolons) |
 | `plain` | Default/unmatched text |
 
-To create a custom theme, copy `themes/default.toml` to a new name and set
-`[theme] dark = "yourname"` in `wlx-listerine-core.toml`.
+To create a custom theme, copy `themes/default.toml.sample` to a new file (e.g. `mytheme.toml`) and set `[theme] dark = "mytheme"` in `wlx-listerine-core.toml`. The `.sample` file itself is overwritten on every install — never edit it directly.
 
 ## wlx-listerine-core.toml
 
