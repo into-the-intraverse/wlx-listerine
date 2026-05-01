@@ -44,6 +44,28 @@ wlx_core_install_for_task2(std::unique_ptr<Colorizer>);
 
 using Microsoft::WRL::ComPtr;
 
+// File-local: convert ABI WlxColorSpan array into the C++ ColorizeResult type.
+// Frees the spans via wlx_core_free_spans. Returns an empty ColorizeResult if
+// spans is null or count is zero.
+static ColorizeResult abi_spans_to_result(WlxColorSpan* spans, uint32_t count) {
+    ColorizeResult out;
+    if (!spans || count == 0) {
+        if (spans) wlx_core_free_spans(spans);
+        return out;
+    }
+    out.spans.reserve(count);
+    for (uint32_t i = 0; i < count; ++i) {
+        const auto& s = spans[i];
+        ColorSpan cs;
+        cs.start = s.start; cs.length = s.length;
+        cs.color = s.color; cs.bg_color = s.bg_color;
+        cs.has_bg = s.has_bg != 0; cs.modifiers = s.modifiers;
+        out.spans.push_back(cs);
+    }
+    wlx_core_free_spans(spans);
+    return out;
+}
+
 // ---------- per-window state ----------
 
 struct ColorViewState {
@@ -385,7 +407,7 @@ static void load_document(ColorViewState* vs, const wchar_t* path) {
     language = apply_cpp_variant(language, g_display_cfg.cpp_grammar, g_colorizer_raw);
     vs->cached_colors = {};
     if (!language.empty() && g_colorizer_handle &&
-        wlx_core_supports(g_colorizer_handle, language.c_str())) {
+        wlx_core_supports(g_colorizer_handle, language.c_str()) == 1) {
         WlxColorSpan* spans = nullptr;
         uint32_t count = 0;
         if (wlx_core_colorize(g_colorizer_handle,
@@ -393,17 +415,8 @@ static void load_document(ColorViewState* vs, const wchar_t* path) {
                               static_cast<uint32_t>(vs->cached_raw_utf8.size()),
                               language.c_str(),
                               vs->dark_mode ? 1 : 0,
-                              &spans, &count) == 0 && count > 0) {
-            vs->cached_colors.spans.reserve(count);
-            for (uint32_t i = 0; i < count; ++i) {
-                const auto& s = spans[i];
-                ColorSpan cs;
-                cs.start = s.start; cs.length = s.length;
-                cs.color = s.color; cs.bg_color = s.bg_color;
-                cs.has_bg = s.has_bg != 0; cs.modifiers = s.modifiers;
-                vs->cached_colors.spans.push_back(cs);
-            }
-            wlx_core_free_spans(spans);
+                              &spans, &count) == 0) {
+            vs->cached_colors = abi_spans_to_result(spans, count);
         }
     }
 
@@ -1130,7 +1143,7 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
             language = apply_cpp_variant(language, g_display_cfg.cpp_grammar, g_colorizer_raw);
             vs->cached_colors = {};
             if (!language.empty() && g_colorizer_handle &&
-                wlx_core_supports(g_colorizer_handle, language.c_str())) {
+                wlx_core_supports(g_colorizer_handle, language.c_str()) == 1) {
                 WlxColorSpan* spans = nullptr;
                 uint32_t count = 0;
                 if (wlx_core_colorize(g_colorizer_handle,
@@ -1138,17 +1151,8 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
                                       static_cast<uint32_t>(vs->cached_raw_utf8.size()),
                                       language.c_str(),
                                       vs->dark_mode ? 1 : 0,
-                                      &spans, &count) == 0 && count > 0) {
-                    vs->cached_colors.spans.reserve(count);
-                    for (uint32_t i = 0; i < count; ++i) {
-                        const auto& s = spans[i];
-                        ColorSpan cs;
-                        cs.start = s.start; cs.length = s.length;
-                        cs.color = s.color; cs.bg_color = s.bg_color;
-                        cs.has_bg = s.has_bg != 0; cs.modifiers = s.modifiers;
-                        vs->cached_colors.spans.push_back(cs);
-                    }
-                    wlx_core_free_spans(spans);
+                                      &spans, &count) == 0) {
+                    vs->cached_colors = abi_spans_to_result(spans, count);
                 }
             }
             changed = true;

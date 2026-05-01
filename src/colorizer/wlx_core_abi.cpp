@@ -44,15 +44,17 @@ extern "C" WLX_CORE_API WlxCore* wlx_core_acquire(void) {
 }
 
 extern "C" WLX_CORE_API void wlx_core_release(WlxCore*) {
-    // No-op until process exit (consistent with detach-leak pattern).
+    // No-op: the core handle is process-singleton, owned by the DLL itself.
+    // All acquire() calls return the same pointer; release() is provided only
+    // to give the ABI a symmetric shape for future versions.
 }
 
 extern "C" WLX_CORE_API int
 wlx_core_supports(WlxCore* h, const char* language) {
-    if (!h || !language) return 0;
+    if (!h || !language) return -1;
     auto& core = *reinterpret_cast<Core*>(h);
     std::lock_guard<std::mutex> lk(core.mu);
-    if (!core.colorizer) return 0;
+    if (!core.colorizer) return -1;
     return core.colorizer->supports(language) ? 1 : 0;
 }
 

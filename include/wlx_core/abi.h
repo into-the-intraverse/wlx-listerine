@@ -32,6 +32,8 @@ WLX_CORE_API int       wlx_core_abi_version(void);
 WLX_CORE_API WlxCore*  wlx_core_acquire(void);
 WLX_CORE_API void      wlx_core_release(WlxCore*);
 
+// Return-code convention across this ABI:
+// negative = bad argument or core not initialized; non-negative = result.
 WLX_CORE_API int       wlx_core_supports(WlxCore*, const char* language);
 
 WLX_CORE_API int       wlx_core_colorize(WlxCore*,
