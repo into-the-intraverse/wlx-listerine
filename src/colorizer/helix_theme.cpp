@@ -251,14 +251,14 @@ HelixTheme HelixTheme::make_default(bool dark_mode) {
     HelixTheme theme;
     auto& s = theme.styles_;
 
-    auto fg = [](uint32_t color) -> ResolvedStyle {
-        return {color, 0, true, false};
+    auto fg = [](uint32_t color, uint8_t mods = 0) -> ResolvedStyle {
+        return {color, 0, true, false, mods};
     };
 
     if (!dark_mode) {
         // Light mode (VS Code Light+)
         s["keyword"]            = fg(0xAF00DB);
-        s["keyword.directive"]  = fg(0xAF00DB);
+        s["keyword.directive"]  = fg(0xAF00DB, MOD_BOLD);
         s["keyword.storage"]    = fg(0x0000FF);
         s["conditional"]        = fg(0xAF00DB);
         s["repeat"]             = fg(0xAF00DB);
@@ -286,7 +286,7 @@ HelixTheme HelixTheme::make_default(bool dark_mode) {
         s["number"]             = fg(0x098658);
         s["number.float"]       = fg(0x098658);
         s["boolean"]            = fg(0x0000FF);
-        s["comment"]            = fg(0x008000);
+        s["comment"]            = fg(0x008000, MOD_ITALIC);
         s["operator"]           = fg(0x000000);
         s["punctuation"]        = fg(0x000000);
         s["delimiter"]          = fg(0x000000);
@@ -313,7 +313,7 @@ HelixTheme HelixTheme::make_default(bool dark_mode) {
     } else {
         // Dark mode (VS Code Dark+)
         s["keyword"]            = fg(0xC586C0);
-        s["keyword.directive"]  = fg(0xC586C0);
+        s["keyword.directive"]  = fg(0xC586C0, MOD_BOLD);
         s["keyword.storage"]    = fg(0x569CD6);
         s["conditional"]        = fg(0xC586C0);
         s["repeat"]             = fg(0xC586C0);
@@ -341,7 +341,7 @@ HelixTheme HelixTheme::make_default(bool dark_mode) {
         s["number"]             = fg(0xB5CEA8);
         s["number.float"]       = fg(0xB5CEA8);
         s["boolean"]            = fg(0x569CD6);
-        s["comment"]            = fg(0x6A9955);
+        s["comment"]            = fg(0x6A9955, MOD_ITALIC);
         s["operator"]           = fg(0xD4D4D4);
         s["punctuation"]        = fg(0xD4D4D4);
         s["delimiter"]          = fg(0xD4D4D4);

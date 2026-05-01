@@ -356,3 +356,23 @@ TEST_CASE("HelixTheme load: dotted scope names work") {
     CHECK(theme.resolve_fg("function.builtin", 0) == 0xAABB00);
     CHECK(theme.resolve_fg("variable.other.member", 0) == 0x00CCDD);
 }
+
+TEST_CASE("HelixTheme::make_default: comment is italic, keyword.directive is bold") {
+    auto dark  = HelixTheme::make_default(true);
+    auto light = HelixTheme::make_default(false);
+
+    auto dc = dark.resolve("comment");           REQUIRE(dc.has_value());
+    auto lc = light.resolve("comment");          REQUIRE(lc.has_value());
+    auto dd = dark.resolve("keyword.directive"); REQUIRE(dd.has_value());
+    auto ld = light.resolve("keyword.directive"); REQUIRE(ld.has_value());
+
+    CHECK((dc->modifiers & MOD_ITALIC) != 0);
+    CHECK((lc->modifiers & MOD_ITALIC) != 0);
+    CHECK((dd->modifiers & MOD_BOLD)   != 0);
+    CHECK((ld->modifiers & MOD_BOLD)   != 0);
+
+    // Unrelated scope still has no modifiers.
+    auto ds = dark.resolve("string");
+    REQUIRE(ds.has_value());
+    CHECK(ds->modifiers == 0);
+}
