@@ -155,20 +155,6 @@ if(WLX_TRACE_ENABLE)
     target_compile_definitions(wlx-listerine-md PRIVATE WLX_TRACE_ENABLE)
 endif()
 
-add_custom_command(TARGET wlx-listerine-md POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_SOURCE_DIR}/config/wlx-listerine-md.toml"
-        "${CMAKE_SOURCE_DIR}/output/wlx-listerine-md.toml"
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-        "${CMAKE_SOURCE_DIR}/output/themes"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_SOURCE_DIR}/config/themes/default.toml"
-        "${CMAKE_SOURCE_DIR}/output/themes/default.toml"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_SOURCE_DIR}/config/themes/default_light.toml"
-        "${CMAKE_SOURCE_DIR}/output/themes/default_light.toml"
-)
-
 # --- Colorizer Plugin DLL ---
 add_library(wlx-listerine-colorizer SHARED
     src/colorizer/colorizer_host_adapter.cpp
@@ -201,7 +187,13 @@ if(WLX_TRACE_ENABLE)
     target_compile_definitions(wlx-listerine-colorizer PRIVATE WLX_TRACE_ENABLE)
 endif()
 
+# Lay out the unified output/ directory: themes + grammars + sample TOMLs
+# go alongside the two .wlx64 files and the core DLL. Packaging picks up
+# from here.
 add_custom_command(TARGET wlx-listerine-colorizer POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/config/wlx-listerine-md.toml"
+        "${CMAKE_SOURCE_DIR}/output/wlx-listerine-md.toml"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/config/wlx-listerine-colorizer.toml"
         "${CMAKE_SOURCE_DIR}/output/wlx-listerine-colorizer.toml"
