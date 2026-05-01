@@ -27,9 +27,7 @@ function Write-Sample($srcPath, $stagingDir, $name) {
 
 function Add-SharedPayload($stagingDir) {
     Copy-Item "$root/output/wlx-listerine-core.dll"     "$stagingDir/"
-    Write-Sample "$root/config/wlx-listerine-md.toml"        $stagingDir "wlx-listerine-md"
-    Write-Sample "$root/config/wlx-listerine-colorizer.toml" $stagingDir "wlx-listerine-colorizer"
-    Write-Sample "$root/config/wlx-listerine-core.toml"      $stagingDir "wlx-listerine-core"
+    Write-Sample "$root/config/wlx-listerine-core.toml" $stagingDir "wlx-listerine-core"
     Copy-Item "$root/output/themes"   "$stagingDir/themes"   -Recurse
     Copy-Item "$root/output/grammars" "$stagingDir/grammars" -Recurse
 }
@@ -44,6 +42,7 @@ try {
 
     Copy-Item "$root/config/pluginst-md.inf"        "$mdStage/pluginst.inf"
     Copy-Item "$root/output/wlx-listerine-md.wlx64" "$mdStage/"
+    Write-Sample "$root/config/wlx-listerine-md.toml" $mdStage "wlx-listerine-md"
     Add-SharedPayload $mdStage
 
     $mdZip = "$root/wlx-listerine-md-$Version.zip"
@@ -57,6 +56,7 @@ try {
 
     Copy-Item "$root/config/pluginst-colorizer.inf"        "$colStage/pluginst.inf"
     Copy-Item "$root/output/wlx-listerine-colorizer.wlx64" "$colStage/"
+    Write-Sample "$root/config/wlx-listerine-colorizer.toml" $colStage "wlx-listerine-colorizer"
     Add-SharedPayload $colStage
 
     $colZip = "$root/wlx-listerine-colorizer-$Version.zip"
