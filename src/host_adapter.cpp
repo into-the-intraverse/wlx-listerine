@@ -139,8 +139,6 @@ static void ensure_theme() {
 
         // The core DLL owns the colorizer singleton and discovers its install
         // dir via GetModuleFileNameW. Plugins just acquire a handle.
-        // Task 7 will remove the now-dead code_grammar_dir/code_theme_dir/
-        // code_theme/code_theme_light reads above (none here yet).
         g_colorizer_handle = wlx_core_acquire();
     }
 }
