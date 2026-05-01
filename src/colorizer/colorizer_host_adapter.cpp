@@ -29,6 +29,9 @@
 #include "theme_service.h"
 #include "string_util.h"
 #include "colorizer.h"
+#include "wlx_core/abi.h"
+extern "C" __declspec(dllimport) void
+wlx_core_install_for_task2(std::unique_ptr<Colorizer>);
 #include "colorizer_layout.h"
 #include "colorizer_routing.h"
 #include "search_hud.h"
@@ -93,7 +96,8 @@ static bool g_theme_loaded = false;
 static ComPtr<ID2D1Factory> g_d2d_factory;
 static ComPtr<IDWriteFactory> g_dwrite_factory;
 static FileService g_file_service;
-static std::unique_ptr<Colorizer> g_colorizer;
+static WlxCore*   g_colorizer_handle = nullptr;
+static Colorizer* g_colorizer_raw    = nullptr;   // removed in Task 3
 static ColorizerDisplayConfig g_display_cfg;
 static std::unordered_map<HWND, ColorViewState*> g_views;
 static ATOM g_window_class = 0;
@@ -301,10 +305,13 @@ static void ensure_theme() {
         std::wstring base = get_module_dir();
         std::wstring grammar_dir = base + g_theme.config().code_grammar_dir;
         std::wstring theme_dir   = base + g_theme.config().code_theme_dir;
-        g_colorizer = std::make_unique<Colorizer>(
+        auto cz = std::make_unique<Colorizer>(
             grammar_dir, theme_dir,
             g_theme.config().code_theme,
             g_theme.config().code_theme_light);
+        g_colorizer_raw = cz.get();
+        wlx_core_install_for_task2(std::move(cz));
+        g_colorizer_handle = wlx_core_acquire();
 
     }
 }
@@ -375,10 +382,29 @@ static void load_document(ColorViewState* vs, const wchar_t* path) {
     std::string language = ext_to_language(vs->file_path);
     if (language.empty())
         language = filename_to_language(vs->file_path);
-    language = apply_cpp_variant(language, g_display_cfg.cpp_grammar, g_colorizer.get());
+    language = apply_cpp_variant(language, g_display_cfg.cpp_grammar, g_colorizer_raw);
     vs->cached_colors = {};
-    if (!language.empty() && g_colorizer && g_colorizer->supports(language)) {
-        vs->cached_colors = g_colorizer->colorize(vs->cached_raw_utf8, language, vs->dark_mode);
+    if (!language.empty() && g_colorizer_handle &&
+        wlx_core_supports(g_colorizer_handle, language.c_str())) {
+        WlxColorSpan* spans = nullptr;
+        uint32_t count = 0;
+        if (wlx_core_colorize(g_colorizer_handle,
+                              vs->cached_raw_utf8.c_str(),
+                              static_cast<uint32_t>(vs->cached_raw_utf8.size()),
+                              language.c_str(),
+                              vs->dark_mode ? 1 : 0,
+                              &spans, &count) == 0 && count > 0) {
+            vs->cached_colors.spans.reserve(count);
+            for (uint32_t i = 0; i < count; ++i) {
+                const auto& s = spans[i];
+                ColorSpan cs;
+                cs.start = s.start; cs.length = s.length;
+                cs.color = s.color; cs.bg_color = s.bg_color;
+                cs.has_bg = s.has_bg != 0; cs.modifiers = s.modifiers;
+                vs->cached_colors.spans.push_back(cs);
+            }
+            wlx_core_free_spans(spans);
+        }
     }
 
     do_layout(vs, vs->cached_text, vs->cached_raw_utf8, vs->cached_colors);
@@ -938,7 +964,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {
         // Same pattern as the md plugin.
         (void)new ComPtr<ID2D1Factory>(std::move(g_d2d_factory));
         (void)new ComPtr<IDWriteFactory>(std::move(g_dwrite_factory));
-        (void)new std::unique_ptr<Colorizer>(std::move(g_colorizer));
         g_views.clear();
 
         if (reserved == nullptr) {
@@ -1102,10 +1127,29 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
             // Re-colorize with new palette (no file re-read)
             std::string language = ext_to_language(vs->file_path);
             if (language.empty()) language = filename_to_language(vs->file_path);
-            language = apply_cpp_variant(language, g_display_cfg.cpp_grammar, g_colorizer.get());
+            language = apply_cpp_variant(language, g_display_cfg.cpp_grammar, g_colorizer_raw);
             vs->cached_colors = {};
-            if (!language.empty() && g_colorizer && g_colorizer->supports(language)) {
-                vs->cached_colors = g_colorizer->colorize(vs->cached_raw_utf8, language, vs->dark_mode);
+            if (!language.empty() && g_colorizer_handle &&
+                wlx_core_supports(g_colorizer_handle, language.c_str())) {
+                WlxColorSpan* spans = nullptr;
+                uint32_t count = 0;
+                if (wlx_core_colorize(g_colorizer_handle,
+                                      vs->cached_raw_utf8.c_str(),
+                                      static_cast<uint32_t>(vs->cached_raw_utf8.size()),
+                                      language.c_str(),
+                                      vs->dark_mode ? 1 : 0,
+                                      &spans, &count) == 0 && count > 0) {
+                    vs->cached_colors.spans.reserve(count);
+                    for (uint32_t i = 0; i < count; ++i) {
+                        const auto& s = spans[i];
+                        ColorSpan cs;
+                        cs.start = s.start; cs.length = s.length;
+                        cs.color = s.color; cs.bg_color = s.bg_color;
+                        cs.has_bg = s.has_bg != 0; cs.modifiers = s.modifiers;
+                        vs->cached_colors.spans.push_back(cs);
+                    }
+                    wlx_core_free_spans(spans);
+                }
             }
             changed = true;
         }

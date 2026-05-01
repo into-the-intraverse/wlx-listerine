@@ -28,6 +28,9 @@
 #include "theme_service.h"
 #include "cache_service.h"
 #include "colorizer.h"
+#include "wlx_core/abi.h"
+extern "C" __declspec(dllimport) void
+wlx_core_install_for_task2(std::unique_ptr<Colorizer>);
 #include "search_engine.h"
 #include "search_ops.h"
 #include "search_hud.h"
@@ -90,7 +93,8 @@ static FileService g_file_service;
 static std::unordered_map<HWND, ViewState*> g_views;
 static ATOM g_window_class = 0;
 static std::string g_default_ini_path;
-static std::unique_ptr<Colorizer> g_colorizer;
+static WlxCore*   g_colorizer_handle = nullptr;
+static Colorizer* g_colorizer_raw    = nullptr;   // removed in Task 3
 
 // Forward decl so the HostView<ViewState> concept is satisfied at the point
 // where HostIntegration<ViewState> is instantiated (below).
@@ -141,10 +145,13 @@ static void ensure_theme() {
         std::wstring base = get_module_dir();
         std::wstring grammar_dir = base + g_theme.config().code_grammar_dir;
         std::wstring theme_dir = base + g_theme.config().code_theme_dir;
-        g_colorizer = std::make_unique<Colorizer>(
+        auto cz = std::make_unique<Colorizer>(
             grammar_dir, theme_dir,
             g_theme.config().code_theme,
             g_theme.config().code_theme_light);
+        g_colorizer_raw = cz.get();
+        wlx_core_install_for_task2(std::move(cz));
+        g_colorizer_handle = wlx_core_acquire();
     }
 }
 
@@ -177,7 +184,7 @@ static void do_layout(ViewState* vs) {
     lk.viewport_width_bucket = CacheService::bucket_width(static_cast<int>(viewport_width));
     lk.theme_hash = g_theme.theme_hash();
 
-    LayoutEngine engine(g_dwrite_factory.Get(), g_theme, vs->dark_mode, g_colorizer.get());
+    LayoutEngine engine(g_dwrite_factory.Get(), g_theme, vs->dark_mode, g_colorizer_raw);
     auto layout = std::make_shared<LayoutDocument>(engine.layout(*vs->document, viewport_width, vs->wrap_text));
 
     vs->layout = layout;
@@ -794,7 +801,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {
         (void)new ComPtr<ID2D1Factory>(std::move(g_d2d_factory));
         (void)new ComPtr<IDWriteFactory>(std::move(g_dwrite_factory));
         (void)new CacheService(std::move(g_cache));
-        (void)new std::unique_ptr<Colorizer>(std::move(g_colorizer));
         // ViewState* raw pointers in g_views are intentionally leaked —
         // their RenderEngine/LayoutDocument COM objects must not Release().
         g_views.clear();

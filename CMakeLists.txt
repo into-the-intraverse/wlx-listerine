@@ -67,6 +67,7 @@ add_library(wlx-listerine-core SHARED
     src/colorizer/helix_theme.cpp
     src/colorizer/grammar_registry.cpp
     src/colorizer/query_highlighter.cpp
+    src/colorizer/wlx_core_abi.cpp
 )
 
 target_include_directories(wlx-listerine-core
@@ -526,6 +527,7 @@ add_executable(colorizer-tests
     tests/test_colorizer_query_highlighter.cpp
     tests/test_colorizer_grammars.cpp
     tests/test_colorizer_routing.cpp
+    tests/test_wlx_core_abi.cpp
 )
 
 target_link_libraries(colorizer-tests PRIVATE
