@@ -182,6 +182,7 @@ LayoutDocument layout_source(IDWriteFactory* dwrite,
         uint32_t color = 0;
         uint32_t bg_color = 0;
         bool has_bg = false;
+        uint8_t modifiers = 0;
     };
     std::vector<std::vector<PerLineSpan>> line_spans(lines.size());
 
@@ -245,6 +246,7 @@ LayoutDocument layout_source(IDWriteFactory* dwrite,
                     pls.color       = sp.color;
                     pls.bg_color    = sp.bg_color;
                     pls.has_bg      = sp.has_bg;
+                    pls.modifiers   = sp.modifiers;
                     line_spans[li].push_back(pls);
                 }
             }
@@ -276,11 +278,12 @@ LayoutDocument layout_source(IDWriteFactory* dwrite,
             int exp_len = exp_end - exp_start;
             if (exp_len > 0) {
                 ColorRange cr;
-                cr.start    = static_cast<uint32_t>(exp_start);
-                cr.length   = static_cast<uint32_t>(exp_len);
-                cr.color    = pls.color;
-                cr.bg_color = pls.bg_color;
-                cr.has_bg   = pls.has_bg;
+                cr.start     = static_cast<uint32_t>(exp_start);
+                cr.length    = static_cast<uint32_t>(exp_len);
+                cr.color     = pls.color;
+                cr.bg_color  = pls.bg_color;
+                cr.has_bg    = pls.has_bg;
+                cr.modifiers = pls.modifiers;
                 color_ranges.push_back(cr);
             }
         }
