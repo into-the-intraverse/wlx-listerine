@@ -584,7 +584,7 @@ void LayoutEngine::layout_code_fence(const BlockNode& node, float& y, float left
                 }
 
                 if (wend > wstart) {
-                    color_ranges.push_back({wstart, wend - wstart, span.color});
+                    color_ranges.push_back({wstart, wend - wstart, span.color, 0, false, span.modifiers});
                 }
             }
         }
