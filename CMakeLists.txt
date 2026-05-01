@@ -83,7 +83,6 @@ target_compile_definitions(wlx-listerine-core PRIVATE WLX_CORE_BUILDING)
 set_target_properties(wlx-listerine-core PROPERTIES
     PREFIX ""
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/output"
-    LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/output"
 )
 
 # Mirror the DLL alongside test exes / screenshot_tool so they can find it on
