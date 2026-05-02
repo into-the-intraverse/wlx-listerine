@@ -171,9 +171,16 @@ Each file's contents:
 
 `tests/CMakeLists.txt` already has nothing today — the test target is declared in the root. Create `tests/CMakeLists.txt` with the same placeholder text.
 
-- [ ] **Step 3: Add `add_subdirectory()` calls to root `CMakeLists.txt`**
+- [ ] **Step 3: Hoist `find_package(tree-sitter)` and `include(grammars.cmake)`, then add `add_subdirectory()` calls**
 
-After the `find_package` calls and `include(cmake/grammars.cmake)`, before the existing `add_library(wlx-core …)`, add:
+After Task 0.1, the root looks like: `find_package(md4c)`, `find_package(tomlplusplus)` near the top (line ~35), then existing target definitions, then near line 252: `find_package(tree-sitter)` and `include(${CMAKE_SOURCE_DIR}/cmake/grammars.cmake)`. The existing targets sit between them.
+
+We want the *final* top-of-file order to be: all three `find_package` calls grouped, `include(grammars.cmake)` immediately after, the six `add_subdirectory()` calls below that, and existing target definitions begin only after the `add_subdirectory` block.
+
+Concretely:
+1. **Move `find_package(tree-sitter REQUIRED)`** up so it sits next to `find_package(md4c)` and `find_package(tomlplusplus)` — the three form a contiguous block. (`grammars.cmake` references `tree-sitter::tree-sitter`, so this find_package MUST run before the include — moving it up preserves the precondition.)
+2. **Move `include(${CMAKE_SOURCE_DIR}/cmake/grammars.cmake)`** up to immediately after the find_package block.
+3. **Add the six `add_subdirectory(...)` calls** immediately after the include:
 
 ```cmake
 add_subdirectory(src/runtime)
@@ -184,7 +191,11 @@ add_subdirectory(src/tools/screenshot)
 add_subdirectory(tests)
 ```
 
-The existing target declarations stay below; they'll be removed one-by-one in Phase 1 as their sources migrate.
+4. **Remove the now-empty section comment** (e.g., `# --- Grammar DLLs via FetchContent ---`) where the include used to live.
+
+The existing target declarations (`add_library(wlx-core STATIC ...)`, etc.) stay below; they'll be removed one-by-one in Phase 1 as their sources migrate.
+
+**Why the move:** at Phase 1's end-state the root has no targets, just `find_package` + `include(grammars.cmake)` + `add_subdirectory()` blocks. Hoisting the `include` and `find_package(tree-sitter)` here in Phase 0.2 puts that final structure in place early so Phase 1 commits only need to delete target blocks, not also reorder.
 
 - [ ] **Step 4: `BUILD_TEST_OK`**
 
