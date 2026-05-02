@@ -1,6 +1,6 @@
 #pragma once
 
-#include "document_model.h"
+#include "runtime/parser/document_model.h"
 #include <cstdint>
 #include <memory>
 #include <string>

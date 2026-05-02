@@ -3,10 +3,10 @@
 
 add_executable(tests
     ${CMAKE_SOURCE_DIR}/tests/test_main.cpp
-    ${CMAKE_SOURCE_DIR}/tests/test_document_model.cpp
+    runtime/parser/test_document_model.cpp
     ${CMAKE_SOURCE_DIR}/tests/test_theme_service.cpp
     runtime/io/test_file_service.cpp
-    ${CMAKE_SOURCE_DIR}/tests/test_markdown_parser.cpp
+    runtime/parser/test_markdown_parser.cpp
     ${CMAKE_SOURCE_DIR}/tests/test_cache_service.cpp
     ${CMAKE_SOURCE_DIR}/tests/test_layout_engine.cpp
     ${CMAKE_SOURCE_DIR}/tests/test_text_selection.cpp

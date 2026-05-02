@@ -21,7 +21,7 @@
 
 #include "listerplugin.h"
 #include "runtime/io/file_service.h"
-#include "markdown_parser.h"
+#include "runtime/parser/markdown_parser.h"
 #include "layout_engine.h"
 #include "render_engine.h"
 #include "interaction_engine.h"

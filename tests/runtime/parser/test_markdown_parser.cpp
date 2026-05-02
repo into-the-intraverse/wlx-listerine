@@ -1,5 +1,5 @@
 #include <doctest/doctest.h>
-#include "markdown_parser.h"
+#include "runtime/parser/markdown_parser.h"
 
 // Helper: parse a string literal (auto-computes length)
 static Document parse(const char* md) {
