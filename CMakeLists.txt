@@ -34,6 +34,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(md4c REQUIRED)
 find_package(tomlplusplus REQUIRED)
 
+include(${CMAKE_SOURCE_DIR}/cmake/grammars.cmake)
+
+add_subdirectory(src/runtime)
+add_subdirectory(src/core_dll)
+add_subdirectory(src/plugin_md)
+add_subdirectory(src/plugin_colorizer)
+add_subdirectory(src/tools/screenshot)
+add_subdirectory(tests)
+
 # --- Core static library ---
 add_library(wlx-core STATIC
     src/file_service.cpp
@@ -247,16 +256,6 @@ target_link_libraries(tests PRIVATE
     doctest::doctest
     comctl32
 )
-
-# --- Grammar DLLs via FetchContent ---
-include(${CMAKE_SOURCE_DIR}/cmake/grammars.cmake)
-
-add_subdirectory(src/runtime)
-add_subdirectory(src/core_dll)
-add_subdirectory(src/plugin_md)
-add_subdirectory(src/plugin_colorizer)
-add_subdirectory(src/tools/screenshot)
-add_subdirectory(tests)
 
 # --- Colorizer tests ---
 add_executable(colorizer-tests
