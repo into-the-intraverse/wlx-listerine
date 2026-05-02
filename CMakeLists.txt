@@ -251,6 +251,13 @@ target_link_libraries(tests PRIVATE
 # --- Grammar DLLs via FetchContent ---
 include(${CMAKE_SOURCE_DIR}/cmake/grammars.cmake)
 
+add_subdirectory(src/runtime)
+add_subdirectory(src/core_dll)
+add_subdirectory(src/plugin_md)
+add_subdirectory(src/plugin_colorizer)
+add_subdirectory(src/tools/screenshot)
+add_subdirectory(tests)
+
 # --- Colorizer tests ---
 add_executable(colorizer-tests
     tests/test_main.cpp
