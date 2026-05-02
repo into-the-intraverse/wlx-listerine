@@ -22,7 +22,7 @@
 #include <vector>
 
 #include "listerplugin.h"
-#include "file_service.h"
+#include "runtime/io/file_service.h"
 #include "render_engine.h"
 #include "search_engine.h"
 #include "search_ops.h"

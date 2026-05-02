@@ -34,6 +34,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(md4c REQUIRED)
 find_package(tomlplusplus REQUIRED)
 find_package(tree-sitter REQUIRED)
+find_package(doctest REQUIRED)
 
 include(${CMAKE_SOURCE_DIR}/cmake/grammars.cmake)
 
@@ -43,31 +44,6 @@ add_subdirectory(src/plugin_md)
 add_subdirectory(src/plugin_colorizer)
 add_subdirectory(src/tools/screenshot)
 add_subdirectory(tests)
-
-# --- Core static library ---
-add_library(wlx-core STATIC
-    src/file_service.cpp
-    src/markdown_parser.cpp
-    src/layout_engine.cpp
-    src/render_engine.cpp
-    src/interaction_engine.cpp
-    src/theme_service.cpp
-    src/cache_service.cpp
-    src/text_selection.cpp
-    src/search_engine.cpp
-    src/search_hud_painter.cpp
-)
-
-target_include_directories(wlx-core PUBLIC include src src/colorizer)
-target_link_libraries(wlx-core
-    PUBLIC
-        md4c::md4c
-        d2d1
-        dwrite
-        wlx-listerine-core
-    PRIVATE
-        tomlplusplus::tomlplusplus
-)
 
 # --- Core shared library (wlx-listerine-core.dll) ---
 add_library(wlx-listerine-core SHARED
@@ -229,48 +205,4 @@ target_link_libraries(screenshot_tool PRIVATE
     wlx-core
     windowscodecs
     ole32
-)
-
-# --- Tests ---
-find_package(doctest REQUIRED)
-
-add_executable(tests
-    tests/test_main.cpp
-    tests/test_document_model.cpp
-    tests/test_theme_service.cpp
-    tests/test_file_service.cpp
-    tests/test_markdown_parser.cpp
-    tests/test_cache_service.cpp
-    tests/test_layout_engine.cpp
-    tests/test_text_selection.cpp
-    tests/test_search_engine.cpp
-    tests/test_search_ops.cpp
-    tests/test_wlx_host_common.cpp
-    tests/test_search_counter_format.cpp
-    tests/test_search_hud_painter.cpp
-)
-
-target_link_libraries(tests PRIVATE
-    wlx-core
-    doctest::doctest
-    comctl32
-)
-
-# --- Colorizer tests ---
-add_executable(colorizer-tests
-    tests/test_main.cpp
-    tests/test_colorizer.cpp
-    tests/test_colorizer_helix_theme.cpp
-    tests/test_colorizer_grammar.cpp
-    tests/test_colorizer_query_highlighter.cpp
-    tests/test_colorizer_grammars.cpp
-    tests/test_colorizer_routing.cpp
-    tests/test_wlx_core_abi.cpp
-    tests/test_core_config.cpp
-    tests/test_grammar_cache.cpp
-)
-
-target_link_libraries(colorizer-tests PRIVATE
-    wlx-listerine-core
-    doctest::doctest
 )
