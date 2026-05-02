@@ -1,6 +1,6 @@
 #include <doctest/doctest.h>
 #include "search_engine.h"
-#include "layout_engine.h"
+#include "runtime/layout/layout_engine.h"
 
 static LayoutDocument make_layout(std::initializer_list<std::wstring> block_texts) {
     LayoutDocument doc;

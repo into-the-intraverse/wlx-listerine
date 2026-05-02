@@ -22,7 +22,7 @@
 #include "listerplugin.h"
 #include "runtime/io/file_service.h"
 #include "runtime/parser/markdown_parser.h"
-#include "layout_engine.h"
+#include "runtime/layout/layout_engine.h"
 #include "render_engine.h"
 #include "interaction_engine.h"
 #include "theme_service.h"

@@ -4,7 +4,7 @@
 add_library(wlx-core STATIC
     io/file_service.cpp
     parser/markdown_parser.cpp
-    ${CMAKE_SOURCE_DIR}/src/layout_engine.cpp
+    layout/layout_engine.cpp
     ${CMAKE_SOURCE_DIR}/src/render_engine.cpp
     ${CMAKE_SOURCE_DIR}/src/interaction_engine.cpp
     ${CMAKE_SOURCE_DIR}/src/theme_service.cpp
