@@ -33,6 +33,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(md4c REQUIRED)
 find_package(tomlplusplus REQUIRED)
+find_package(tree-sitter REQUIRED)
 
 include(${CMAKE_SOURCE_DIR}/cmake/grammars.cmake)
 
@@ -69,8 +70,6 @@ target_link_libraries(wlx-core
 )
 
 # --- Core shared library (wlx-listerine-core.dll) ---
-find_package(tree-sitter REQUIRED)
-
 add_library(wlx-listerine-core SHARED
     src/colorizer/colorizer.cpp
     src/colorizer/helix_theme.cpp
