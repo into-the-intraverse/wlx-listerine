@@ -1,5 +1,5 @@
 #include <doctest/doctest.h>
-#include "cache_service.h"
+#include "runtime/cache/cache_service.h"
 
 TEST_CASE("Viewport width bucketing") {
     CHECK(CacheService::bucket_width(0) == 0);

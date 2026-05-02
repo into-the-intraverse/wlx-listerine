@@ -8,7 +8,7 @@ add_library(wlx-core STATIC
     render/render_engine.cpp
     ${CMAKE_SOURCE_DIR}/src/interaction_engine.cpp
     ${CMAKE_SOURCE_DIR}/src/theme_service.cpp
-    ${CMAKE_SOURCE_DIR}/src/cache_service.cpp
+    cache/cache_service.cpp
     ${CMAKE_SOURCE_DIR}/src/text_selection.cpp
     ${CMAKE_SOURCE_DIR}/src/search_engine.cpp
     ${CMAKE_SOURCE_DIR}/src/search_hud_painter.cpp
