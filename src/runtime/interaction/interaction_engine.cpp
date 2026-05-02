@@ -1,4 +1,4 @@
-#include "interaction_engine.h"
+#include "runtime/interaction/interaction_engine.h"
 
 InteractionEngine::InteractionEngine(const LayoutDocument& layout)
     : layout_(layout) {}

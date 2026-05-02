@@ -6,10 +6,10 @@ add_library(wlx-core STATIC
     parser/markdown_parser.cpp
     layout/layout_engine.cpp
     render/render_engine.cpp
-    ${CMAKE_SOURCE_DIR}/src/interaction_engine.cpp
+    interaction/interaction_engine.cpp
     theme/theme_service.cpp
     cache/cache_service.cpp
-    ${CMAKE_SOURCE_DIR}/src/text_selection.cpp
+    interaction/text_selection.cpp
     ${CMAKE_SOURCE_DIR}/src/search_engine.cpp
     ${CMAKE_SOURCE_DIR}/src/search_hud_painter.cpp
 )

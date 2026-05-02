@@ -9,7 +9,7 @@ add_executable(tests
     runtime/parser/test_markdown_parser.cpp
     runtime/cache/test_cache_service.cpp
     runtime/layout/test_layout_engine.cpp
-    ${CMAKE_SOURCE_DIR}/tests/test_text_selection.cpp
+    runtime/interaction/test_text_selection.cpp
     ${CMAKE_SOURCE_DIR}/tests/test_search_engine.cpp
     ${CMAKE_SOURCE_DIR}/tests/test_search_ops.cpp
     ${CMAKE_SOURCE_DIR}/tests/test_wlx_host_common.cpp
