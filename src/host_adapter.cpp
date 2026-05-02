@@ -25,7 +25,7 @@
 #include "runtime/layout/layout_engine.h"
 #include "runtime/render/render_engine.h"
 #include "interaction_engine.h"
-#include "theme_service.h"
+#include "runtime/theme/theme_service.h"
 #include "runtime/cache/cache_service.h"
 #include "wlx_core/abi.h"
 #include "search_engine.h"

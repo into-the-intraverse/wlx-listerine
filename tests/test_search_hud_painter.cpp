@@ -1,6 +1,6 @@
 #include <doctest/doctest.h>
 #include "search_hud_painter.h"
-#include "theme_service.h"
+#include "runtime/theme/theme_service.h"
 
 #include <dwrite.h>
 #include <wrl/client.h>

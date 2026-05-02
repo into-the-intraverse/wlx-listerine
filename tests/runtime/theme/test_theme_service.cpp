@@ -1,5 +1,5 @@
 #include <doctest/doctest.h>
-#include "theme_service.h"
+#include "runtime/theme/theme_service.h"
 #include <fstream>
 #include <cmath>
 #include <cstdio>

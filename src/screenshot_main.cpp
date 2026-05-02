@@ -20,7 +20,7 @@
 #include "runtime/parser/markdown_parser.h"
 #include "runtime/layout/layout_engine.h"
 #include "runtime/render/render_engine.h"
-#include "theme_service.h"
+#include "runtime/theme/theme_service.h"
 #include "wlx_core/abi.h"
 #include "search_engine.h"
 #include "search_hud_painter.h"

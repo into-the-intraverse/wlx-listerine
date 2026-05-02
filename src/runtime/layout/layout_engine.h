@@ -1,7 +1,7 @@
 #pragma once
 
 #include "runtime/parser/document_model.h"
-#include "theme_service.h"
+#include "runtime/theme/theme_service.h"
 #include "text_modifiers.h"
 #include "wlx_core/abi.h"
 

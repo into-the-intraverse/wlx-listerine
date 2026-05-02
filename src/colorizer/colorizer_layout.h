@@ -2,7 +2,7 @@
 
 #include "colorizer.h"
 #include "runtime/layout/layout_engine.h"
-#include "theme_service.h"
+#include "runtime/theme/theme_service.h"
 
 #include <dwrite.h>
 #include <string>

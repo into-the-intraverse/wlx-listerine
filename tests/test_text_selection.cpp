@@ -1,7 +1,7 @@
 #include <doctest/doctest.h>
 #include "runtime/layout/layout_engine.h"
 #include "runtime/parser/markdown_parser.h"
-#include "theme_service.h"
+#include "runtime/theme/theme_service.h"
 
 #include <d2d1.h>
 #include <dwrite.h>

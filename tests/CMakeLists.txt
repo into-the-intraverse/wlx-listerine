@@ -4,7 +4,7 @@
 add_executable(tests
     ${CMAKE_SOURCE_DIR}/tests/test_main.cpp
     runtime/parser/test_document_model.cpp
-    ${CMAKE_SOURCE_DIR}/tests/test_theme_service.cpp
+    runtime/theme/test_theme_service.cpp
     runtime/io/test_file_service.cpp
     runtime/parser/test_markdown_parser.cpp
     runtime/cache/test_cache_service.cpp
