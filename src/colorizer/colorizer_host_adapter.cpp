@@ -24,15 +24,15 @@
 #include "listerplugin.h"
 #include "runtime/io/file_service.h"
 #include "runtime/render/render_engine.h"
-#include "search_engine.h"
-#include "search_ops.h"
+#include "runtime/search/search_engine.h"
+#include "runtime/search/search_ops.h"
 #include "runtime/theme/theme_service.h"
 #include "string_util.h"
 #include "wlx_core/abi.h"
 #include "colorizer.h"  // ColorizeResult / ColorSpan still used by ColorViewState
 #include "colorizer_layout.h"
 #include "colorizer_routing.h"
-#include "search_hud.h"
+#include "runtime/search/search_hud.h"
 #include "wlx_host_common.h"
 
 #include <toml++/toml.hpp>

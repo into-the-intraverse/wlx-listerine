@@ -1,6 +1,6 @@
 #include <doctest/doctest.h>
-#include "search_ops.h"
-#include "search_engine.h"
+#include "runtime/search/search_ops.h"
+#include "runtime/search/search_engine.h"
 #include "runtime/layout/layout_engine.h"
 
 namespace {

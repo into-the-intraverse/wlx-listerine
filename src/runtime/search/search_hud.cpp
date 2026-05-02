@@ -8,7 +8,7 @@
 #define _UNICODE
 #endif
 
-#include "search_hud.h"
+#include "runtime/search/search_hud.h"
 #include "wlx_trace.h"
 
 #include <windowsx.h>

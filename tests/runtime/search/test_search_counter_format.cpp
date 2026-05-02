@@ -1,5 +1,5 @@
 #include <doctest/doctest.h>
-#include "search_counter_format.h"
+#include "runtime/search/search_counter_format.h"
 
 TEST_CASE("format_counter") {
     SUBCASE("normal match") {

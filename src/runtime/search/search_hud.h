@@ -4,7 +4,7 @@
 #define NOMINMAX
 #endif
 
-#include "search_hud_painter.h"
+#include "runtime/search/search_hud_painter.h"
 
 #include <windows.h>
 #include <d2d1.h>

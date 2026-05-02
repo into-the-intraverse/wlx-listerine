@@ -1,5 +1,5 @@
-#include "search_hud_painter.h"
-#include "search_counter_format.h"
+#include "runtime/search/search_hud_painter.h"
+#include "runtime/search/search_counter_format.h"
 
 #include <cmath>
 

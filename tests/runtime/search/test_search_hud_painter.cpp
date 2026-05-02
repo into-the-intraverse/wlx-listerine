@@ -1,5 +1,5 @@
 #include <doctest/doctest.h>
-#include "search_hud_painter.h"
+#include "runtime/search/search_hud_painter.h"
 #include "runtime/theme/theme_service.h"
 
 #include <dwrite.h>

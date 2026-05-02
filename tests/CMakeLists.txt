@@ -10,11 +10,11 @@ add_executable(tests
     runtime/cache/test_cache_service.cpp
     runtime/layout/test_layout_engine.cpp
     runtime/interaction/test_text_selection.cpp
-    ${CMAKE_SOURCE_DIR}/tests/test_search_engine.cpp
-    ${CMAKE_SOURCE_DIR}/tests/test_search_ops.cpp
+    runtime/search/test_search_engine.cpp
+    runtime/search/test_search_ops.cpp
     ${CMAKE_SOURCE_DIR}/tests/test_wlx_host_common.cpp
-    ${CMAKE_SOURCE_DIR}/tests/test_search_counter_format.cpp
-    ${CMAKE_SOURCE_DIR}/tests/test_search_hud_painter.cpp
+    runtime/search/test_search_counter_format.cpp
+    runtime/search/test_search_hud_painter.cpp
 )
 
 target_link_libraries(tests PRIVATE

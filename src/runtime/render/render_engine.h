@@ -1,7 +1,7 @@
 #pragma once
 
 #include "runtime/layout/layout_engine.h"
-#include "search_engine.h"
+#include "runtime/search/search_engine.h"
 #include "runtime/theme/theme_service.h"
 
 #include <d2d1.h>

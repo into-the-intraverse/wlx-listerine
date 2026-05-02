@@ -22,8 +22,8 @@
 #include "runtime/render/render_engine.h"
 #include "runtime/theme/theme_service.h"
 #include "wlx_core/abi.h"
-#include "search_engine.h"
-#include "search_hud_painter.h"
+#include "runtime/search/search_engine.h"
+#include "runtime/search/search_hud_painter.h"
 
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;

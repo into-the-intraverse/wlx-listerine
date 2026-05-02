@@ -10,8 +10,8 @@ add_library(wlx-core STATIC
     theme/theme_service.cpp
     cache/cache_service.cpp
     interaction/text_selection.cpp
-    ${CMAKE_SOURCE_DIR}/src/search_engine.cpp
-    ${CMAKE_SOURCE_DIR}/src/search_hud_painter.cpp
+    search/search_engine.cpp
+    search/search_hud_painter.cpp
 )
 
 target_include_directories(wlx-core PUBLIC

@@ -28,9 +28,9 @@
 #include "runtime/theme/theme_service.h"
 #include "runtime/cache/cache_service.h"
 #include "wlx_core/abi.h"
-#include "search_engine.h"
-#include "search_ops.h"
-#include "search_hud.h"
+#include "runtime/search/search_engine.h"
+#include "runtime/search/search_ops.h"
+#include "runtime/search/search_hud.h"
 #include "wlx_host_common.h"
 
 #define WLX_TRACE_TAG L"wlx-md"

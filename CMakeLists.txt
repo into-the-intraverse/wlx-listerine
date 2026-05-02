@@ -112,7 +112,7 @@ add_custom_command(TARGET wlx-listerine-core POST_BUILD
 # --- Plugin DLL ---
 add_library(wlx-listerine-md SHARED
     src/host_adapter.cpp
-    src/search_hud.cpp
+    src/runtime/search/search_hud.cpp
     src/plugin.def
     "${CMAKE_BINARY_DIR}/generated/resource.rc"
 )
@@ -143,7 +143,7 @@ endif()
 add_library(wlx-listerine-colorizer SHARED
     src/colorizer/colorizer_host_adapter.cpp
     src/colorizer/colorizer_layout.cpp
-    src/search_hud.cpp
+    src/runtime/search/search_hud.cpp
     src/colorizer/colorizer_plugin.def
     "${CMAKE_BINARY_DIR}/generated/colorizer_resource.rc"
 )
