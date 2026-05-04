@@ -1,6 +1,6 @@
 #define NOMINMAX
 #include "helix_theme.h"
-#include "string_util.h"
+#include "runtime/util/string_util.h"
 #include <toml++/toml.hpp>
 #include <algorithm>
 #include <set>

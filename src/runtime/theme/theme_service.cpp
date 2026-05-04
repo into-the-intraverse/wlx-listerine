@@ -1,5 +1,5 @@
 #include "runtime/theme/theme_service.h"
-#include "string_util.h"
+#include "runtime/util/string_util.h"
 #include <toml++/toml.hpp>
 #include <functional>
 

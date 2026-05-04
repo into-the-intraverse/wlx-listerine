@@ -27,7 +27,7 @@
 #include "runtime/search/search_engine.h"
 #include "runtime/search/search_ops.h"
 #include "runtime/theme/theme_service.h"
-#include "string_util.h"
+#include "runtime/util/string_util.h"
 #include "wlx_core/abi.h"
 #include "colorizer.h"  // ColorizeResult / ColorSpan still used by ColorViewState
 #include "colorizer_layout.h"
