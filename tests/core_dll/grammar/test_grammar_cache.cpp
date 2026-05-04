@@ -1,5 +1,5 @@
 #include <doctest/doctest.h>
-#include "grammar_cache.h"
+#include "core_dll/grammar/grammar_cache.h"
 
 #include <chrono>
 #include <memory>

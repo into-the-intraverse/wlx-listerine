@@ -1,7 +1,7 @@
 #pragma once
 
 #include "wlx_core/abi.h"
-#include "grammar_cache.h"
+#include "core_dll/grammar/grammar_cache.h"
 #include <chrono>
 #include <string>
 #include <vector>

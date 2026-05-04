@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 #include <memory>
-#include "helix_theme.h"
+#include "core_dll/theme/helix_theme.h"
 
 struct WLX_CORE_API ColorSpan {
     uint32_t start = 0;       // byte offset in UTF-8 source

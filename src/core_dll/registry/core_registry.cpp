@@ -1,5 +1,5 @@
 #define NOMINMAX
-#include "core_registry.h"
+#include "core_dll/registry/core_registry.h"
 
 #include <windows.h>
 

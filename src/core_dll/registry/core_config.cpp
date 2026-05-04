@@ -1,4 +1,4 @@
-#include "core_config.h"
+#include "core_dll/registry/core_config.h"
 #define NOMINMAX
 #include <windows.h>
 #include <toml++/toml.hpp>

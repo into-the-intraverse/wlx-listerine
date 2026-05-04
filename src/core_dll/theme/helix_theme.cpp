@@ -1,5 +1,5 @@
 #define NOMINMAX
-#include "helix_theme.h"
+#include "core_dll/theme/helix_theme.h"
 #include "runtime/util/string_util.h"
 #include <toml++/toml.hpp>
 #include <algorithm>

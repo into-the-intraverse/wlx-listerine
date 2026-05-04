@@ -1,6 +1,6 @@
-#include "colorizer.h"
-#include "grammar_registry.h"
-#include "query_highlighter.h"
+#include "core_dll/colorizer/colorizer.h"
+#include "core_dll/grammar/grammar_registry.h"
+#include "core_dll/highlighting/query_highlighter.h"
 
 #include <tree_sitter/api.h>
 #include <chrono>

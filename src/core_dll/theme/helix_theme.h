@@ -2,7 +2,7 @@
 
 #include "wlx_core/abi.h"
 
-#include "../text_modifiers.h"
+#include "text_modifiers.h"
 
 #include <cstdint>
 #include <filesystem>

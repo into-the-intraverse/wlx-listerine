@@ -3,8 +3,8 @@
 #include "wlx_core/abi.h"
 
 #include <tree_sitter/api.h>
-#include "colorizer.h"
-#include "helix_theme.h"
+#include "core_dll/colorizer/colorizer.h"
+#include "core_dll/theme/helix_theme.h"
 #include <vector>
 
 class WLX_CORE_API QueryHighlighter {

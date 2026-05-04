@@ -25,15 +25,19 @@ target_link_libraries(tests PRIVATE
 
 add_executable(colorizer-tests
     ${CMAKE_SOURCE_DIR}/tests/test_main.cpp
-    ${CMAKE_SOURCE_DIR}/tests/test_colorizer.cpp
-    ${CMAKE_SOURCE_DIR}/tests/test_colorizer_helix_theme.cpp
-    ${CMAKE_SOURCE_DIR}/tests/test_colorizer_grammar.cpp
-    ${CMAKE_SOURCE_DIR}/tests/test_colorizer_query_highlighter.cpp
-    ${CMAKE_SOURCE_DIR}/tests/test_colorizer_grammars.cpp
+    core_dll/colorizer/test_colorizer.cpp
+    core_dll/theme/test_colorizer_helix_theme.cpp
+    core_dll/grammar/test_colorizer_grammar.cpp
+    core_dll/highlighting/test_colorizer_query_highlighter.cpp
+    core_dll/grammar/test_colorizer_grammars.cpp
     ${CMAKE_SOURCE_DIR}/tests/test_colorizer_routing.cpp
-    ${CMAKE_SOURCE_DIR}/tests/test_wlx_core_abi.cpp
-    ${CMAKE_SOURCE_DIR}/tests/test_core_config.cpp
-    ${CMAKE_SOURCE_DIR}/tests/test_grammar_cache.cpp
+    core_dll/abi/test_wlx_core_abi.cpp
+    core_dll/registry/test_core_config.cpp
+    core_dll/grammar/test_grammar_cache.cpp
+)
+
+target_include_directories(colorizer-tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/colorizer
 )
 
 target_link_libraries(colorizer-tests PRIVATE

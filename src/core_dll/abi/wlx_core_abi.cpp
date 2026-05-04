@@ -2,7 +2,7 @@
 // redefine here.
 
 #include "wlx_core/abi.h"
-#include "core_registry.h"
+#include "core_dll/registry/core_registry.h"
 
 #include <cstdlib>
 #include <cstring>

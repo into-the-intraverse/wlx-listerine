@@ -1,5 +1,5 @@
 #include "runtime/layout/layout_engine.h"
-#include "colorizer.h"  // ColorSpan / ColorizeResult definitions
+#include "core_dll/colorizer/colorizer.h"  // ColorSpan / ColorizeResult definitions
 
 #ifndef NOMINMAX
 #define NOMINMAX

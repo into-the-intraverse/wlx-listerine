@@ -1,6 +1,6 @@
 #include <doctest/doctest.h>
 #include <filesystem>
-#include "grammar_registry.h"
+#include "core_dll/grammar/grammar_registry.h"
 
 static bool has_c_grammar() {
     return std::filesystem::exists("grammars/c/tree-sitter-c.dll");

@@ -1,6 +1,6 @@
 #include <doctest/doctest.h>
 #include <filesystem>
-#include "colorizer.h"
+#include "core_dll/colorizer/colorizer.h"
 #include "colorizer_layout.h"
 #include "colorizer_routing.h"
 

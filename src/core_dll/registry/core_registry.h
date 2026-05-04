@@ -1,8 +1,8 @@
 #pragma once
 
-#include "colorizer.h"
-#include "core_config.h"
-#include "helix_theme.h"
+#include "core_dll/colorizer/colorizer.h"
+#include "core_dll/registry/core_config.h"
+#include "core_dll/theme/helix_theme.h"
 #include <memory>
 #include <mutex>
 #include <string>

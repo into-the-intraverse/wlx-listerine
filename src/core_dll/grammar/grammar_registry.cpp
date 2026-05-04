@@ -1,5 +1,5 @@
 #define NOMINMAX
-#include "grammar_registry.h"
+#include "core_dll/grammar/grammar_registry.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>

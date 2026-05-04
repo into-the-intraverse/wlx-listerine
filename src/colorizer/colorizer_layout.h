@@ -1,6 +1,6 @@
 #pragma once
 
-#include "colorizer.h"
+#include "core_dll/colorizer/colorizer.h"
 #include "runtime/layout/layout_engine.h"
 #include "runtime/theme/theme_service.h"
 

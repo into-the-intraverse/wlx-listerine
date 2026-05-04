@@ -1,5 +1,5 @@
 #include <doctest/doctest.h>
-#include "helix_theme.h"
+#include "core_dll/theme/helix_theme.h"
 #include <fstream>
 #include <filesystem>
 #include <cstdio>

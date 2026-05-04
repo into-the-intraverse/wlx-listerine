@@ -1,5 +1,5 @@
 #define NOMINMAX
-#include "grammar_cache.h"
+#include "core_dll/grammar/grammar_cache.h"
 #include <algorithm>
 #include <sstream>
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include "colorizer.h"
+#include "core_dll/colorizer/colorizer.h"
 #include "colorizer_layout.h"
 #include "wlx_core/abi.h"
 

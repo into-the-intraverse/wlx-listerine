@@ -3,7 +3,7 @@
 #include <filesystem>
 #include <string>
 #include <set>
-#include "colorizer.h"
+#include "core_dll/colorizer/colorizer.h"
 
 // Helper: verify that colorize() produces non-empty, sorted, non-overlapping spans.
 static void verify_colorize(Colorizer& c, const std::string& source,

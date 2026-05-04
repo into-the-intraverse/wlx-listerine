@@ -1,6 +1,6 @@
 #include <doctest/doctest.h>
 #include <filesystem>
-#include "colorizer.h"
+#include "core_dll/colorizer/colorizer.h"
 
 TEST_CASE("Colorizer with no grammar dir returns empty result") {
     Colorizer c(L"nonexistent", L"nonexistent");

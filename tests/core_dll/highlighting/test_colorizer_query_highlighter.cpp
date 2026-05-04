@@ -1,8 +1,8 @@
 #include <doctest/doctest.h>
 #include <filesystem>
-#include "query_highlighter.h"
-#include "grammar_registry.h"
-#include "helix_theme.h"
+#include "core_dll/highlighting/query_highlighter.h"
+#include "core_dll/grammar/grammar_registry.h"
+#include "core_dll/theme/helix_theme.h"
 
 // ---------------------------------------------------------------------------
 // Null-safety tests

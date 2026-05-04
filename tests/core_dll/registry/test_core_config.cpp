@@ -1,5 +1,5 @@
 #include <doctest/doctest.h>
-#include "core_config.h"
+#include "core_dll/registry/core_config.h"
 #include <fstream>
 #include <filesystem>
 #include <string>

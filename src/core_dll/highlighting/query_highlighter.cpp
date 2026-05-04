@@ -1,4 +1,4 @@
-#include "query_highlighter.h"
+#include "core_dll/highlighting/query_highlighter.h"
 #include <algorithm>
 #include <regex>
 #include <string>
