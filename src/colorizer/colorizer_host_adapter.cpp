@@ -33,7 +33,7 @@
 #include "colorizer_layout.h"
 #include "colorizer_routing.h"
 #include "runtime/search/search_hud.h"
-#include "wlx_host_common.h"
+#include "runtime/host/wlx_host_common.h"
 
 #include <toml++/toml.hpp>
 
