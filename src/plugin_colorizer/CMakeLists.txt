@@ -11,7 +11,6 @@ add_library(wlx-listerine-colorizer SHARED
 
 target_include_directories(wlx-listerine-colorizer PRIVATE
     ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/src/plugin_colorizer/resource
 )
 
 target_link_libraries(wlx-listerine-colorizer PRIVATE

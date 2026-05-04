@@ -1,6 +1,6 @@
 // Generated from colorizer_resource.rc.in — do not edit. Source of truth: WLX_VERSION (CMakeLists.txt).
 #include <winver.h>
-#include "colorizer_resource.h"
+#include "plugin_colorizer/resource/colorizer_resource.h"
 
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION @WLX_VERSION_MAJOR@,@WLX_VERSION_MINOR@,@WLX_VERSION_PATCH@,0
