@@ -30,8 +30,8 @@
 #include "runtime/util/string_util.h"
 #include "wlx_core/abi.h"
 #include "core_dll/colorizer/colorizer.h"  // ColorizeResult / ColorSpan still used by ColorViewState
-#include "colorizer_layout.h"
-#include "colorizer_routing.h"
+#include "plugin_colorizer/layout/colorizer_layout.h"
+#include "plugin_colorizer/language/routing.h"
 #include "runtime/search/search_hud.h"
 #include "runtime/host/wlx_host_common.h"
 

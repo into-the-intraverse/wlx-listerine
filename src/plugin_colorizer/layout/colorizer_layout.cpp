@@ -2,7 +2,7 @@
 #define NOMINMAX
 #endif
 
-#include "colorizer_layout.h"
+#include "plugin_colorizer/layout/colorizer_layout.h"
 
 #include <algorithm>
 #include <cstring>

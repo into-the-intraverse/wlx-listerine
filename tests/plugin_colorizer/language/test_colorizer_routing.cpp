@@ -1,8 +1,8 @@
 #include <doctest/doctest.h>
 #include <filesystem>
 #include "core_dll/colorizer/colorizer.h"
-#include "colorizer_layout.h"
-#include "colorizer_routing.h"
+#include "plugin_colorizer/layout/colorizer_layout.h"
+#include "plugin_colorizer/language/routing.h"
 
 namespace fs = std::filesystem;
 

@@ -2,7 +2,7 @@
 
 #include <string>
 #include "core_dll/colorizer/colorizer.h"
-#include "colorizer_layout.h"
+#include "plugin_colorizer/layout/colorizer_layout.h"
 #include "wlx_core/abi.h"
 
 // Pure routing primitive: when the user opts into the Unreal C++ grammar via
