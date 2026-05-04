@@ -9,7 +9,7 @@
 #endif
 
 #include "runtime/search/search_hud.h"
-#include "wlx_trace.h"
+#include "runtime/diagnostics/wlx_trace.h"
 
 #include <windowsx.h>
 #include <algorithm>

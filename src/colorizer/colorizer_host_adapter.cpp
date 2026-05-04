@@ -38,7 +38,7 @@
 #include <toml++/toml.hpp>
 
 #define WLX_TRACE_TAG L"wlx-clr"
-#include "wlx_trace.h"
+#include "runtime/diagnostics/wlx_trace.h"
 
 using Microsoft::WRL::ComPtr;
 

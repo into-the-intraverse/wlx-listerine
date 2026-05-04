@@ -34,7 +34,7 @@
 #include "runtime/host/wlx_host_common.h"
 
 #define WLX_TRACE_TAG L"wlx-md"
-#include "wlx_trace.h"
+#include "runtime/diagnostics/wlx_trace.h"
 
 using Microsoft::WRL::ComPtr;
 
