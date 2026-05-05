@@ -38,6 +38,7 @@
 #include "runtime/host/hit_test.h"
 #include "runtime/host/host_integration.h"
 #include "runtime/host/module_path.h"
+#include "runtime/host/window_class.h"
 
 #define WLX_TRACE_TAG L"wlx-md"
 #include "runtime/diagnostics/wlx_trace.h"
@@ -679,16 +680,8 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
 static void ensure_window_class() {
     if (g_window_class) return;
-
-    WNDCLASSEXW wc = {};
-    wc.cbSize = sizeof(wc);
-    wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
-    wc.lpfnWndProc = ViewWndProc;
-    wc.hInstance = g_hModule;
-    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    wc.hbrBackground = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
-    wc.lpszClassName = L"WlxListerineMdView";
-    g_window_class = RegisterClassExW(&wc);
+    g_window_class = wlx::runtime::host::ensure_window_class(
+        g_hModule, L"WlxListerineMdView", ViewWndProc);
 }
 
 }  // namespace wlx::plugin_md::window

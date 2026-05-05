@@ -17,6 +17,7 @@ add_library(wlx-core STATIC
     host/factories.cpp
     host/hit_test.cpp
     host/module_path.cpp
+    host/window_class.cpp
 )
 
 target_include_directories(wlx-core PUBLIC

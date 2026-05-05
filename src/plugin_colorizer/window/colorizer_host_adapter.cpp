@@ -41,6 +41,7 @@
 #include "runtime/host/hit_test.h"
 #include "runtime/host/host_integration.h"
 #include "runtime/host/module_path.h"
+#include "runtime/host/window_class.h"
 
 #include <toml++/toml.hpp>
 
@@ -879,16 +880,8 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
 
 static void ensure_window_class() {
     if (g_window_class) return;
-
-    WNDCLASSEXW wc = {};
-    wc.cbSize = sizeof(wc);
-    wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
-    wc.lpfnWndProc = ColorViewWndProc;
-    wc.hInstance = g_hModule;
-    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    wc.hbrBackground = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
-    wc.lpszClassName = L"WlxListerineColorView";
-    g_window_class = RegisterClassExW(&wc);
+    g_window_class = wlx::runtime::host::ensure_window_class(
+        g_hModule, L"WlxListerineColorView", ColorViewWndProc);
 }
 
 }  // namespace wlx::plugin_colorizer::window
