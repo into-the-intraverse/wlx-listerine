@@ -3,7 +3,7 @@
 #include "runtime/layout/layout_block.h"
 #include "runtime/layout/layout_document.h"
 #include "runtime/layout/text_position.h"
-#include "runtime/search/search_engine.h"
+#include "runtime/search/search_match.h"
 #include "runtime/theme/theme_service.h"
 
 #include <d2d1.h>

@@ -2,7 +2,7 @@
 #define NOMINMAX
 #endif
 
-#include "runtime/search/search_engine.h"
+#include "runtime/search/search_index.h"
 
 #include <windows.h>
 #include <algorithm>

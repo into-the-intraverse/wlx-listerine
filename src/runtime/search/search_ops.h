@@ -1,6 +1,6 @@
 #pragma once
 
-#include "runtime/search/search_engine.h"
+#include "runtime/search/search_index.h"
 #include "runtime/layout/layout_document.h"
 
 #include <concepts>

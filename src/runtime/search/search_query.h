@@ -1,15 +1,6 @@
 #pragma once
 
-#include "runtime/layout/layout_document.h"
-
 #include <string>
-#include <vector>
-
-struct SearchMatch {
-    int block_index = -1;
-    int char_start = 0;  // offset into block's flattened text (UTF-16 code units)
-    int char_end = 0;
-};
 
 struct SearchQuery {
     std::wstring needle;
@@ -25,15 +16,3 @@ inline bool operator==(const SearchQuery& a, const SearchQuery& b) {
     // `backwards` intentionally excluded — it controls advancement, not results
 }
 inline bool operator!=(const SearchQuery& a, const SearchQuery& b) { return !(a == b); }
-
-class SearchIndex {
-public:
-    void build(const LayoutDocument& layout);
-    std::vector<SearchMatch> find_all(const SearchQuery& q) const;
-    bool empty() const { return flat_.empty(); }
-
-private:
-    std::wstring flat_;
-    std::wstring flat_lower_;
-    std::vector<int> block_starts_;
-};

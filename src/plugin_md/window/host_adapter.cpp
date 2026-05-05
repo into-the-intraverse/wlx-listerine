@@ -28,7 +28,7 @@
 #include "runtime/theme/theme_service.h"
 #include "runtime/cache/cache_service.h"
 #include "wlx_core/abi.h"
-#include "runtime/search/search_engine.h"
+#include "runtime/search/search_index.h"
 #include "runtime/search/search_ops.h"
 #include "runtime/search/search_hud.h"
 #include "runtime/host/wlx_host_common.h"

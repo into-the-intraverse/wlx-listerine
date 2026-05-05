@@ -25,7 +25,7 @@
 #include "runtime/io/file_service.h"
 #include "runtime/layout/layout_engine.h"
 #include "runtime/render/render_engine.h"
-#include "runtime/search/search_engine.h"
+#include "runtime/search/search_index.h"
 #include "runtime/search/search_ops.h"
 #include "runtime/theme/theme_service.h"
 #include "runtime/util/string_util.h"
