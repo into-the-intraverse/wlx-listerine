@@ -13,6 +13,7 @@ add_library(wlx-core STATIC
     search/search_index.cpp
     search/search_hud_painter.cpp
     host/dark_mode.cpp
+    host/module_path.cpp
 )
 
 target_include_directories(wlx-core PUBLIC

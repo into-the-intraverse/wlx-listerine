@@ -37,6 +37,7 @@
 #include "runtime/search/search_hud.h"
 #include "runtime/host/dark_mode.h"
 #include "runtime/host/host_integration.h"
+#include "runtime/host/module_path.h"
 
 #include <toml++/toml.hpp>
 
@@ -264,11 +265,7 @@ static std::string filename_to_language(const std::wstring& path) {
 using wlx::runtime::host::apply_dark_mode;
 
 static std::wstring get_module_dir() {
-    wchar_t path[MAX_PATH];
-    GetModuleFileNameW(g_hModule, path, MAX_PATH);
-    std::wstring dir(path);
-    auto pos = dir.find_last_of(L"\\/");
-    return (pos != std::wstring::npos) ? dir.substr(0, pos + 1) : dir;
+    return wlx::runtime::host::get_module_dir(g_hModule);
 }
 
 static void ensure_factories() {
