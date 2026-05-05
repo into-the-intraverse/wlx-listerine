@@ -39,6 +39,7 @@
 #include "runtime/host/host_integration.h"
 #include "runtime/host/module_path.h"
 #include "runtime/host/scroll_handler.h"
+#include "runtime/host/selection_helpers.h"
 #include "runtime/host/window_class.h"
 
 #define WLX_TRACE_TAG L"wlx-md"
@@ -240,9 +241,7 @@ static bool is_in_copy_button(const LayoutBlock& block, float x, float y) {
 }
 
 static void clear_selection(ViewState* vs) {
-    vs->sel_anchor = TextPosition{};
-    vs->sel_active = TextPosition{};
-    vs->selecting = false;
+    wlx::runtime::host::clear_selection(*vs);
 }
 
 static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -703,64 +702,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {
 }
 
 static void scroll_to_match(ViewState* vs, const SearchMatch& m) {
-    if (!vs->layout) return;
-    if (m.block_index < 0 ||
-        m.block_index >= static_cast<int>(vs->layout->blocks.size())) return;
-
-    const auto& block = vs->layout->blocks[m.block_index];
-    const float viewport_h = vs->renderer ? vs->renderer->dip_height() : 100.0f;
-    const float block_top = block.rect.top;
-    const float block_bot = block.rect.bottom;
-
-    if (block_top >= vs->scroll_y && block_bot <= vs->scroll_y + viewport_h) {
-        // Block already fully visible — but match may still be off-screen
-        // in a tall block. Fall through to the precision pass below.
-    } else {
-        // Center the block vertically first.
-        const float target = block_top - (viewport_h - (block_bot - block_top)) * 0.5f;
-        vs->scroll_y = std::clamp(target, 0.0f, vs->max_scroll_y);
-    }
-
-    // Precision pass: hit-test the match's first rect. If the match is still
-    // outside the viewport after centering, place the match ~1/3 from top.
-    int cursor = 0;
-    for (const auto& run : block.text_runs) {
-        const int run_len = static_cast<int>(run.text.size());
-        const int run_start = cursor;
-        const int run_end   = cursor + run_len;
-        cursor = run_end;
-        if (m.char_end <= run_start || m.char_start >= run_end) continue;
-        if (!run.layout) continue;
-
-        const int local_start = std::max(m.char_start, run_start) - run_start;
-        const int local_end   = std::min(m.char_end,   run_end)   - run_start;
-        const UINT32 length   = static_cast<UINT32>(local_end - local_start);
-
-        UINT32 required = 0;
-        run.layout->HitTestTextRange(
-            static_cast<UINT32>(local_start), length,
-            run.rect.left, run.rect.top,
-            nullptr, 0, &required);
-        if (required == 0) break;
-
-        std::vector<DWRITE_HIT_TEST_METRICS> metrics(required);
-        UINT32 actual = 0;
-        run.layout->HitTestTextRange(
-            static_cast<UINT32>(local_start), length,
-            run.rect.left, run.rect.top,
-            metrics.data(), required, &actual);
-        if (actual == 0) break;
-
-        const float match_top = metrics[0].top;
-        const float match_bot = metrics[0].top + metrics[0].height;
-        if (match_top < vs->scroll_y || match_bot > vs->scroll_y + viewport_h) {
-            vs->scroll_y = std::clamp(match_top - viewport_h * 0.33f,
-                                       0.0f, vs->max_scroll_y);
-        }
-        break;
-    }
-
-    update_scrollbar(vs);
+    wlx::runtime::host::scroll_to_match(*vs, m);
 }
 
 // ---------- WLX exports ----------
