@@ -32,6 +32,7 @@
 #include "runtime/search/search_index.h"
 #include "runtime/search/search_ops.h"
 #include "runtime/search/search_hud.h"
+#include "runtime/host/dark_mode.h"
 #include "runtime/host/host_integration.h"
 
 #define WLX_TRACE_TAG L"wlx-md"
@@ -114,18 +115,7 @@ static HostIntegration<ViewState> g_integration;
 
 // ---------- helpers ----------
 
-// DWMWA_USE_IMMERSIVE_DARK_MODE (value 20) — available since Win10 20H1.
-// Older SDKs may not define it.
-#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
-#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
-#endif
-
-static void apply_dark_mode(HWND hwnd, bool dark) {
-    BOOL value = dark ? TRUE : FALSE;
-    DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &value, sizeof(value));
-    // SetWindowTheme themes the scrollbar (DwmSetWindowAttribute only affects title bar)
-    SetWindowTheme(hwnd, dark ? L"DarkMode_Explorer" : L"Explorer", nullptr);
-}
+using wlx::runtime::host::apply_dark_mode;
 
 static std::wstring get_module_dir() {
     wchar_t path[MAX_PATH];

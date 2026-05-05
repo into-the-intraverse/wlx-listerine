@@ -35,6 +35,7 @@
 #include "plugin_colorizer/layout/colorizer_layout.h"
 #include "plugin_colorizer/language/routing.h"
 #include "runtime/search/search_hud.h"
+#include "runtime/host/dark_mode.h"
 #include "runtime/host/host_integration.h"
 
 #include <toml++/toml.hpp>
@@ -260,11 +261,7 @@ static std::string filename_to_language(const std::wstring& path) {
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
 #endif
 
-static void apply_dark_mode(HWND hwnd, bool dark) {
-    BOOL value = dark ? TRUE : FALSE;
-    DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &value, sizeof(value));
-    SetWindowTheme(hwnd, dark ? L"DarkMode_Explorer" : L"Explorer", nullptr);
-}
+using wlx::runtime::host::apply_dark_mode;
 
 static std::wstring get_module_dir() {
     wchar_t path[MAX_PATH];

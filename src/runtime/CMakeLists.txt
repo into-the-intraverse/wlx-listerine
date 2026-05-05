@@ -12,6 +12,7 @@ add_library(wlx-core STATIC
     interaction/text_selection.cpp
     search/search_index.cpp
     search/search_hud_painter.cpp
+    host/dark_mode.cpp
 )
 
 target_include_directories(wlx-core PUBLIC
@@ -28,4 +29,6 @@ target_link_libraries(wlx-core
         wlx-listerine-core
     PRIVATE
         tomlplusplus::tomlplusplus
+        dwmapi
+        uxtheme
 )
