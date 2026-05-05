@@ -16,7 +16,7 @@ else()
 endif()
 
 configure_file(
-    "${CMAKE_SOURCE_DIR}/src/resource.rc.in"
+    "${CMAKE_SOURCE_DIR}/src/plugin_md/resource/resource.rc.in"
     "${CMAKE_BINARY_DIR}/generated/resource.rc"
     @ONLY
 )
@@ -44,36 +44,6 @@ add_subdirectory(src/plugin_md)
 add_subdirectory(src/plugin_colorizer)
 add_subdirectory(src/tools/screenshot)
 add_subdirectory(tests)
-
-# --- Plugin DLL ---
-add_library(wlx-listerine-md SHARED
-    src/host_adapter.cpp
-    src/runtime/search/search_hud.cpp
-    src/plugin.def
-    "${CMAKE_BINARY_DIR}/generated/resource.rc"
-)
-target_include_directories(wlx-listerine-md PRIVATE src)
-
-target_link_libraries(wlx-listerine-md PRIVATE
-    wlx-core
-    wlx-listerine-core
-    shell32
-    dwmapi
-    uxtheme
-    comctl32
-)
-
-set_target_properties(wlx-listerine-md PROPERTIES
-    SUFFIX ".wlx64"
-    PREFIX ""
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/output"
-    LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/output"
-)
-
-target_compile_definitions(wlx-listerine-md PRIVATE WLX_VERSION_STRING="${WLX_VERSION}")
-if(WLX_TRACE_ENABLE)
-    target_compile_definitions(wlx-listerine-md PRIVATE WLX_TRACE_ENABLE)
-endif()
 
 # --- Screenshot tool ---
 add_executable(screenshot_tool
