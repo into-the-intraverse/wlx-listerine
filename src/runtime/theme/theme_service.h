@@ -4,57 +4,15 @@
 #define NOMINMAX
 #endif
 
+#include "runtime/theme/color_palette.h"
+#include "runtime/theme/font_config.h"
+#include "runtime/theme/spacing_config.h"
+#include "runtime/theme/theme_config.h"
+
 #include <cstdint>
 #include <string>
-#include <vector>
+
 #include <d2d1.h>
-
-struct ColorPalette {
-    uint32_t background;
-    uint32_t text;
-    uint32_t heading;
-    uint32_t muted;
-    uint32_t link;
-    uint32_t link_hover;
-    uint32_t code_bg;
-    uint32_t quote_border;
-    uint32_t rule;
-    uint32_t selection;
-    uint32_t search_highlight;
-    uint32_t search_highlight_current;
-};
-
-struct SpacingConfig {
-    float paragraph_spacing = 12.0f;
-    float heading_spacing_above = 24.0f;
-    float heading_spacing_below = 12.0f;
-    float list_indent = 24.0f;
-    float quote_indent = 16.0f;
-    float quote_border_width = 3.0f;
-    float code_padding = 8.0f;
-    float line_height_factor = 1.5f;
-};
-
-struct FontConfig {
-    std::wstring body_family = L"Segoe UI";
-    std::wstring code_family = L"Cascadia Code";
-    std::wstring emoji_family = L"Segoe UI Emoji";
-    float body_size = 14.0f;
-    float code_size = 13.0f;
-};
-
-struct ThemeConfig {
-    int version = 2;
-    std::wstring detect_string = L"EXT=\"MD\" | EXT=\"MARKDOWN\"";
-    std::vector<std::wstring> extensions = {L"md", L"markdown", L"mdown", L"mkd", L"mkdn"};
-    FontConfig fonts;
-    SpacingConfig spacing;
-    ColorPalette light;
-    ColorPalette dark;
-
-    // Code highlighting
-    std::string code_default_language;  // empty = no highlighting for untagged blocks
-};
 
 class ThemeService {
 public:
