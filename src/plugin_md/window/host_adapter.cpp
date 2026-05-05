@@ -38,6 +38,7 @@
 #include "runtime/host/hit_test.h"
 #include "runtime/host/host_integration.h"
 #include "runtime/host/module_path.h"
+#include "runtime/host/scroll_handler.h"
 #include "runtime/host/window_class.h"
 
 #define WLX_TRACE_TAG L"wlx-md"
@@ -141,21 +142,7 @@ static void ensure_theme() {
 }
 
 static void update_scrollbar(ViewState* vs) {
-    if (!vs->layout || !vs->hwnd) return;
-
-    // Use DIP dimensions — layout and D2D coordinates are in DIPs, not physical pixels
-    float viewport_h = vs->renderer ? vs->renderer->dip_height() : 1.0f;
-    vs->max_scroll_y = std::max(0.0f, vs->layout->total_height - viewport_h);
-    vs->scroll_y = std::clamp(vs->scroll_y, 0.0f, vs->max_scroll_y);
-
-    SCROLLINFO si = {};
-    si.cbSize = sizeof(si);
-    si.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
-    si.nMin = 0;
-    si.nMax = static_cast<int>(vs->layout->total_height);
-    si.nPage = static_cast<UINT>(viewport_h);
-    si.nPos = static_cast<int>(vs->scroll_y);
-    SetScrollInfo(vs->hwnd, SB_VERT, &si, TRUE);
+    wlx::runtime::host::update_scrollbar(*vs);
 }
 
 static void do_layout(ViewState* vs) {
@@ -232,19 +219,7 @@ static_assert(HostView<ViewState>);
 // ---------- WndProc ----------
 
 static void handle_scroll(ViewState* vs, float delta) {
-    if (!vs->layout) return;
-
-    float old_y = vs->scroll_y;
-    vs->scroll_y = std::clamp(vs->scroll_y + delta, 0.0f, vs->max_scroll_y);
-
-    if (vs->scroll_y != old_y) {
-        SCROLLINFO si = {};
-        si.cbSize = sizeof(si);
-        si.fMask = SIF_POS;
-        si.nPos = static_cast<int>(vs->scroll_y);
-        SetScrollInfo(vs->hwnd, SB_VERT, &si, TRUE);
-        InvalidateRect(vs->hwnd, nullptr, FALSE);
-    }
+    wlx::runtime::host::handle_scroll(*vs, delta);
 }
 
 static constexpr UINT_PTR TIMER_AUTOSCROLL = 1;
