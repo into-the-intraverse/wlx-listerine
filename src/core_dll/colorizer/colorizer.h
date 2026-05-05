@@ -1,25 +1,14 @@
 #pragma once
 
+#include "core_dll/colorizer/color_span.h"
+#include "core_dll/colorizer/colorize_result.h"
+#include "core_dll/theme/helix_theme.h"
 #include "wlx_core/abi.h"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
-#include <memory>
-#include "core_dll/theme/helix_theme.h"
-
-struct WLX_CORE_API ColorSpan {
-    uint32_t start = 0;       // byte offset in UTF-8 source
-    uint32_t length = 0;
-    uint32_t color = 0;       // foreground 0x00RRGGBB
-    uint32_t bg_color = 0;
-    bool has_bg = false;
-    uint8_t modifiers = 0;    // OR of TextModifier bits
-};
-
-struct WLX_CORE_API ColorizeResult {
-    std::vector<ColorSpan> spans;  // sorted by start, non-overlapping
-};
 
 class GrammarRegistry;
 
