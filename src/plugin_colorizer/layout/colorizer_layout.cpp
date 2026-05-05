@@ -8,6 +8,8 @@
 #include <cstring>
 #include <vector>
 
+using Microsoft::WRL::ComPtr;
+
 // ---- helpers ----------------------------------------------------------------
 
 // Convert a UTF-8 byte sequence to the number of UTF-16 code units it produces.

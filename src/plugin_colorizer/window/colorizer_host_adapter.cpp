@@ -23,6 +23,7 @@
 
 #include "listerplugin.h"
 #include "runtime/io/file_service.h"
+#include "runtime/layout/layout_engine.h"
 #include "runtime/render/render_engine.h"
 #include "runtime/search/search_engine.h"
 #include "runtime/search/search_ops.h"

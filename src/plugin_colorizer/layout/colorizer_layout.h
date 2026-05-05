@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core_dll/colorizer/colorizer.h"
-#include "runtime/layout/layout_engine.h"
+#include "runtime/layout/layout_document.h"
 #include "runtime/theme/theme_service.h"
 
 #include <dwrite.h>

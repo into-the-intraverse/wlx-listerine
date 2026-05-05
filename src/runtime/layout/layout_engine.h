@@ -1,119 +1,22 @@
 #pragma once
 
+#include "runtime/layout/code_bg_rect.h"
+#include "runtime/layout/color_range.h"
+#include "runtime/layout/interactive_span.h"
+#include "runtime/layout/layout_document.h"
+#include "runtime/layout/text_position.h"
 #include "runtime/parser/document_model.h"
 #include "runtime/theme/theme_service.h"
-#include "wlx_core/text_modifier.h"
 #include "wlx_core/abi.h"
 
-#include <d2d1.h>
 #include <dwrite.h>
 #include <wrl/client.h>
 
-#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 using Microsoft::WRL::ComPtr;
-
-struct ColorRange {
-    uint32_t start = 0;
-    uint32_t length = 0;
-    uint32_t color = 0;       // foreground 0x00RRGGBB
-    uint32_t bg_color = 0;    // background 0x00RRGGBB
-    bool has_bg = false;
-    uint8_t modifiers = 0;    // OR of TextModifier bits
-};
-
-struct CodeBgRect {
-    D2D1_RECT_F rect = {};  // relative to text run origin
-};
-
-struct TextRun {
-    std::wstring text;
-    D2D1_RECT_F rect = {};
-    ComPtr<IDWriteTextLayout> layout;
-    uint32_t color = 0;
-    bool is_code = false;
-    std::vector<ColorRange> color_ranges;
-    std::vector<CodeBgRect> code_bg_rects;
-};
-
-struct InteractiveSpan {
-    LinkTarget target;
-    D2D1_RECT_F rect = {};
-};
-
-struct AnchorEntry {
-    std::wstring slug;
-    float y_offset = 0;
-};
-
-struct LayoutBlock {
-    BlockType type = BlockType::Paragraph;
-    D2D1_RECT_F rect = {};
-    std::vector<TextRun> text_runs;
-    std::vector<InteractiveSpan> spans;
-
-    // Heading
-    int heading_level = 0;
-
-    // Decorations
-    bool has_left_border = false;
-    uint32_t left_border_color = 0;
-    bool has_bottom_rule = false;
-    uint32_t bottom_rule_color = 0;
-    uint32_t background_color = 0;
-    bool has_background = false;
-
-    // Bullet/number prefix
-    std::wstring bullet_text;
-    D2D1_POINT_2F bullet_pos = {};
-    uint32_t bullet_color = 0;
-
-    // Whitespace markers (positions relative to text run origin)
-    struct WhitespaceMarker {
-        float x = 0;         // x position relative to text run left
-        float y = 0;         // y position relative to text run top
-        bool is_tab = false;
-    };
-    std::vector<WhitespaceMarker> ws_markers;
-    uint32_t ws_marker_color = 0;
-
-    // Indent guides (x positions for vertical lines spanning this block)
-    std::vector<float> indent_guides;  // absolute x positions
-    uint32_t indent_guide_color = 0;
-
-    // Trailing whitespace highlight
-    bool has_trailing_ws = false;
-    D2D1_RECT_F trailing_ws_rect = {};
-    uint32_t trailing_ws_color = 0;
-};
-
-struct LayoutDocument {
-    std::vector<LayoutBlock> blocks;
-    std::vector<AnchorEntry> anchors;
-    float total_height = 0;
-    float viewport_width = 0;
-};
-
-struct TextPosition {
-    int block_index = -1;
-    int char_offset = 0;
-
-    bool valid() const { return block_index >= 0; }
-
-    bool operator==(const TextPosition& o) const {
-        return block_index == o.block_index && char_offset == o.char_offset;
-    }
-    bool operator!=(const TextPosition& o) const { return !(*this == o); }
-    bool operator<(const TextPosition& o) const {
-        if (block_index != o.block_index) return block_index < o.block_index;
-        return char_offset < o.char_offset;
-    }
-    bool operator>(const TextPosition& o) const { return o < *this; }
-    bool operator<=(const TextPosition& o) const { return !(o < *this); }
-    bool operator>=(const TextPosition& o) const { return !(*this < o); }
-};
 
 std::wstring extract_selected_text(const LayoutDocument& layout,
                                    TextPosition start, TextPosition end);

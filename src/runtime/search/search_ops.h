@@ -1,7 +1,7 @@
 #pragma once
 
 #include "runtime/search/search_engine.h"
-#include "runtime/layout/layout_engine.h"
+#include "runtime/layout/layout_document.h"
 
 #include <concepts>
 #include <type_traits>

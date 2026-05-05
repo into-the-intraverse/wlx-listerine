@@ -1,6 +1,8 @@
 #pragma once
 
-#include "runtime/layout/layout_engine.h"
+#include "runtime/layout/layout_block.h"
+#include "runtime/layout/layout_document.h"
+#include "runtime/layout/text_position.h"
 #include "runtime/search/search_engine.h"
 #include "runtime/theme/theme_service.h"
 

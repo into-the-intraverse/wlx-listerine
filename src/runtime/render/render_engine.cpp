@@ -1,5 +1,7 @@
 #include "runtime/render/render_engine.h"
 
+#include "wlx_core/text_modifier.h"
+
 #include <algorithm>
 
 RenderEngine::RenderEngine(ID2D1Factory* d2d_factory, IDWriteFactory* dwrite_factory,

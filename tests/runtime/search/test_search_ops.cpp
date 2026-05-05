@@ -1,7 +1,9 @@
 #include <doctest/doctest.h>
 #include "runtime/search/search_ops.h"
 #include "runtime/search/search_engine.h"
-#include "runtime/layout/layout_engine.h"
+#include "runtime/layout/layout_block.h"
+#include "runtime/layout/layout_document.h"
+#include "runtime/layout/text_run.h"
 
 namespace {
 
