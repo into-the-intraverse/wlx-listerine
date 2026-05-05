@@ -14,6 +14,8 @@ using namespace wlx::runtime::parser;
 using namespace wlx::runtime::theme;
 using Microsoft::WRL::ComPtr;
 
+namespace wlx::plugin_colorizer::layout {
+
 // ---- helpers ----------------------------------------------------------------
 
 // Convert a UTF-8 byte sequence to the number of UTF-16 code units it produces.
@@ -443,3 +445,5 @@ wlx::runtime::layout::LayoutDocument layout_source(
     doc.total_height = y;
     return doc;
 }
+
+}  // namespace wlx::plugin_colorizer::layout

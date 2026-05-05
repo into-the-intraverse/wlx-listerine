@@ -7,6 +7,8 @@
 #include <dwrite.h>
 #include <string>
 
+namespace wlx::plugin_colorizer::layout {
+
 enum class ShowWhitespace { None, All, Boundary };
 enum class CppGrammar { Standard, Unreal };
 
@@ -35,3 +37,5 @@ wlx::runtime::layout::LayoutDocument layout_source(
     bool dark_mode,
     float viewport_width,
     const ColorizerDisplayConfig& display);
+
+}  // namespace wlx::plugin_colorizer::layout

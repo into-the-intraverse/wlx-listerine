@@ -56,6 +56,12 @@ using namespace wlx::runtime::util;
 
 using Microsoft::WRL::ComPtr;
 
+namespace wlx::plugin_colorizer::window {
+
+using namespace wlx::core::colorizer;
+using namespace wlx::plugin_colorizer::language;
+using namespace wlx::plugin_colorizer::layout;
+
 // File-local: convert ABI WlxColorSpan array into the C++ ColorizeResult type.
 // Frees the spans via wlx_core_free_spans. Returns an empty ColorizeResult if
 // spans is null or count is zero.
@@ -963,6 +969,10 @@ static void ensure_window_class() {
     wc.lpszClassName = L"WlxListerineColorView";
     g_window_class = RegisterClassExW(&wc);
 }
+
+}  // namespace wlx::plugin_colorizer::window
+
+using namespace wlx::plugin_colorizer::window;
 
 // ---------- DLL entry ----------
 

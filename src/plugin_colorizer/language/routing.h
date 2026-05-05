@@ -5,6 +5,10 @@
 #include "plugin_colorizer/layout/colorizer_layout.h"
 #include "wlx_core/abi.h"
 
+namespace wlx::plugin_colorizer::language {
+
+using wlx::plugin_colorizer::layout::CppGrammar;
+
 // Pure routing primitive: when the user opts into the Unreal C++ grammar via
 // [colorizer].cpp_grammar = "unreal" AND the unreal-cpp grammar is actually
 // loadable, swap "cpp" for "unreal-cpp". Falls back to "cpp" if the grammar
@@ -35,3 +39,5 @@ inline std::string apply_cpp_variant(const std::string& lang,
     }
     return lang;
 }
+
+}  // namespace wlx::plugin_colorizer::language

@@ -5,6 +5,8 @@
 #include "plugin_colorizer/language/routing.h"
 
 using namespace wlx::core::colorizer;
+using namespace wlx::plugin_colorizer::language;
+using namespace wlx::plugin_colorizer::layout;
 
 namespace fs = std::filesystem;
 
