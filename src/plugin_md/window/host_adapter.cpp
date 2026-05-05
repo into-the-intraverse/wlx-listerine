@@ -34,6 +34,7 @@
 #include "runtime/search/search_hud.h"
 #include "runtime/host/clipboard.h"
 #include "runtime/host/dark_mode.h"
+#include "runtime/host/factories.h"
 #include "runtime/host/hit_test.h"
 #include "runtime/host/host_integration.h"
 #include "runtime/host/module_path.h"
@@ -101,8 +102,9 @@ static_assert(SearchState<ViewState>);
 static HMODULE g_hModule = nullptr;
 static ThemeService g_theme;
 static bool g_theme_loaded = false;
-static ComPtr<ID2D1Factory> g_d2d_factory;
-static ComPtr<IDWriteFactory> g_dwrite_factory;
+using wlx::runtime::host::d2d_factory;
+using wlx::runtime::host::dwrite_factory;
+using wlx::runtime::host::ensure_factories;
 static CacheService g_cache;
 static FileService g_file_service;
 static std::unordered_map<HWND, ViewState*> g_views;
@@ -124,15 +126,6 @@ static std::wstring get_module_dir() {
     return wlx::runtime::host::get_module_dir(g_hModule);
 }
 
-static void ensure_factories() {
-    if (!g_d2d_factory) {
-        D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, g_d2d_factory.GetAddressOf());
-    }
-    if (!g_dwrite_factory) {
-        DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
-                            reinterpret_cast<IUnknown**>(g_dwrite_factory.GetAddressOf()));
-    }
-}
 
 static void ensure_theme() {
     if (!g_theme_loaded) {
@@ -165,7 +158,7 @@ static void update_scrollbar(ViewState* vs) {
 }
 
 static void do_layout(ViewState* vs) {
-    if (!vs->document || !g_dwrite_factory) return;
+    if (!vs->document || !dwrite_factory()) return;
 
     // Use DIP width — IDWriteTextLayout measures in DIPs, not physical pixels
     float viewport_width = vs->renderer ? vs->renderer->dip_width() : 1.0f;
@@ -175,7 +168,7 @@ static void do_layout(ViewState* vs) {
     lk.viewport_width_bucket = CacheService::bucket_width(static_cast<int>(viewport_width));
     lk.theme_hash = g_theme.theme_hash();
 
-    LayoutEngine engine(g_dwrite_factory.Get(), g_theme, vs->dark_mode, g_colorizer_handle);
+    LayoutEngine engine(dwrite_factory(), g_theme, vs->dark_mode, g_colorizer_handle);
     auto layout = std::make_shared<LayoutDocument>(engine.layout(*vs->document, viewport_width, vs->wrap_text));
 
     vs->layout = layout;
@@ -722,8 +715,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {
         // Here we just move COM-holding objects to leaked heap allocations so
         // static destructors find empty shells.  The OS reclaims on exit;
         // FreeLibrary callers accept the leak (plugin is unloading anyway).
-        (void)new ComPtr<ID2D1Factory>(std::move(g_d2d_factory));
-        (void)new ComPtr<IDWriteFactory>(std::move(g_dwrite_factory));
+        wlx::runtime::host::leak_factories_on_detach();
         (void)new CacheService(std::move(g_cache));
         // ViewState* raw pointers in g_views are intentionally leaked —
         // their RenderEngine/LayoutDocument COM objects must not Release().
@@ -811,7 +803,7 @@ HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
     WLX_TRACE(L"ListLoadW parent=%p file=%s flags=0x%X",
               ParentWin, FileToLoad ? FileToLoad : L"(null)", ShowFlags);
     ensure_factories();
-    if (!g_d2d_factory || !g_dwrite_factory)
+    if (!d2d_factory() || !dwrite_factory())
         return nullptr;
 
     ensure_theme();
@@ -844,12 +836,12 @@ HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
 
     // Create render engine
     vs->renderer = std::make_unique<RenderEngine>(
-        g_d2d_factory.Get(), g_dwrite_factory.Get(), g_theme, dark);
+        d2d_factory(), dwrite_factory(), g_theme, dark);
     vs->renderer->create_device_resources(hwnd);
 
     // Create search HUD (initially hidden)
     vs->hud = std::make_unique<SearchHud>(
-        hwnd, g_d2d_factory.Get(), g_dwrite_factory.Get(), g_theme, dark);
+        hwnd, d2d_factory(), dwrite_factory(), g_theme, dark);
     vs->hud->on_navigate = [vs](bool backwards) {
         if (vs->matches.empty() || !vs->layout) return;
         SearchQuery q = vs->last_query;

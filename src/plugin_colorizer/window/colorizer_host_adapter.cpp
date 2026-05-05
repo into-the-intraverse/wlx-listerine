@@ -37,6 +37,7 @@
 #include "runtime/search/search_hud.h"
 #include "runtime/host/clipboard.h"
 #include "runtime/host/dark_mode.h"
+#include "runtime/host/factories.h"
 #include "runtime/host/hit_test.h"
 #include "runtime/host/host_integration.h"
 #include "runtime/host/module_path.h"
@@ -137,8 +138,9 @@ static_assert(SearchState<ColorViewState>);
 static HMODULE g_hModule = nullptr;
 static ThemeService g_theme;
 static bool g_theme_loaded = false;
-static ComPtr<ID2D1Factory> g_d2d_factory;
-static ComPtr<IDWriteFactory> g_dwrite_factory;
+using wlx::runtime::host::d2d_factory;
+using wlx::runtime::host::dwrite_factory;
+using wlx::runtime::host::ensure_factories;
 static FileService g_file_service;
 static WlxCore*   g_colorizer_handle = nullptr;
 static ColorizerDisplayConfig g_display_cfg;
@@ -270,15 +272,6 @@ static std::wstring get_module_dir() {
     return wlx::runtime::host::get_module_dir(g_hModule);
 }
 
-static void ensure_factories() {
-    if (!g_d2d_factory) {
-        D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, g_d2d_factory.GetAddressOf());
-    }
-    if (!g_dwrite_factory) {
-        DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
-                            reinterpret_cast<IUnknown**>(g_dwrite_factory.GetAddressOf()));
-    }
-}
 
 static constexpr wchar_t kDefaultDetectString[] =
     L"EXT=\"C\" | EXT=\"H\" | EXT=\"CPP\" | EXT=\"CC\" | EXT=\"CXX\" | EXT=\"HPP\" | "
@@ -361,7 +354,7 @@ static void update_scrollbar(ColorViewState* vs) {
 
 static void do_layout(ColorViewState* vs, const std::wstring& text, const std::string& raw_utf8,
                       const ColorizeResult& colors) {
-    if (!g_dwrite_factory) return;
+    if (!dwrite_factory()) return;
 
     float viewport_width = vs->renderer ? vs->renderer->dip_width() : 1.0f;
 
@@ -370,7 +363,7 @@ static void do_layout(ColorViewState* vs, const std::wstring& text, const std::s
     cfg.line_height_factor = g_theme.spacing().line_height_factor;
 
     auto layout = std::make_shared<LayoutDocument>(
-        layout_source(g_dwrite_factory.Get(), text, raw_utf8,
+        layout_source(dwrite_factory(), text, raw_utf8,
                       colors, g_theme, vs->dark_mode, viewport_width, cfg));
 
     vs->layout = layout;
@@ -915,8 +908,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {
     case DLL_PROCESS_DETACH:
         // Leak COM objects on detach to avoid deadlocks under loader lock.
         // Same pattern as the md plugin.
-        (void)new ComPtr<ID2D1Factory>(std::move(g_d2d_factory));
-        (void)new ComPtr<IDWriteFactory>(std::move(g_dwrite_factory));
+        wlx::runtime::host::leak_factories_on_detach();
         g_views.clear();
 
         if (reserved == nullptr) {
@@ -940,7 +932,7 @@ HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
     WLX_TRACE(L"ListLoadW parent=%p file=%s flags=0x%X",
               ParentWin, FileToLoad ? FileToLoad : L"(null)", ShowFlags);
     ensure_factories();
-    if (!g_d2d_factory || !g_dwrite_factory)
+    if (!d2d_factory() || !dwrite_factory())
         return nullptr;
 
     ensure_theme();
@@ -972,11 +964,11 @@ HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
     g_views[hwnd] = vs;
 
     vs->renderer = std::make_unique<RenderEngine>(
-        g_d2d_factory.Get(), g_dwrite_factory.Get(), g_theme, dark);
+        d2d_factory(), dwrite_factory(), g_theme, dark);
     vs->renderer->create_device_resources(hwnd);
 
     vs->hud = std::make_unique<SearchHud>(
-        hwnd, g_d2d_factory.Get(), g_dwrite_factory.Get(), g_theme, dark);
+        hwnd, d2d_factory(), dwrite_factory(), g_theme, dark);
     vs->hud->on_navigate = [vs](bool backwards) {
         if (vs->matches.empty() || !vs->layout) return;
         SearchQuery q = vs->last_query;

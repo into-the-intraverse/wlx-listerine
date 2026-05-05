@@ -14,6 +14,7 @@ add_library(wlx-core STATIC
     search/search_hud_painter.cpp
     host/clipboard.cpp
     host/dark_mode.cpp
+    host/factories.cpp
     host/hit_test.cpp
     host/module_path.cpp
 )
