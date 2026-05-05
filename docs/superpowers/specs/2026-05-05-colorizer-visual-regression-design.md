@@ -158,10 +158,8 @@ in dump-tokens mode so dark/light runs don't clobber each other):
   "config_hash": "a1b2c3d4",
   "token_count": 2341,
   "tokens": [
-    { "line": 1, "col": 0, "len": 8,
-      "scope": "keyword.directive", "color": "#FF7B72", "mods": ["bold"] },
-    { "line": 1, "col": 9, "len": 17,
-      "scope": "string", "color": "#A5D6FF", "mods": [] }
+    { "line": 1, "col": 0, "len": 8,  "color": "#FF7B72", "mods": ["bold"] },
+    { "line": 1, "col": 9, "len": 17, "color": "#A5D6FF", "mods": [] }
   ]
 }
 ```
@@ -175,8 +173,12 @@ Determinism rules (enforced by the writer):
 - `mods` is sorted, lowercase, restricted to the four real bits
   (`bold`, `italic`, `underline`, `strikethrough`). Terminal-only
   Helix modifiers are dropped (already handled by `parse_style`).
-- Adjacent tokens with identical `(scope, color, mods)` are collapsed
-  by the writer regardless of how the query emitted them.
+- Adjacent tokens with identical `(color, mods)` are collapsed by the
+  writer regardless of how the query emitted them. (Scope name is not
+  carried in the snapshot — it isn't exposed by the ABI or by the C++
+  `Colorizer` surface, and resolved `(color, mods)` is sufficient
+  signal for regressions; to find the scope-cause of a color change,
+  grep the theme TOML for the affected hex.)
 - Tokens are sorted by `(line, col, -len)` (longest span wins on ties)
   before write, so two tree-sitter query orderings produce identical
   JSON.
@@ -439,3 +441,6 @@ Pre-commit hook runs the same gate.
 - Cross-DPI pixel snapshots.
 - Performance regression checks (separate concern; `screenshot_tool --bench`
   already exists for ad-hoc use).
+- Scope names in token JSON. Would require either an ABI bump
+  (`wlx_core_colorize_with_scopes`) or a new C++-only path through
+  `QueryHighlighter`. Resolved `(color, mods)` is observably sufficient.
