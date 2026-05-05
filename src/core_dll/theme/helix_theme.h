@@ -2,7 +2,7 @@
 
 #include "wlx_core/abi.h"
 
-#include "text_modifiers.h"
+#include "wlx_core/text_modifier.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -12,7 +12,7 @@
 
 // A resolved style from a Helix theme. Carries fg/bg colors and a bitset
 // of text modifiers (bold/italic/underline/strikethrough); see TextModifier
-// in text_modifiers.h.
+// in wlx_core/text_modifier.h.
 struct WLX_CORE_API ResolvedStyle {
     uint32_t fg = 0;        // 0x00RRGGBB
     uint32_t bg = 0;        // 0x00RRGGBB

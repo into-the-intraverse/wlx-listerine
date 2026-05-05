@@ -2,7 +2,7 @@
 
 #include "runtime/parser/document_model.h"
 #include "runtime/theme/theme_service.h"
-#include "text_modifiers.h"
+#include "wlx_core/text_modifier.h"
 #include "wlx_core/abi.h"
 
 #include <d2d1.h>
