@@ -50,6 +50,8 @@ using namespace wlx::runtime::theme;
 
 using Microsoft::WRL::ComPtr;
 
+namespace wlx::plugin_md::window {
+
 // ---------- per-window state ----------
 
 struct ViewState {
@@ -777,6 +779,10 @@ static void ensure_window_class() {
     wc.lpszClassName = L"WlxListerineMdView";
     g_window_class = RegisterClassExW(&wc);
 }
+
+}  // namespace wlx::plugin_md::window
+
+using namespace wlx::plugin_md::window;
 
 // ---------- DLL entry ----------
 
