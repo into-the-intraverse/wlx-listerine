@@ -4,6 +4,9 @@
 
 #include <cstdint>
 
+namespace wlx::core::theme {
+
+
 // A resolved style from a Helix theme. Carries fg/bg colors and a bitset
 // of text modifiers (bold/italic/underline/strikethrough); see TextModifier
 // in wlx_core/text_modifier.h.
@@ -14,3 +17,5 @@ struct WLX_CORE_API ResolvedStyle {
     bool has_bg = false;
     uint8_t modifiers = 0;  // OR of TextModifier bits
 };
+
+}  // namespace wlx::core::theme

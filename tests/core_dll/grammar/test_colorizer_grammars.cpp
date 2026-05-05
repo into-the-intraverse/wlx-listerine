@@ -5,6 +5,8 @@
 #include <set>
 #include "core_dll/colorizer/colorizer.h"
 
+using namespace wlx::core::colorizer;
+
 // Helper: verify that colorize() produces non-empty, sorted, non-overlapping spans.
 static void verify_colorize(Colorizer& c, const std::string& source,
                             const std::string& lang) {
@@ -520,6 +522,8 @@ TEST_CASE("Grammar: unreal-cpp"
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "MyActor.generated.h"
+
+using namespace wlx::core::colorizer;
 
 UCLASS(Blueprintable)
 class FOO_API AMyActor : public AActor {

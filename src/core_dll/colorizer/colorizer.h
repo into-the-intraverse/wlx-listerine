@@ -10,7 +10,9 @@
 #include <string>
 #include <vector>
 
-class GrammarRegistry;
+namespace wlx::core::grammar { class GrammarRegistry; }
+
+namespace wlx::core::colorizer {
 
 class WLX_CORE_API Colorizer {
 public:
@@ -32,10 +34,12 @@ public:
     bool supports(const std::string& language) const;
     std::vector<std::string> available_languages() const;
 
-    const HelixTheme& theme(bool dark_mode) const;
+    const theme::HelixTheme& theme(bool dark_mode) const;
 
 private:
-    std::unique_ptr<GrammarRegistry> grammar_registry_;
-    HelixTheme dark_theme_;
-    HelixTheme light_theme_;
+    std::unique_ptr<grammar::GrammarRegistry> grammar_registry_;
+    theme::HelixTheme dark_theme_;
+    theme::HelixTheme light_theme_;
 };
+
+}  // namespace wlx::core::colorizer

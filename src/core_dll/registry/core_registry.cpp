@@ -3,7 +3,12 @@
 
 #include <windows.h>
 
-extern HMODULE g_core_module;  // defined in dllmain.cpp
+extern HMODULE g_core_module;  // defined at global scope in dllmain.cpp
+
+namespace wlx::core::registry {
+
+using namespace wlx::core::colorizer;
+using namespace wlx::core::theme;
 
 CoreRegistry& CoreRegistry::instance() {
     static std::unique_ptr<CoreRegistry> p;
@@ -60,3 +65,5 @@ const HelixTheme& CoreRegistry::theme(bool dark_mode) const {
     static HelixTheme empty;
     return colorizer_ ? colorizer_->theme(dark_mode) : empty;
 }
+
+}  // namespace wlx::core::registry

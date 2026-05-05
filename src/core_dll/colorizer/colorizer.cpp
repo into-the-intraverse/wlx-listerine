@@ -6,6 +6,12 @@
 #include <chrono>
 #include <filesystem>
 
+namespace wlx::core::colorizer {
+
+using namespace wlx::core::grammar;
+using namespace wlx::core::highlighting;
+using namespace wlx::core::theme;
+
 Colorizer::Colorizer(const std::wstring& grammar_dir,
                      const std::wstring& theme_dir,
                      const std::string& theme_name,
@@ -72,3 +78,5 @@ ColorizeResult Colorizer::colorize(const std::string& source,
     ts_tree_delete(tree);
     return result;
 }
+
+}  // namespace wlx::core::colorizer

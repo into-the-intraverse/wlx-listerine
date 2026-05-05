@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <sstream>
 
+namespace wlx::core::grammar {
+
+
 GrammarCache::GrammarCache(uint32_t cap,
                            std::chrono::seconds ttl,
                            Clock clock,
@@ -180,3 +183,5 @@ void GrammarCache::evict_locked() {
         lru_.pop_back();
     }
 }
+
+}  // namespace wlx::core::grammar

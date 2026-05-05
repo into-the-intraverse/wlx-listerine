@@ -12,7 +12,7 @@ extern "C" WLX_CORE_API int wlx_core_abi_version(void) {
 }
 
 extern "C" WLX_CORE_API WlxCore* wlx_core_acquire(void) {
-    auto& reg = CoreRegistry::instance();
+    auto& reg = wlx::core::registry::CoreRegistry::instance();
     return reinterpret_cast<WlxCore*>(&reg);
 }
 
@@ -25,7 +25,7 @@ extern "C" WLX_CORE_API void wlx_core_release(WlxCore*) {
 extern "C" WLX_CORE_API int
 wlx_core_supports(WlxCore* h, const char* language) {
     if (!h || !language) return -1;
-    return reinterpret_cast<CoreRegistry*>(h)->supports(language) ? 1 : 0;
+    return reinterpret_cast<wlx::core::registry::CoreRegistry*>(h)->supports(language) ? 1 : 0;
 }
 
 extern "C" WLX_CORE_API int
@@ -35,7 +35,7 @@ wlx_core_colorize(WlxCore* h,
                   int dark_mode,
                   WlxColorSpan** out_spans, uint32_t* out_count) {
     if (!h || !source || !language || !out_spans || !out_count) return -1;
-    auto& reg = *reinterpret_cast<CoreRegistry*>(h);
+    auto& reg = *reinterpret_cast<wlx::core::registry::CoreRegistry*>(h);
 
     std::string src(source, len);
     auto result = reg.colorize(src, language, dark_mode != 0);
@@ -74,8 +74,8 @@ extern "C" WLX_CORE_API int
 wlx_core_theme_color(WlxCore* h, const char* scope, int dark_mode,
                      uint32_t* out_rgb, uint8_t* out_modifiers) {
     if (!h || !scope || !out_rgb) return -1;
-    auto& reg = *reinterpret_cast<CoreRegistry*>(h);
-    const HelixTheme& t = reg.theme(dark_mode != 0);
+    auto& reg = *reinterpret_cast<wlx::core::registry::CoreRegistry*>(h);
+    const wlx::core::theme::HelixTheme& t = reg.theme(dark_mode != 0);
     auto resolved = t.resolve(scope);
     if (!resolved) return -1;
     *out_rgb = resolved->fg;

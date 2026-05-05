@@ -4,6 +4,8 @@
 #include <filesystem>
 #include <string>
 
+using namespace wlx::core::registry;
+
 namespace fs = std::filesystem;
 
 static std::wstring make_temp_toml(const std::string& body) {

@@ -2,6 +2,8 @@
 #include <filesystem>
 #include "core_dll/grammar/grammar_registry.h"
 
+using namespace wlx::core::grammar;
+
 static bool has_c_grammar() {
     return std::filesystem::exists("grammars/c/tree-sitter-c.dll");
 }

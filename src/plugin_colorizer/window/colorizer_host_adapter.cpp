@@ -42,6 +42,8 @@
 #define WLX_TRACE_TAG L"wlx-clr"
 #include "runtime/diagnostics/wlx_trace.h"
 
+using namespace wlx::core::colorizer;
+
 using namespace wlx::runtime::diagnostics;
 using namespace wlx::runtime::host;
 using namespace wlx::runtime::interaction;

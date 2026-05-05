@@ -4,6 +4,9 @@
 #include <fstream>
 #include <sstream>
 
+namespace wlx::core::grammar {
+
+
 namespace fs = std::filesystem;
 
 GrammarRegistry::GrammarRegistry(const std::wstring& grammar_dir,
@@ -76,3 +79,5 @@ TSTree* GrammarRegistry::parse(const std::string& language,
     ts_parser_delete(parser);
     return tree;
 }
+
+}  // namespace wlx::core::grammar

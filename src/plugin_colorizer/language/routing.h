@@ -11,7 +11,7 @@
 // is missing. Non-cpp languages are passed through unchanged.
 inline std::string apply_cpp_variant(const std::string& lang,
                                      CppGrammar variant,
-                                     const Colorizer* colorizer) {
+                                     const wlx::core::colorizer::Colorizer* colorizer) {
     if (lang == "cpp"
         && variant == CppGrammar::Unreal
         && colorizer != nullptr

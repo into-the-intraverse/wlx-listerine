@@ -4,6 +4,8 @@
 #include <chrono>
 #include <memory>
 
+using namespace wlx::core::grammar;
+
 using namespace std::chrono_literals;
 
 namespace {

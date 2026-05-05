@@ -1,8 +1,14 @@
 #include <doctest/doctest.h>
 #include <filesystem>
+#include "core_dll/colorizer/color_span.h"
 #include "core_dll/highlighting/query_highlighter.h"
 #include "core_dll/grammar/grammar_registry.h"
 #include "core_dll/theme/helix_theme.h"
+
+using namespace wlx::core::colorizer;
+using namespace wlx::core::grammar;
+using namespace wlx::core::highlighting;
+using namespace wlx::core::theme;
 
 // ---------------------------------------------------------------------------
 // Null-safety tests

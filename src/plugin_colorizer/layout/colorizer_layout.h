@@ -30,7 +30,7 @@ wlx::runtime::layout::LayoutDocument layout_source(
     IDWriteFactory* dwrite,
     const std::wstring& source,
     const std::string& raw_utf8,
-    const ColorizeResult& colors,
+    const wlx::core::colorizer::ColorizeResult& colors,
     const wlx::runtime::theme::ThemeService& theme,
     bool dark_mode,
     float viewport_width,

@@ -4,6 +4,11 @@
 #include <string>
 #include <unordered_map>
 
+namespace wlx::core::highlighting {
+
+using namespace wlx::core::colorizer;
+using namespace wlx::core::theme;
+
 struct RawSpan {
     uint32_t start;
     uint32_t end;
@@ -217,3 +222,5 @@ std::vector<ColorSpan> QueryHighlighter::highlight(
 
     return result;
 }
+
+}  // namespace wlx::core::highlighting

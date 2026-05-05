@@ -7,6 +7,9 @@
 #include <vector>
 #include <tree_sitter/api.h>
 
+namespace wlx::core::grammar {
+
+
 class WLX_CORE_API GrammarRegistry {
 public:
     GrammarRegistry(const std::wstring& grammar_dir,
@@ -31,3 +34,5 @@ private:
 
     GrammarCache cache_;
 };
+
+}  // namespace wlx::core::grammar

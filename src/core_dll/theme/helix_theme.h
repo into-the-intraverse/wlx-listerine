@@ -10,6 +10,9 @@
 #include <string>
 #include <unordered_map>
 
+namespace wlx::core::theme {
+
+
 // Loads and resolves a Helix-format TOML theme file.
 //
 // Theme format (same as Helix editor):
@@ -43,3 +46,5 @@ public:
 private:
     std::unordered_map<std::string, ResolvedStyle> styles_;
 };
+
+}  // namespace wlx::core::theme

@@ -5,6 +5,9 @@
 #include <algorithm>
 #include <set>
 
+namespace wlx::core::theme {
+
+
 using namespace wlx::runtime::util;
 
 // ---------------------------------------------------------------------------
@@ -371,3 +374,5 @@ HelixTheme HelixTheme::make_default(bool dark_mode) {
 
     return theme;
 }
+
+}  // namespace wlx::core::theme

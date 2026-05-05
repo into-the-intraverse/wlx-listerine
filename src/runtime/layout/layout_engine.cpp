@@ -9,6 +9,8 @@
 #include <cwctype>
 #include <cmath>
 
+using namespace wlx::core::colorizer;
+
 namespace wlx::runtime::layout {
 
 using namespace wlx::runtime::parser;

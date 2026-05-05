@@ -7,6 +7,9 @@
 #include <mutex>
 #include <string>
 
+namespace wlx::core::registry {
+
+
 // Process-wide singleton living inside wlx-listerine-core.dll. Lazy-
 // initialized via std::call_once on the first wlx_core_acquire call.
 // Discovers its own install dir via GetModuleFileNameW(g_core_module).
@@ -23,11 +26,11 @@ class CoreRegistry {
 public:
     static CoreRegistry& instance();
 
-    ColorizeResult colorize(const std::string& source,
-                            const std::string& language,
-                            bool dark_mode);
+    colorizer::ColorizeResult colorize(const std::string& source,
+                                       const std::string& language,
+                                       bool dark_mode);
     bool supports(const std::string& language);
-    const HelixTheme& theme(bool dark_mode) const;
+    const theme::HelixTheme& theme(bool dark_mode) const;
 
 private:
     CoreRegistry();
@@ -36,5 +39,7 @@ private:
     mutable std::mutex mu_;
     std::wstring core_dir_;
     CoreConfig cfg_;
-    std::unique_ptr<Colorizer> colorizer_;  // replaced piece-by-piece in later tasks
+    std::unique_ptr<colorizer::Colorizer> colorizer_;  // replaced piece-by-piece in later tasks
 };
+
+}  // namespace wlx::core::registry

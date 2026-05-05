@@ -56,14 +56,15 @@ static std::wstring expand_tabs(const std::wstring& line, int tab_width,
 
 // ---- main entry point -------------------------------------------------------
 
-LayoutDocument layout_source(IDWriteFactory* dwrite,
-                             const std::wstring& source,
-                             const std::string& raw_utf8,
-                             const ColorizeResult& colors,
-                             const ThemeService& theme,
-                             bool dark_mode,
-                             float viewport_width,
-                             const ColorizerDisplayConfig& display) {
+wlx::runtime::layout::LayoutDocument layout_source(
+    IDWriteFactory* dwrite,
+    const std::wstring& source,
+    const std::string& raw_utf8,
+    const wlx::core::colorizer::ColorizeResult& colors,
+    const wlx::runtime::theme::ThemeService& theme,
+    bool dark_mode,
+    float viewport_width,
+    const ColorizerDisplayConfig& display) {
     LayoutDocument doc;
     doc.viewport_width = viewport_width;
 
@@ -192,7 +193,7 @@ LayoutDocument layout_source(IDWriteFactory* dwrite,
     };
     std::vector<std::vector<PerLineSpan>> line_spans(lines.size());
 
-    for (const ColorSpan& sp : colors.spans) {
+    for (const wlx::core::colorizer::ColorSpan& sp : colors.spans) {
         if (sp.length == 0) continue;
         uint32_t sp_end = sp.start + sp.length;
 

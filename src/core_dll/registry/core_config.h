@@ -4,6 +4,9 @@
 #include <cstdint>
 #include <string>
 
+namespace wlx::core::registry {
+
+
 struct WLX_CORE_API CoreConfig {
     uint32_t    cap         = 8;     // soft LRU cap, count of loaded grammars
     uint32_t    ttl_minutes = 5;     // entries younger than this survive eviction sweep
@@ -12,3 +15,5 @@ struct WLX_CORE_API CoreConfig {
 
     static CoreConfig load(const std::wstring& core_dir);
 };
+
+}  // namespace wlx::core::registry

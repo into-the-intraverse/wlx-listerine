@@ -5,6 +5,9 @@
 #include <filesystem>
 #include <string>
 
+namespace wlx::core::registry {
+
+
 CoreConfig CoreConfig::load(const std::wstring& core_dir) {
     CoreConfig cfg;
     std::filesystem::path path = std::filesystem::path(core_dir) / "wlx-listerine-core.toml";
@@ -45,3 +48,5 @@ CoreConfig CoreConfig::load(const std::wstring& core_dir) {
     }
     return cfg;
 }
+
+}  // namespace wlx::core::registry

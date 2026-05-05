@@ -4,6 +4,8 @@
 #include "plugin_colorizer/layout/colorizer_layout.h"
 #include "plugin_colorizer/language/routing.h"
 
+using namespace wlx::core::colorizer;
+
 namespace fs = std::filesystem;
 
 static const bool grammars_present =

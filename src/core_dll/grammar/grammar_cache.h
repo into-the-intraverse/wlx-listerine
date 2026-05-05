@@ -15,6 +15,9 @@
 #endif
 #include <windows.h>
 
+namespace wlx::core::grammar {
+
+
 class WLX_CORE_API GrammarCache {
 public:
     using SteadyTp = std::chrono::steady_clock::time_point;
@@ -106,3 +109,5 @@ private:
     Loader   loader_;
     Releaser releaser_;
 };
+
+}  // namespace wlx::core::grammar

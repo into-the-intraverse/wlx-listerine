@@ -4,6 +4,9 @@
 
 #include <cstdint>
 
+namespace wlx::core::colorizer {
+
+
 struct WLX_CORE_API ColorSpan {
     uint32_t start = 0;       // byte offset in UTF-8 source
     uint32_t length = 0;
@@ -12,3 +15,5 @@ struct WLX_CORE_API ColorSpan {
     bool has_bg = false;
     uint8_t modifiers = 0;    // OR of TextModifier bits
 };
+
+}  // namespace wlx::core::colorizer
