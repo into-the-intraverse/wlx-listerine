@@ -32,6 +32,7 @@
 #include "runtime/search/search_index.h"
 #include "runtime/search/search_ops.h"
 #include "runtime/search/search_hud.h"
+#include "runtime/host/clipboard.h"
 #include "runtime/host/dark_mode.h"
 #include "runtime/host/host_integration.h"
 #include "runtime/host/module_path.h"
@@ -312,23 +313,7 @@ static int block_text_length(const LayoutBlock& block) {
     return len;
 }
 
-static bool copy_to_clipboard(HWND hwnd, const std::wstring& text) {
-    if (text.empty()) return false;
-    if (!OpenClipboard(hwnd)) return false;
-    EmptyClipboard();
-    size_t bytes = (text.size() + 1) * sizeof(wchar_t);
-    HGLOBAL hg = GlobalAlloc(GMEM_MOVEABLE, bytes);
-    if (hg) {
-        void* p = GlobalLock(hg);
-        if (p) {
-            memcpy(p, text.c_str(), bytes);
-            GlobalUnlock(hg);
-            SetClipboardData(CF_UNICODETEXT, hg);
-        }
-    }
-    CloseClipboard();
-    return true;
-}
+using wlx::runtime::host::copy_to_clipboard;
 
 static bool is_in_copy_button(const LayoutBlock& block, float x, float y) {
     if (block.type != BlockType::CodeFence) return false;

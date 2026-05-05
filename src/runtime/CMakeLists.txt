@@ -12,6 +12,7 @@ add_library(wlx-core STATIC
     interaction/text_selection.cpp
     search/search_index.cpp
     search/search_hud_painter.cpp
+    host/clipboard.cpp
     host/dark_mode.cpp
     host/module_path.cpp
 )
