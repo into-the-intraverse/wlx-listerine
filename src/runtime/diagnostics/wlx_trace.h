@@ -12,10 +12,14 @@
 // colorizer lines can be told apart in the same DebugView capture.
 
 #ifdef WLX_TRACE_ENABLE
-
 #include <windows.h>
 #include <cstdarg>
 #include <cstdio>
+#endif
+
+namespace wlx::runtime::diagnostics {
+
+#ifdef WLX_TRACE_ENABLE
 
 #ifndef WLX_TRACE_TAG
 #define WLX_TRACE_TAG L"wlx"
@@ -59,3 +63,5 @@ inline const wchar_t* wlx_trace_msg_name_(UINT msg) {
 inline const wchar_t* wlx_trace_msg_name_(unsigned) { return L"?"; }
 
 #endif  // WLX_TRACE_ENABLE
+
+}  // namespace wlx::runtime::diagnostics

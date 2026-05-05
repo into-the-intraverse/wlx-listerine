@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstdio>
 
+using namespace wlx::runtime::theme;
+
 TEST_CASE("parse_hex_color with # prefix") {
     CHECK(ThemeService::parse_hex_color("#FFFFFF") == 0xFFFFFF);
     CHECK(ThemeService::parse_hex_color("#000000") == 0x000000);

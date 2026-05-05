@@ -1,5 +1,14 @@
 #include "runtime/cache/cache_service.h"
+
+#include "runtime/layout/layout_document.h"
+
 #include <algorithm>
+
+namespace wlx::runtime::cache {
+
+
+using parser::Document;
+using layout::LayoutDocument;
 
 void CacheService::store_parse(const ParseCacheKey& key, std::shared_ptr<Document> doc) {
     parse_cache_[key] = std::move(doc);
@@ -42,3 +51,5 @@ void CacheService::clear() {
 int CacheService::bucket_width(int viewport_width) {
     return ((viewport_width + 24) / 50) * 50;
 }
+
+}  // namespace wlx::runtime::cache

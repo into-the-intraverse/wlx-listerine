@@ -37,6 +37,17 @@
 #define WLX_TRACE_TAG L"wlx-md"
 #include "runtime/diagnostics/wlx_trace.h"
 
+using namespace wlx::runtime::cache;
+using namespace wlx::runtime::diagnostics;
+using namespace wlx::runtime::host;
+using namespace wlx::runtime::interaction;
+using namespace wlx::runtime::io;
+using namespace wlx::runtime::layout;
+using namespace wlx::runtime::parser;
+using namespace wlx::runtime::render;
+using namespace wlx::runtime::search;
+using namespace wlx::runtime::theme;
+
 using Microsoft::WRL::ComPtr;
 
 // ---------- per-window state ----------

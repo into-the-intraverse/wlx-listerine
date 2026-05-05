@@ -5,6 +5,9 @@
 #include <dwrite.h>
 #include <wrl/client.h>
 
+using namespace wlx::runtime::search;
+using namespace wlx::runtime::theme;
+
 using Microsoft::WRL::ComPtr;
 
 static ComPtr<IDWriteFactory> create_dwrite_factory() {

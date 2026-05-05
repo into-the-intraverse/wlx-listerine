@@ -2,6 +2,9 @@
 
 #include <windows.h>
 
+namespace wlx::runtime::io {
+
+
 std::vector<uint8_t> FileService::read_bytes(const wchar_t* path, FileIdentity& out_identity) {
     out_identity.path = path;
     out_identity.size = 0;
@@ -200,3 +203,5 @@ std::optional<FileIdentity> FileService::identity(const wchar_t* path) {
     ident.mtime = (static_cast<uint64_t>(ft.dwHighDateTime) << 32) | ft.dwLowDateTime;
     return ident;
 }
+
+}  // namespace wlx::runtime::io

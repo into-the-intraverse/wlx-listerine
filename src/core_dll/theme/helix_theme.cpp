@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <set>
 
+using namespace wlx::runtime::util;
+
 // ---------------------------------------------------------------------------
 // Built-in ANSI / terminal color names (same defaults as Helix)
 // ---------------------------------------------------------------------------

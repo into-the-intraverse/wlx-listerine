@@ -2,6 +2,9 @@
 
 #include <cstdint>
 
+namespace wlx::runtime::theme {
+
+
 struct ColorPalette {
     uint32_t background;
     uint32_t text;
@@ -16,3 +19,5 @@ struct ColorPalette {
     uint32_t search_highlight;
     uint32_t search_highlight_current;
 };
+
+}  // namespace wlx::runtime::theme

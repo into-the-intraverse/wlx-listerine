@@ -4,6 +4,9 @@
 #include <functional>
 #include <string>
 
+namespace wlx::runtime::cache {
+
+
 struct ParseCacheKey {
     std::wstring path;
     uint64_t size = 0;
@@ -25,3 +28,5 @@ struct ParseCacheKeyHash {
         return h;
     }
 };
+
+}  // namespace wlx::runtime::cache

@@ -8,6 +8,9 @@
 #include <algorithm>
 #include <cstring>
 
+namespace wlx::runtime::parser {
+
+
 // --------------- static callbacks ---------------
 
 int MarkdownParser::cb_enter_block(MD_BLOCKTYPE type, void* detail, void* ud) {
@@ -496,3 +499,5 @@ Document MarkdownParser::parse(const char* markdown, size_t length) {
 
     return std::move(doc_);
 }
+
+}  // namespace wlx::runtime::parser

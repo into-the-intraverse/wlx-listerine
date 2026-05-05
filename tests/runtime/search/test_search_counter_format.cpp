@@ -1,6 +1,8 @@
 #include <doctest/doctest.h>
 #include "runtime/search/search_counter_format.h"
 
+using namespace wlx::runtime::search;
+
 TEST_CASE("format_counter") {
     SUBCASE("normal match") {
         CHECK(format_counter(1, 27) == L"1 / 27");

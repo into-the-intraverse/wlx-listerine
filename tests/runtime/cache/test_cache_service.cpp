@@ -1,5 +1,10 @@
 #include <doctest/doctest.h>
 #include "runtime/cache/cache_service.h"
+#include "runtime/parser/block_node.h"
+#include "runtime/parser/document.h"
+
+using namespace wlx::runtime::cache;
+using namespace wlx::runtime::parser;
 
 TEST_CASE("Viewport width bucketing") {
     CHECK(CacheService::bucket_width(0) == 0);

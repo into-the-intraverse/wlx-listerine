@@ -12,9 +12,12 @@
 #include <dwrite.h>
 #include <wrl/client.h>
 
+namespace wlx::runtime::search {
+
+
 class SearchHudPainter {
 public:
-    SearchHudPainter(IDWriteFactory* dwrite, const ThemeService& theme);
+    SearchHudPainter(IDWriteFactory* dwrite, const theme::ThemeService& theme);
 
     // Lays out the bar at origin (0,0). Caller positions the HWND/anchor
     // separately. Returns rects and total bar size.
@@ -28,7 +31,7 @@ public:
 private:
     Microsoft::WRL::ComPtr<IDWriteTextFormat> text_format_;
     IDWriteFactory* dwrite_   = nullptr;
-    const ThemeService* theme_ = nullptr;
+    const theme::ThemeService* theme_ = nullptr;
 
     static constexpr float kPadX     = 8.0f;   // horizontal padding inside bar
     static constexpr float kPadY     = 4.0f;   // vertical padding inside bar
@@ -48,3 +51,5 @@ private:
     static constexpr float kHoverAlpha    = 0.18f;
     static constexpr float kDisabledAlpha = 0.3f;
 };
+
+}  // namespace wlx::runtime::search

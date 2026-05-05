@@ -5,6 +5,9 @@
 #include "runtime/layout/layout_document.h"
 #include "runtime/layout/text_run.h"
 
+using namespace wlx::runtime::layout;
+using namespace wlx::runtime::search;
+
 namespace {
 
 struct FakeV {

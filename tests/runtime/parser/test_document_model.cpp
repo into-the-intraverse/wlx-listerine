@@ -5,6 +5,8 @@
 #include "runtime/parser/link_target.h"
 #include "runtime/parser/source_range.h"
 
+using namespace wlx::runtime::parser;
+
 TEST_CASE("BlockNode default values") {
     BlockNode node;
     CHECK(node.type == BlockType::Paragraph);

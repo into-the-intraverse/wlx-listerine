@@ -6,6 +6,9 @@
 #include <optional>
 #include <string>
 
+namespace wlx::runtime::parser {
+
+
 enum class InlineType {
     Text,
     Emphasis,
@@ -27,3 +30,5 @@ struct InlineNode {
     std::optional<LinkTarget> link;
     SourceRange source;
 };
+
+}  // namespace wlx::runtime::parser

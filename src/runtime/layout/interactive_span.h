@@ -8,7 +8,12 @@
 
 #include <d2d1.h>
 
+namespace wlx::runtime::layout {
+
+
 struct InteractiveSpan {
-    LinkTarget target;
+    parser::LinkTarget target;
     D2D1_RECT_F rect = {};
 };
+
+}  // namespace wlx::runtime::layout

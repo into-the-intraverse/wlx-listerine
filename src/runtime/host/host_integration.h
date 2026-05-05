@@ -12,6 +12,9 @@
 #include <unordered_map>
 #include <vector>
 
+namespace wlx::runtime::host {
+
+
 template <HostView V>
 class HostIntegration {
 public:
@@ -232,3 +235,5 @@ UINT HostIntegration<V>::find_reload_id_via_accel_resources_() {
         reinterpret_cast<LONG_PTR>(&found));
     return found;
 }
+
+}  // namespace wlx::runtime::host

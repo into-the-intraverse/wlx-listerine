@@ -7,6 +7,9 @@
 #include <vector>
 #include <optional>
 
+namespace wlx::runtime::parser {
+
+
 class MarkdownParser {
 public:
     Document parse(const char* markdown, size_t length);
@@ -48,3 +51,5 @@ private:
     // Code block state
     bool in_code_block_ = false;
 };
+
+}  // namespace wlx::runtime::parser

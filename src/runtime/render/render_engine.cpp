@@ -4,6 +4,13 @@
 
 #include <algorithm>
 
+namespace wlx::runtime::render {
+
+using namespace wlx::runtime::layout;
+using namespace wlx::runtime::parser;
+using namespace wlx::runtime::search;
+using namespace wlx::runtime::theme;
+
 RenderEngine::RenderEngine(ID2D1Factory* d2d_factory, IDWriteFactory* dwrite_factory,
                            const ThemeService& theme, bool dark_mode)
     : d2d_factory_(d2d_factory)
@@ -653,3 +660,5 @@ void RenderEngine::paint_indent_guides(const LayoutBlock& block, float offset_y)
             brush, 1.0f);
     }
 }
+
+}  // namespace wlx::runtime::render

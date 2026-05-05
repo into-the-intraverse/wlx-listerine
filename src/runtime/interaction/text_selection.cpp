@@ -4,6 +4,11 @@
 
 #include <algorithm>
 
+namespace wlx::runtime::interaction {
+
+using namespace wlx::runtime::layout;
+using namespace wlx::runtime::parser;
+
 static std::wstring block_full_text(const LayoutBlock& block) {
     std::wstring result;
     for (auto& run : block.text_runs)
@@ -80,3 +85,5 @@ std::pair<int, int> find_word_boundaries(const std::wstring& text, int offset) {
 
     return {start, end};
 }
+
+}  // namespace wlx::runtime::interaction

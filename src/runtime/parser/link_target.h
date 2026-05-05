@@ -2,6 +2,9 @@
 
 #include <string>
 
+namespace wlx::runtime::parser {
+
+
 enum class LinkKind {
     InternalAnchor,
     RelativeDoc,
@@ -13,3 +16,5 @@ struct LinkTarget {
     std::wstring url;
     std::wstring anchor_fragment;
 };
+
+}  // namespace wlx::runtime::parser

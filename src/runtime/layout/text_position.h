@@ -1,5 +1,8 @@
 #pragma once
 
+
+namespace wlx::runtime::layout {
+
 struct TextPosition {
     int block_index = -1;
     int char_offset = 0;
@@ -18,3 +21,5 @@ struct TextPosition {
     bool operator<=(const TextPosition& o) const { return !(o < *this); }
     bool operator>=(const TextPosition& o) const { return !(*this < o); }
 };
+
+}  // namespace wlx::runtime::layout

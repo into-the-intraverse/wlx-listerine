@@ -15,6 +15,10 @@
 #include <algorithm>
 #include <cmath>
 
+namespace wlx::runtime::search {
+
+using namespace wlx::runtime::theme;
+
 namespace {
 constexpr wchar_t kClassName[] = L"WlxListerineSearchHud";
 constexpr int    kMargin      = 12;
@@ -228,3 +232,5 @@ LRESULT SearchHud::handle_message(UINT msg, WPARAM wp, LPARAM lp) {
     }
     return DefWindowProcW(hwnd_, msg, wp, lp);
 }
+
+}  // namespace wlx::runtime::search

@@ -2,6 +2,9 @@
 
 #include <cstdint>
 
+namespace wlx::runtime::layout {
+
+
 struct ColorRange {
     uint32_t start = 0;
     uint32_t length = 0;
@@ -10,3 +13,5 @@ struct ColorRange {
     bool has_bg = false;
     uint8_t modifiers = 0;    // OR of TextModifier bits
 };
+
+}  // namespace wlx::runtime::layout

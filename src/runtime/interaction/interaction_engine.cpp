@@ -1,5 +1,10 @@
 #include "runtime/interaction/interaction_engine.h"
 
+namespace wlx::runtime::interaction {
+
+using namespace wlx::runtime::layout;
+using namespace wlx::runtime::parser;
+
 InteractionEngine::InteractionEngine(const LayoutDocument& layout)
     : layout_(layout) {}
 
@@ -66,3 +71,5 @@ std::optional<float> InteractionEngine::anchor_y(const std::wstring& slug) const
     }
     return std::nullopt;
 }
+
+}  // namespace wlx::runtime::interaction

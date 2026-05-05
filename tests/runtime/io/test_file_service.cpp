@@ -3,6 +3,8 @@
 #include <fstream>
 #include <cstdio>
 
+using namespace wlx::runtime::io;
+
 TEST_CASE("read existing markdown file") {
     FileService fs;
     auto result = fs.read(L"test_data/sample.md");

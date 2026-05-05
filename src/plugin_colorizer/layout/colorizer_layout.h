@@ -26,11 +26,12 @@ struct ColorizerDisplayConfig {
 // NOTE: Color span offsets from ColorizeResult are UTF-8 byte offsets in the original source.
 // This implementation assumes ASCII-compatible source (byte offset == wchar offset for BMP chars).
 // Non-ASCII files will have slightly misaligned highlights but will still render correctly as text.
-LayoutDocument layout_source(IDWriteFactory* dwrite,
-                             const std::wstring& source,
-                             const std::string& raw_utf8,
-                             const ColorizeResult& colors,
-                             const ThemeService& theme,
-                             bool dark_mode,
-                             float viewport_width,
-                             const ColorizerDisplayConfig& display);
+wlx::runtime::layout::LayoutDocument layout_source(
+    IDWriteFactory* dwrite,
+    const std::wstring& source,
+    const std::string& raw_utf8,
+    const ColorizeResult& colors,
+    const wlx::runtime::theme::ThemeService& theme,
+    bool dark_mode,
+    float viewport_width,
+    const ColorizerDisplayConfig& display);

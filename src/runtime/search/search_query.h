@@ -2,6 +2,9 @@
 
 #include <string>
 
+namespace wlx::runtime::search {
+
+
 struct SearchQuery {
     std::wstring needle;
     bool match_case = false;
@@ -16,3 +19,5 @@ inline bool operator==(const SearchQuery& a, const SearchQuery& b) {
     // `backwards` intentionally excluded — it controls advancement, not results
 }
 inline bool operator!=(const SearchQuery& a, const SearchQuery& b) { return !(a == b); }
+
+}  // namespace wlx::runtime::search

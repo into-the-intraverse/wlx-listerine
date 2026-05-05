@@ -3,6 +3,9 @@
 
 #include <cmath>
 
+namespace wlx::runtime::search {
+
+using namespace wlx::runtime::theme;
 using Microsoft::WRL::ComPtr;
 
 SearchHudPainter::SearchHudPainter(IDWriteFactory* dwrite, const ThemeService& theme)
@@ -122,3 +125,5 @@ void SearchHudPainter::paint(ID2D1RenderTarget* rt, const SearchHudState& s,
     paint_button(rects.prev, /*down_chevron=*/false, 0);
     paint_button(rects.next, /*down_chevron=*/true,  1);
 }
+
+}  // namespace wlx::runtime::search

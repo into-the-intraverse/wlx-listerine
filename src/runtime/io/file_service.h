@@ -8,6 +8,9 @@
 #include <string>
 #include <vector>
 
+namespace wlx::runtime::io {
+
+
 class FileService {
 public:
     std::optional<FileContent> read(const wchar_t* path);
@@ -19,3 +22,5 @@ private:
     std::wstring to_wstring(const std::string& utf8);
     void normalize_line_endings(std::string& text);
 };
+
+}  // namespace wlx::runtime::io

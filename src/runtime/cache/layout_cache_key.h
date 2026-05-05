@@ -5,6 +5,9 @@
 #include <cstdint>
 #include <functional>
 
+namespace wlx::runtime::cache {
+
+
 struct LayoutCacheKey {
     ParseCacheKey parse_key;
     int viewport_width_bucket = 0;
@@ -26,3 +29,5 @@ struct LayoutCacheKeyHash {
         return h;
     }
 };
+
+}  // namespace wlx::runtime::cache

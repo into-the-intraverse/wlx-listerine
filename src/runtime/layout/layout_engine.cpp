@@ -9,6 +9,11 @@
 #include <cwctype>
 #include <cmath>
 
+namespace wlx::runtime::layout {
+
+using namespace wlx::runtime::parser;
+using namespace wlx::runtime::theme;
+
 static const float kHeadingSizes[] = {28.0f, 24.0f, 20.0f, 17.0f, 14.0f, 12.0f};
 
 LayoutEngine::LayoutEngine(IDWriteFactory* dwrite, const ThemeService& theme, bool dark_mode,
@@ -719,3 +724,5 @@ void LayoutEngine::layout_table(const BlockNode& node, float& y, float left, flo
 
     y += spacing_.paragraph_spacing;
 }
+
+}  // namespace wlx::runtime::layout

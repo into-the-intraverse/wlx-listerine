@@ -10,6 +10,11 @@
 #include <cstring>
 #include <algorithm>
 
+using namespace wlx::runtime::interaction;
+using namespace wlx::runtime::layout;
+using namespace wlx::runtime::parser;
+using namespace wlx::runtime::theme;
+
 using Microsoft::WRL::ComPtr;
 
 TEST_CASE("TextPosition default is invalid") {

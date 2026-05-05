@@ -6,6 +6,9 @@
 #include <string>
 #include <vector>
 
+namespace wlx::runtime::parser {
+
+
 enum class BlockType {
     Document,
     Heading,
@@ -54,3 +57,5 @@ struct BlockNode {
 
     SourceRange source;
 };
+
+}  // namespace wlx::runtime::parser

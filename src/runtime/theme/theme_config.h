@@ -7,6 +7,9 @@
 #include <string>
 #include <vector>
 
+namespace wlx::runtime::theme {
+
+
 struct ThemeConfig {
     int version = 2;
     std::wstring detect_string = L"EXT=\"MD\" | EXT=\"MARKDOWN\"";
@@ -19,3 +22,5 @@ struct ThemeConfig {
     // Code highlighting
     std::string code_default_language;  // empty = no highlighting for untagged blocks
 };
+
+}  // namespace wlx::runtime::theme

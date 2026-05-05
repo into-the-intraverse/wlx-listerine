@@ -15,6 +15,9 @@
 #include <string>
 #include <vector>
 
+namespace wlx::runtime::layout {
+
+
 struct TextRun {
     std::wstring text;
     D2D1_RECT_F rect = {};
@@ -24,3 +27,5 @@ struct TextRun {
     std::vector<ColorRange> color_ranges;
     std::vector<CodeBgRect> code_bg_rects;
 };
+
+}  // namespace wlx::runtime::layout

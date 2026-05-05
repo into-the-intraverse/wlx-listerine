@@ -14,28 +14,30 @@
 #include <string>
 #include <vector>
 
+namespace wlx::runtime::layout {
+
 using Microsoft::WRL::ComPtr;
 
 class LayoutEngine {
 public:
-    LayoutEngine(IDWriteFactory* dwrite, const ThemeService& theme, bool dark_mode,
+    LayoutEngine(IDWriteFactory* dwrite, const theme::ThemeService& theme, bool dark_mode,
                  WlxCore* core = nullptr);
 
-    LayoutDocument layout(const Document& doc, float viewport_width, bool wrap_code = false);
+    LayoutDocument layout(const parser::Document& doc, float viewport_width, bool wrap_code = false);
 
 private:
-    void layout_blocks(const std::vector<BlockNode>& blocks, float& y,
+    void layout_blocks(const std::vector<parser::BlockNode>& blocks, float& y,
                        float left, float right, int list_depth);
 
-    void layout_heading(const BlockNode& node, float& y, float left, float right);
-    void layout_paragraph(const BlockNode& node, float& y, float left, float right);
-    void layout_list(const BlockNode& node, float& y, float left, float right, int list_depth);
-    void layout_list_item(const BlockNode& node, float& y, float left, float right,
+    void layout_heading(const parser::BlockNode& node, float& y, float left, float right);
+    void layout_paragraph(const parser::BlockNode& node, float& y, float left, float right);
+    void layout_list(const parser::BlockNode& node, float& y, float left, float right, int list_depth);
+    void layout_list_item(const parser::BlockNode& node, float& y, float left, float right,
                           int list_depth, bool ordered, int& counter);
-    void layout_blockquote(const BlockNode& node, float& y, float left, float right);
+    void layout_blockquote(const parser::BlockNode& node, float& y, float left, float right);
     void layout_hr(float& y, float left, float right);
-    void layout_code_fence(const BlockNode& node, float& y, float left, float right);
-    void layout_table(const BlockNode& node, float& y, float left, float right);
+    void layout_code_fence(const parser::BlockNode& node, float& y, float left, float right);
+    void layout_table(const parser::BlockNode& node, float& y, float left, float right);
 
     // Create a text layout from inline nodes, collecting interactive spans
     struct TextLayoutResult {
@@ -48,7 +50,7 @@ private:
         float height = 0;
     };
 
-    TextLayoutResult create_text_layout(const std::vector<InlineNode>& inlines,
+    TextLayoutResult create_text_layout(const std::vector<parser::InlineNode>& inlines,
                                         float max_width, uint32_t default_color);
 
     // Font helpers
@@ -56,13 +58,13 @@ private:
     ComPtr<IDWriteTextFormat> get_code_format(float size);
 
     // Anchor slug
-    std::wstring slugify(const std::vector<InlineNode>& inlines);
+    std::wstring slugify(const std::vector<parser::InlineNode>& inlines);
 
     IDWriteFactory* dwrite_;
-    const ThemeService& theme_;
-    const ColorPalette& colors_;
-    const SpacingConfig& spacing_;
-    const FontConfig& fonts_;
+    const theme::ThemeService& theme_;
+    const theme::ColorPalette& colors_;
+    const theme::SpacingConfig& spacing_;
+    const theme::FontConfig& fonts_;
     WlxCore* core_;
     bool dark_mode_;
 
@@ -73,3 +75,5 @@ private:
     ComPtr<IDWriteTextFormat> code_format_;
     bool wrap_code_ = false;
 };
+
+}  // namespace wlx::runtime::layout

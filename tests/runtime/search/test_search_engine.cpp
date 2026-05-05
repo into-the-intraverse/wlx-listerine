@@ -4,6 +4,9 @@
 #include "runtime/layout/layout_document.h"
 #include "runtime/layout/text_run.h"
 
+using namespace wlx::runtime::layout;
+using namespace wlx::runtime::search;
+
 static LayoutDocument make_layout(std::initializer_list<std::wstring> block_texts) {
     LayoutDocument doc;
     for (auto& t : block_texts) {

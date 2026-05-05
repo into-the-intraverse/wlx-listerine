@@ -14,6 +14,9 @@
 
 #include <d2d1.h>
 
+namespace wlx::runtime::theme {
+
+
 class ThemeService {
 public:
     ThemeService();
@@ -35,3 +38,5 @@ private:
     ThemeConfig config_;
     static ThemeConfig default_config();
 };
+
+}  // namespace wlx::runtime::theme

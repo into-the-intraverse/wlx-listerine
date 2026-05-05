@@ -25,6 +25,13 @@
 #include "runtime/search/search_index.h"
 #include "runtime/search/search_hud_painter.h"
 
+using namespace wlx::runtime::io;
+using namespace wlx::runtime::layout;
+using namespace wlx::runtime::parser;
+using namespace wlx::runtime::render;
+using namespace wlx::runtime::search;
+using namespace wlx::runtime::theme;
+
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
 

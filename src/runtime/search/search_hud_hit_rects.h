@@ -6,6 +6,9 @@
 
 #include <d2d1.h>
 
+namespace wlx::runtime::search {
+
+
 struct SearchHudHitRects {
     D2D1_RECT_F counter   = {};
     D2D1_RECT_F prev      = {};
@@ -36,3 +39,5 @@ inline int hit_test_button(const SearchHudHitRects& rects,
     if (inside(rects.next)) return 1;
     return -1;
 }
+
+}  // namespace wlx::runtime::search

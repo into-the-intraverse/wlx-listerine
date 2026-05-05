@@ -14,8 +14,11 @@
 #include <string>
 #include <vector>
 
+namespace wlx::runtime::layout {
+
+
 struct LayoutBlock {
-    BlockType type = BlockType::Paragraph;
+    parser::BlockType type = parser::BlockType::Paragraph;
     D2D1_RECT_F rect = {};
     std::vector<TextRun> text_runs;
     std::vector<InteractiveSpan> spans;
@@ -54,3 +57,5 @@ struct LayoutBlock {
     D2D1_RECT_F trailing_ws_rect = {};
     uint32_t trailing_ws_color = 0;
 };
+
+}  // namespace wlx::runtime::layout

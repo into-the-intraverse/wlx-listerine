@@ -3,6 +3,10 @@
 #include <toml++/toml.hpp>
 #include <functional>
 
+namespace wlx::runtime::theme {
+
+using namespace wlx::runtime::util;
+
 // --- read_palette (file-local) ---
 
 static ColorPalette read_palette(const toml::table& tbl, const ColorPalette& defaults) {
@@ -71,7 +75,7 @@ const ColorPalette& ThemeService::palette(bool dark_mode) const {
 }
 
 uint32_t ThemeService::parse_hex_color(const std::string& hex, uint32_t fallback) {
-    return ::parse_hex_color(hex, fallback);
+    return wlx::runtime::util::parse_hex_color(hex, fallback);
 }
 
 D2D1_COLOR_F ThemeService::to_d2d_color(uint32_t rgb, float alpha) {
@@ -193,3 +197,5 @@ uint64_t ThemeService::theme_hash() const {
 
     return hash;
 }
+
+}  // namespace wlx::runtime::theme

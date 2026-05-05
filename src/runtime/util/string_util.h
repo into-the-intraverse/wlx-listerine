@@ -6,6 +6,9 @@
 #include <windows.h>
 #include <string>
 
+namespace wlx::runtime::util {
+
+
 inline std::string wstring_to_utf8(const std::wstring& ws) {
     if (ws.empty()) return {};
     int len = WideCharToMultiByte(CP_UTF8, 0, ws.data(), static_cast<int>(ws.size()),
@@ -38,3 +41,5 @@ inline uint32_t parse_hex_color(const std::string& hex, uint32_t fallback = 0) {
         return fallback;
     }
 }
+
+}  // namespace wlx::runtime::util

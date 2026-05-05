@@ -1,9 +1,14 @@
 #include <doctest/doctest.h>
 #include "runtime/layout/layout_engine.h"
 #include "runtime/parser/markdown_parser.h"
+#include "runtime/theme/theme_service.h"
 
 #include <dwrite.h>
 #include <wrl/client.h>
+
+using namespace wlx::runtime::layout;
+using namespace wlx::runtime::parser;
+using namespace wlx::runtime::theme;
 
 using Microsoft::WRL::ComPtr;
 

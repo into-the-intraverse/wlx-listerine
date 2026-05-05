@@ -42,6 +42,16 @@
 #define WLX_TRACE_TAG L"wlx-clr"
 #include "runtime/diagnostics/wlx_trace.h"
 
+using namespace wlx::runtime::diagnostics;
+using namespace wlx::runtime::host;
+using namespace wlx::runtime::interaction;
+using namespace wlx::runtime::io;
+using namespace wlx::runtime::layout;
+using namespace wlx::runtime::render;
+using namespace wlx::runtime::search;
+using namespace wlx::runtime::theme;
+using namespace wlx::runtime::util;
+
 using Microsoft::WRL::ComPtr;
 
 // File-local: convert ABI WlxColorSpan array into the C++ ColorizeResult type.

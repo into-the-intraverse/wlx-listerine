@@ -10,6 +10,9 @@
 #include <string>
 #include <type_traits>
 
+namespace wlx::runtime::host {
+
+
 // Concept: the state that HostIntegration needs to drive the F2 reload and
 // the File->Reload menu subclass. Plus an ADL `reload_view(V&, const wchar_t*)`
 // free function in the plugin's translation unit.
@@ -30,3 +33,5 @@ struct ConceptProbe {
 inline void reload_view(ConceptProbe&, const wchar_t*) {}
 static_assert(HostView<ConceptProbe>);
 }
+
+}  // namespace wlx::runtime::host

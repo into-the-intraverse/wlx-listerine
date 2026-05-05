@@ -8,17 +8,19 @@
 #include <string>
 #include <unordered_map>
 
-struct LayoutDocument; // forward declaration
+namespace wlx::runtime::layout { struct LayoutDocument; }  // forward declaration
+
+namespace wlx::runtime::cache {
 
 class CacheService {
 public:
     // Parse cache
-    void store_parse(const ParseCacheKey& key, std::shared_ptr<Document> doc);
-    std::shared_ptr<Document> lookup_parse(const ParseCacheKey& key);
+    void store_parse(const ParseCacheKey& key, std::shared_ptr<parser::Document> doc);
+    std::shared_ptr<parser::Document> lookup_parse(const ParseCacheKey& key);
 
     // Layout cache
-    void store_layout(const LayoutCacheKey& key, std::shared_ptr<LayoutDocument> layout);
-    std::shared_ptr<LayoutDocument> lookup_layout(const LayoutCacheKey& key);
+    void store_layout(const LayoutCacheKey& key, std::shared_ptr<layout::LayoutDocument> layout);
+    std::shared_ptr<layout::LayoutDocument> lookup_layout(const LayoutCacheKey& key);
 
     // Invalidation
     void invalidate(const std::wstring& path);
@@ -31,6 +33,8 @@ public:
     size_t layout_cache_size() const { return layout_cache_.size(); }
 
 private:
-    std::unordered_map<ParseCacheKey, std::shared_ptr<Document>, ParseCacheKeyHash> parse_cache_;
-    std::unordered_map<LayoutCacheKey, std::shared_ptr<LayoutDocument>, LayoutCacheKeyHash> layout_cache_;
+    std::unordered_map<ParseCacheKey, std::shared_ptr<parser::Document>, ParseCacheKeyHash> parse_cache_;
+    std::unordered_map<LayoutCacheKey, std::shared_ptr<layout::LayoutDocument>, LayoutCacheKeyHash> layout_cache_;
 };
+
+}  // namespace wlx::runtime::cache

@@ -7,6 +7,9 @@
 #include <type_traits>
 #include <vector>
 
+namespace wlx::runtime::search {
+
+
 template <typename V>
 concept SearchState = requires(V& v) {
     { v.layout };
@@ -53,3 +56,5 @@ SearchStepResult search_step(V& vs, const SearchQuery& q, bool findfirst) {
         : (vs.current_match + 1) % n;
     return {true, vs.current_match, vs.matches, rebuilt};
 }
+
+}  // namespace wlx::runtime::search

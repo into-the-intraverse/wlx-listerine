@@ -8,6 +8,10 @@
 #include <algorithm>
 #include <cwctype>
 
+namespace wlx::runtime::search {
+
+using namespace wlx::runtime::layout;
+
 static std::wstring to_lower(std::wstring s) {
     if (!s.empty())
         CharLowerBuffW(&s[0], static_cast<DWORD>(s.size()));
@@ -78,3 +82,5 @@ std::vector<SearchMatch> SearchIndex::find_all(const SearchQuery& q) const {
     }
     return out;
 }
+
+}  // namespace wlx::runtime::search

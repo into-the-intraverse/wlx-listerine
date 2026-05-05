@@ -3,11 +3,15 @@
 #endif
 
 #include "plugin_colorizer/layout/colorizer_layout.h"
+#include "runtime/parser/block_node.h"
 
 #include <algorithm>
 #include <cstring>
 #include <vector>
 
+using namespace wlx::runtime::layout;
+using namespace wlx::runtime::parser;
+using namespace wlx::runtime::theme;
 using Microsoft::WRL::ComPtr;
 
 // ---- helpers ----------------------------------------------------------------

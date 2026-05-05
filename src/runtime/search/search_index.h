@@ -7,9 +7,12 @@
 #include <string>
 #include <vector>
 
+namespace wlx::runtime::search {
+
+
 class SearchIndex {
 public:
-    void build(const LayoutDocument& layout);
+    void build(const layout::LayoutDocument& layout);
     std::vector<SearchMatch> find_all(const SearchQuery& q) const;
     bool empty() const { return flat_.empty(); }
 
@@ -18,3 +21,5 @@ private:
     std::wstring flat_lower_;
     std::vector<int> block_starts_;
 };
+
+}  // namespace wlx::runtime::search

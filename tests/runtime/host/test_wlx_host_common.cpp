@@ -4,6 +4,8 @@
 #include <string>
 #include <windows.h>
 
+using namespace wlx::runtime::host;
+
 namespace {
 
 struct FakeV {

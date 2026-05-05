@@ -13,12 +13,15 @@
 
 #include <functional>
 
+namespace wlx::runtime::search {
+
+
 class SearchHud {
 public:
     SearchHud(HWND parent,
               ID2D1Factory* d2d_factory,
               IDWriteFactory* dwrite_factory,
-              const ThemeService& theme,
+              const theme::ThemeService& theme,
               bool dark_mode);
     ~SearchHud();
 
@@ -48,7 +51,7 @@ private:
     HWND parent_ = nullptr;
     HWND hwnd_   = nullptr;
     ID2D1Factory* d2d_factory_ = nullptr;
-    const ThemeService* theme_ = nullptr;
+    const theme::ThemeService* theme_ = nullptr;
     bool dark_mode_ = false;
 
     Microsoft::WRL::ComPtr<ID2D1HwndRenderTarget> rt_;
@@ -58,3 +61,5 @@ private:
     SearchHudHitRects rects_;
     bool tracking_mouse_ = false;
 };
+
+}  // namespace wlx::runtime::search

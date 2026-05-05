@@ -1,6 +1,8 @@
 #include <doctest/doctest.h>
 #include "runtime/parser/markdown_parser.h"
 
+using namespace wlx::runtime::parser;
+
 // Helper: parse a string literal (auto-computes length)
 static Document parse(const char* md) {
     MarkdownParser p;

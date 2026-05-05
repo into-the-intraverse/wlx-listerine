@@ -1,5 +1,8 @@
 #pragma once
 
+
+namespace wlx::runtime::theme {
+
 struct SpacingConfig {
     float paragraph_spacing = 12.0f;
     float heading_spacing_above = 24.0f;
@@ -10,3 +13,5 @@ struct SpacingConfig {
     float code_padding = 8.0f;
     float line_height_factor = 1.5f;
 };
+
+}  // namespace wlx::runtime::theme
