@@ -1,56 +1,14 @@
 #pragma once
 
+#include "runtime/cache/layout_cache_key.h"
+#include "runtime/cache/parse_cache_key.h"
 #include "runtime/parser/document.h"
-#include <cstdint>
+
 #include <memory>
 #include <string>
 #include <unordered_map>
 
 struct LayoutDocument; // forward declaration
-
-struct ParseCacheKey {
-    std::wstring path;
-    uint64_t size = 0;
-    uint64_t mtime = 0;
-    uint32_t parser_version = 0;
-
-    bool operator==(const ParseCacheKey& o) const {
-        return path == o.path && size == o.size && mtime == o.mtime
-            && parser_version == o.parser_version;
-    }
-};
-
-struct LayoutCacheKey {
-    ParseCacheKey parse_key;
-    int viewport_width_bucket = 0;
-    uint32_t dpi = 0;
-    uint64_t theme_hash = 0;
-
-    bool operator==(const LayoutCacheKey& o) const {
-        return parse_key == o.parse_key && viewport_width_bucket == o.viewport_width_bucket
-            && dpi == o.dpi && theme_hash == o.theme_hash;
-    }
-};
-
-struct ParseCacheKeyHash {
-    size_t operator()(const ParseCacheKey& k) const {
-        size_t h = std::hash<std::wstring>{}(k.path);
-        h ^= std::hash<uint64_t>{}(k.size) + 0x9e3779b9 + (h << 6) + (h >> 2);
-        h ^= std::hash<uint64_t>{}(k.mtime) + 0x9e3779b9 + (h << 6) + (h >> 2);
-        h ^= std::hash<uint32_t>{}(k.parser_version) + 0x9e3779b9 + (h << 6) + (h >> 2);
-        return h;
-    }
-};
-
-struct LayoutCacheKeyHash {
-    size_t operator()(const LayoutCacheKey& k) const {
-        size_t h = ParseCacheKeyHash{}(k.parse_key);
-        h ^= std::hash<int>{}(k.viewport_width_bucket) + 0x9e3779b9 + (h << 6) + (h >> 2);
-        h ^= std::hash<uint32_t>{}(k.dpi) + 0x9e3779b9 + (h << 6) + (h >> 2);
-        h ^= std::hash<uint64_t>{}(k.theme_hash) + 0x9e3779b9 + (h << 6) + (h >> 2);
-        return h;
-    }
-};
 
 class CacheService {
 public:
