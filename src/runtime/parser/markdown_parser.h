@@ -1,6 +1,7 @@
 #pragma once
 
-#include "runtime/parser/document_model.h"
+#include "runtime/parser/document.h"
+
 #include <md4c.h>
 #include <string>
 #include <vector>

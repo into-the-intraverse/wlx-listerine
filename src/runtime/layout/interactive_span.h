@@ -4,7 +4,7 @@
 #define NOMINMAX
 #endif
 
-#include "runtime/parser/document_model.h"
+#include "runtime/parser/link_target.h"
 
 #include <d2d1.h>
 

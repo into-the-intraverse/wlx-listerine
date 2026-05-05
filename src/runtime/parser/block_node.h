@@ -1,7 +1,8 @@
 #pragma once
 
-#include <cstdint>
-#include <optional>
+#include "runtime/parser/inline_node.h"
+#include "runtime/parser/source_range.h"
+
 #include <string>
 #include <vector>
 
@@ -20,48 +21,9 @@ enum class BlockType {
     CodeFence
 };
 
-enum class InlineType {
-    Text,
-    Emphasis,
-    Strong,
-    InlineCode,
-    Link,
-    SoftBreak,
-    HardBreak,
-    EmojiText
-};
-
-enum class LinkKind {
-    InternalAnchor,
-    RelativeDoc,
-    ExternalUrl
-};
-
 enum class ListStyle {
     Unordered,
     Ordered
-};
-
-struct SourceRange {
-    uint32_t offset = 0;
-    uint32_t length = 0;
-};
-
-struct LinkTarget {
-    LinkKind kind = LinkKind::ExternalUrl;
-    std::wstring url;
-    std::wstring anchor_fragment;
-};
-
-struct InlineNode {
-    InlineType type = InlineType::Text;
-    std::wstring text;
-    bool bold = false;
-    bool italic = false;
-    bool strikethrough = false;
-    bool code = false;
-    std::optional<LinkTarget> link;
-    SourceRange source;
 };
 
 struct BlockNode {
@@ -91,8 +53,4 @@ struct BlockNode {
     CellAlign cell_align = CellAlign::Default;
 
     SourceRange source;
-};
-
-struct Document {
-    std::vector<BlockNode> blocks;
 };

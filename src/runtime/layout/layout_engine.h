@@ -5,7 +5,7 @@
 #include "runtime/layout/interactive_span.h"
 #include "runtime/layout/layout_document.h"
 #include "runtime/layout/text_position.h"
-#include "runtime/parser/document_model.h"
+#include "runtime/parser/document.h"
 #include "runtime/theme/theme_service.h"
 #include "wlx_core/abi.h"
 

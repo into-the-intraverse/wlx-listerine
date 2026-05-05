@@ -1,5 +1,9 @@
 #include <doctest/doctest.h>
-#include "runtime/parser/document_model.h"
+#include "runtime/parser/block_node.h"
+#include "runtime/parser/document.h"
+#include "runtime/parser/inline_node.h"
+#include "runtime/parser/link_target.h"
+#include "runtime/parser/source_range.h"
 
 TEST_CASE("BlockNode default values") {
     BlockNode node;

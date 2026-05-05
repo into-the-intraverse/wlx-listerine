@@ -6,7 +6,7 @@
 
 #include "runtime/layout/interactive_span.h"
 #include "runtime/layout/text_run.h"
-#include "runtime/parser/document_model.h"
+#include "runtime/parser/block_node.h"
 
 #include <d2d1.h>
 
