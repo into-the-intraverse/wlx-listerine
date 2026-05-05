@@ -44,14 +44,3 @@ add_subdirectory(src/plugin_md)
 add_subdirectory(src/plugin_colorizer)
 add_subdirectory(src/tools/screenshot)
 add_subdirectory(tests)
-
-# --- Screenshot tool ---
-add_executable(screenshot_tool
-    src/screenshot_main.cpp
-)
-
-target_link_libraries(screenshot_tool PRIVATE
-    wlx-core
-    windowscodecs
-    ole32
-)
