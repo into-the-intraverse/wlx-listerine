@@ -130,6 +130,11 @@ static std::wstring get_module_dir() {
 }
 
 
+// Phase 4 (Task 4.9 audit): NOT lifted to runtime/host. The md and colorizer
+// versions diverge — colorizer overrides the default detect_string and parses
+// a [display] section that this plugin doesn't have. The shared portion
+// (load TOML + set loaded flag) isn't large enough to justify the parameter
+// surface a lifted version would need (filename + post-load callback).
 static void ensure_theme() {
     if (!g_theme_loaded) {
         std::wstring cfg_path = get_module_dir() + L"wlx-listerine-md.toml";

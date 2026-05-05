@@ -287,6 +287,12 @@ static constexpr wchar_t kDefaultDetectString[] =
     L"EXT=\"CMAKE\" | EXT=\"SQL\" | EXT=\"DOCKERFILE\" | "
     L"EXT=\"GITCONFIG\" | EXT=\"GITIGNORE\" | EXT=\"GITATTRIBUTES\"";
 
+// Phase 4 (Task 4.9 audit): NOT lifted to runtime/host. This plugin's
+// ensure_theme overrides the default detect_string and parses a colorizer-
+// specific [display] section (line_numbers, word_wrap, tab_width, show_*,
+// cpp_grammar, …). The md plugin has none of that. The shared portion
+// (load TOML + set loaded flag) is small enough that lifting it would
+// require either a callback parameter or a virtual hook — not worth it.
 static void ensure_theme() {
     if (!g_theme_loaded) {
         std::wstring cfg_path = get_module_dir() + L"wlx-listerine-colorizer.toml";
