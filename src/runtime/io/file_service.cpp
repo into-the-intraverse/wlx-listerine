@@ -1,5 +1,7 @@
 #include "runtime/io/file_service.h"
 
+#include <windows.h>
+
 std::vector<uint8_t> FileService::read_bytes(const wchar_t* path, FileIdentity& out_identity) {
     out_identity.path = path;
     out_identity.size = 0;

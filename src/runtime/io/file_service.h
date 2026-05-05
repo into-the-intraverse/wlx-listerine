@@ -1,22 +1,12 @@
 #pragma once
 
+#include "runtime/io/file_content.h"
+#include "runtime/io/file_identity.h"
+
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
-#include <windows.h>
-
-struct FileIdentity {
-    std::wstring path;
-    uint64_t size = 0;
-    uint64_t mtime = 0;
-};
-
-struct FileContent {
-    std::string raw_utf8;        // Original UTF-8 bytes for md4c parser
-    std::wstring text;           // Decoded + normalized for DirectWrite
-    FileIdentity identity;
-};
 
 class FileService {
 public:
