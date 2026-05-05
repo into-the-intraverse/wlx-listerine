@@ -31,7 +31,7 @@
 #include "runtime/search/search_index.h"
 #include "runtime/search/search_ops.h"
 #include "runtime/search/search_hud.h"
-#include "runtime/host/wlx_host_common.h"
+#include "runtime/host/host_integration.h"
 
 #define WLX_TRACE_TAG L"wlx-md"
 #include "runtime/diagnostics/wlx_trace.h"

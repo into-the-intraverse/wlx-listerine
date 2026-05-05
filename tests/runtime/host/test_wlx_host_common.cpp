@@ -1,5 +1,5 @@
 #include <doctest/doctest.h>
-#include "runtime/host/wlx_host_common.h"
+#include "runtime/host/host_integration.h"
 
 #include <string>
 #include <windows.h>

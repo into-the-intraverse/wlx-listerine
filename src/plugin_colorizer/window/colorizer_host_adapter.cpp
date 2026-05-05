@@ -34,7 +34,7 @@
 #include "plugin_colorizer/layout/colorizer_layout.h"
 #include "plugin_colorizer/language/routing.h"
 #include "runtime/search/search_hud.h"
-#include "runtime/host/wlx_host_common.h"
+#include "runtime/host/host_integration.h"
 
 #include <toml++/toml.hpp>
 
