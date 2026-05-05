@@ -1,4 +1,5 @@
 #include <doctest/doctest.h>
+#include "runtime/interaction/text_selection.h"
 #include "runtime/layout/layout_engine.h"
 #include "runtime/parser/markdown_parser.h"
 #include "runtime/theme/theme_service.h"

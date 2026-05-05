@@ -4,7 +4,6 @@
 #include "runtime/layout/color_range.h"
 #include "runtime/layout/interactive_span.h"
 #include "runtime/layout/layout_document.h"
-#include "runtime/layout/text_position.h"
 #include "runtime/parser/document.h"
 #include "runtime/theme/theme_service.h"
 #include "wlx_core/abi.h"
@@ -13,15 +12,9 @@
 #include <wrl/client.h>
 
 #include <string>
-#include <utility>
 #include <vector>
 
 using Microsoft::WRL::ComPtr;
-
-std::wstring extract_selected_text(const LayoutDocument& layout,
-                                   TextPosition start, TextPosition end);
-
-std::pair<int, int> find_word_boundaries(const std::wstring& text, int offset);
 
 class LayoutEngine {
 public:

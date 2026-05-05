@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "listerplugin.h"
+#include "runtime/interaction/text_selection.h"
 #include "runtime/io/file_service.h"
 #include "runtime/layout/layout_engine.h"
 #include "runtime/render/render_engine.h"

@@ -1,4 +1,7 @@
-#include "runtime/layout/layout_engine.h"
+#include "runtime/interaction/text_selection.h"
+
+#include "runtime/layout/layout_block.h"
+
 #include <algorithm>
 
 static std::wstring block_full_text(const LayoutBlock& block) {
