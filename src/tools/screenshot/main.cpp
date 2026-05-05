@@ -35,6 +35,8 @@ using namespace wlx::runtime::theme;
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
 
+namespace wlx::tools::screenshot {
+
 struct Options {
     std::wstring input_path;
     std::wstring config_path = L"config/wlx-listerine-md.toml";
@@ -160,6 +162,10 @@ static bool parse_args(int argc, char* argv[], Options& opts) {
     }
     return true;
 }
+
+}  // namespace wlx::tools::screenshot
+
+using namespace wlx::tools::screenshot;
 
 int main(int argc, char* argv[]) {
     Options opts;
