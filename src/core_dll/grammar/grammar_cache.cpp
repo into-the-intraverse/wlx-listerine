@@ -55,6 +55,14 @@ GrammarCache::Loader GrammarCache::default_loader() {
 void GrammarCache::register_entry(const std::string& language,
                                   std::wstring dll_path,
                                   std::string query_source) {
+    // Normalize CRLF -> LF so the `; inherits:` parser in get_query (which
+    // splits on '\n' alone) doesn't drag a stray '\r' into the parent
+    // grammar lookup. .scm files arrive with either EOL convention depending
+    // on how Git checks them out: core.autocrlf=true on Windows yields CRLF,
+    // which previously broke `; inherits: c\r\n` -> `raw_query_source("c\r")`
+    // -> empty -> cpp lost all C-derived queries.
+    query_source.erase(std::remove(query_source.begin(), query_source.end(), '\r'),
+                       query_source.end());
     auto& e = entries_[language];
     e.dll_path = std::move(dll_path);
     e.query_source = std::move(query_source);

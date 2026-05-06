@@ -28,6 +28,21 @@ GrammarCache::Releaser noop_releaser() {
 }
 } // namespace
 
+TEST_CASE("GrammarCache: register_entry normalizes CRLF in query source") {
+    // Regression: `; inherits: c\r\n` previously survived intact and the
+    // `; inherits:` parser (which only splits on '\n') looked up grammar
+    // "c\r" -- empty -- so cpp lost all C-derived queries on CI runners
+    // that check .scm files out with core.autocrlf=true. Normalizing CRLF
+    // -> LF at register_entry time keeps every downstream parser sane.
+    GrammarCache::SteadyTp now{};
+    int counter = 0;
+    GrammarCache c(8, 5min, [&] { return now; }, make_loader(counter), noop_releaser());
+    c.register_entry("cpp", L"cpp.dll", "; inherits: c\r\n(call_expression) @function\r\n");
+    const std::string normalized = c.raw_query_source("cpp");
+    CHECK(normalized.find('\r') == std::string::npos);
+    CHECK(normalized == "; inherits: c\n(call_expression) @function\n");
+}
+
 TEST_CASE("GrammarCache: get_grammar loads on first call") {
     GrammarCache::SteadyTp now{};
     int counter = 0;
