@@ -1,0 +1,30 @@
+{
+  "source": "sample.toml",
+  "language": "toml",
+  "theme": "default_dark",
+  "config_hash": "900a7fa8e381226e",
+  "token_count": 21,
+  "tokens": [
+    { "line": 1, "col": 1, "len": 13, "color": "#6A9955", "mods": ["italic"] },
+    { "line": 2, "col": 1, "len": 23, "color": "#9CDCFE", "mods": [] },
+    { "line": 3, "col": 1, "len": 11, "color": "#9CDCFE", "mods": [] },
+    { "line": 5, "col": 1, "len": 1, "color": "#D4D4D4", "mods": [] },
+    { "line": 5, "col": 2, "len": 8, "color": "#4EC9B0", "mods": [] },
+    { "line": 5, "col": 10, "len": 1, "color": "#D4D4D4", "mods": [] },
+    { "line": 6, "col": 1, "len": 22, "color": "#9CDCFE", "mods": [] },
+    { "line": 7, "col": 1, "len": 11, "color": "#9CDCFE", "mods": [] },
+    { "line": 8, "col": 1, "len": 14, "color": "#9CDCFE", "mods": [] },
+    { "line": 10, "col": 1, "len": 1, "color": "#D4D4D4", "mods": [] },
+    { "line": 10, "col": 2, "len": 8, "color": "#4EC9B0", "mods": [] },
+    { "line": 10, "col": 10, "len": 1, "color": "#D4D4D4", "mods": [] },
+    { "line": 10, "col": 11, "len": 7, "color": "#4EC9B0", "mods": [] },
+    { "line": 10, "col": 18, "len": 1, "color": "#D4D4D4", "mods": [] },
+    { "line": 11, "col": 1, "len": 14, "color": "#9CDCFE", "mods": [] },
+    { "line": 12, "col": 1, "len": 11, "color": "#9CDCFE", "mods": [] },
+    { "line": 14, "col": 1, "len": 2, "color": "#D4D4D4", "mods": [] },
+    { "line": 14, "col": 3, "len": 7, "color": "#4EC9B0", "mods": [] },
+    { "line": 14, "col": 10, "len": 2, "color": "#D4D4D4", "mods": [] },
+    { "line": 15, "col": 1, "len": 14, "color": "#9CDCFE", "mods": [] },
+    { "line": 16, "col": 1, "len": 15, "color": "#9CDCFE", "mods": [] }
+  ]
+}
