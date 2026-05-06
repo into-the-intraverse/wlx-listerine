@@ -1,17 +1,20 @@
 """Compare screenshot_tool output vs Chrome reference screenshots.
 
-Usage: python compare.py [case_name]
-  No args: compare all cases
-  With arg: compare a single case, e.g. "01_headings_atx"
+Usage: python compare.py [case_name] [--subdir DIR]
+  No args: compare all cases in default "cases" subdir
+  With filter arg: compare cases matching the substring, e.g. "01_headings_atx"
+  With --subdir: walk a different subdir under test_data/, e.g. "colorizer_smokes"
 
 Generates _diff.png images and prints similarity scores.
 """
+import argparse
 import sys
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFont
 
-CASES_DIR = Path(__file__).parent / "cases"
+DEFAULT_SUBDIR = "cases"
+TEST_DATA = Path(__file__).parent
 
 
 def compare_images(ours_path: Path, chrome_path: Path) -> tuple[float, Image.Image]:
@@ -77,19 +80,43 @@ def compare_images(ours_path: Path, chrome_path: Path) -> tuple[float, Image.Ima
 
 
 def main():
-    filter_name = sys.argv[1] if len(sys.argv) > 1 else None
+    p = argparse.ArgumentParser(description="Compare screenshot_tool output vs golden PNGs.")
+    p.add_argument("filter", nargs="?", default=None,
+                   help="Substring filter on case name (optional)")
+    p.add_argument("--subdir", default=DEFAULT_SUBDIR,
+                   help=f"Subdirectory under test_data/ to walk (default: {DEFAULT_SUBDIR})")
+    args = p.parse_args()
 
-    cases = sorted(CASES_DIR.glob("*.md"))
+    cases_dir = TEST_DATA / args.subdir
+    if not cases_dir.is_dir():
+        print(f"  ERROR  subdir does not exist: {cases_dir}")
+        sys.exit(2)
+
+    # Markdown cases use .md as the source extension; colorizer smokes will
+    # use language-specific extensions (.cpp, .py, etc.). Walk a small set of
+    # known source extensions; subdirs without any of these extensions yield
+    # an empty case list.
+    cases = sorted(
+        list(cases_dir.glob("*.md")) +
+        list(cases_dir.glob("*.cpp")) +
+        list(cases_dir.glob("*.py")) +
+        list(cases_dir.glob("*.txt"))
+    )
+
     results = []
 
-    for md_file in cases:
-        name = md_file.stem
-        if filter_name and filter_name not in name:
+    for src_file in cases:
+        # Markdown cases (.md) use the stem as the name and the existing
+        # <stem>.png / <stem>_chrome.png / <stem>_golden.png convention.
+        # Non-.md cases (e.g. sample.cpp) preserve the full filename so
+        # sample.cpp.png is distinct from sample.cs.png.
+        name = src_file.stem if src_file.suffix == ".md" else src_file.name
+        if args.filter and args.filter not in name:
             continue
 
-        ours_path = CASES_DIR / f"{name}.png"
-        golden_path = CASES_DIR / f"{name}_golden.png"
-        chrome_path = CASES_DIR / f"{name}_chrome.png"
+        ours_path = cases_dir / f"{name}.png"
+        golden_path = cases_dir / f"{name}_golden.png"
+        chrome_path = cases_dir / f"{name}_chrome.png"
 
         if not ours_path.exists():
             print(f"  SKIP  {name} (no tool screenshot)")
@@ -106,7 +133,7 @@ def main():
             continue
 
         similarity, diff_img = compare_images(ours_path, ref_path)
-        diff_path = CASES_DIR / f"{name}_diff.png"
+        diff_path = cases_dir / f"{name}_diff.png"
         diff_img.save(diff_path)
 
         status = "PASS" if similarity >= threshold else "WARN" if similarity >= threshold - 15 else "FAIL"
