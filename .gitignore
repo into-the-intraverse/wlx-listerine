@@ -3,11 +3,21 @@ output/
 CMakeUserPresets.json
 *.user
 
-# Generated screenshots (our tool output)
+# Generated screenshots & token snapshots (tool output)
+# Markdown side:
 test_data/*.png
 test_data/cases/*.png
 !test_data/cases/*_chrome.png
 !test_data/cases/*_golden.png
+# Colorizer side — grammar_samples (token snapshots + stray PNGs):
+test_data/grammar_samples/*.png
+test_data/grammar_samples/*_tokens.dark.json
+test_data/grammar_samples/*_tokens.light.json
+test_data/grammar_samples/*_tokens.*_diff.txt
+# Colorizer side — colorizer_smokes (everything that isn't a golden):
+test_data/colorizer_smokes/*.png
+!test_data/colorizer_smokes/*_golden.png
+test_data/colorizer_smokes/*_diff.png
 node_modules/
 bun.lockb
 bun.lock
