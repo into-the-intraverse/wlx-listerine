@@ -2,7 +2,12 @@
 set -euo pipefail
 
 # Only run visual tests when rendering-relevant files are staged
-RELEVANT="\.cpp$|\.h$|\.toml$|test_data/cases/.*\.md$|test_data/grammar_samples/sample\.[^.]+$|test_data/colorizer_smokes/.*|config/themes/.*\.toml$|grammars/.*/queries/.*\.scm$"
+# The smokes alternation matches `smoke_*.<ext>` and `smoke_*.flags` (one dot
+# in the filename) but NOT `smoke_*.<ext>_golden.png`/`_dark.png`/`_diff.png`
+# (two dots) — so regen-only commits that touch only golden PNGs don't
+# re-fire the hook. Same trick the grammar_samples alternation uses for token
+# JSON goldens.
+RELEVANT="\.cpp$|\.h$|\.toml$|test_data/cases/.*\.md$|test_data/grammar_samples/sample\.[^.]+$|test_data/colorizer_smokes/[^/.]+\.[^/.]+$|config/themes/.*\.toml$|grammars/.*/queries/.*\.scm$"
 
 staged=$(git diff --cached --name-only --diff-filter=ACMR || true)
 if [[ -z "$staged" ]] || ! echo "$staged" | grep -qE "$RELEVANT"; then
