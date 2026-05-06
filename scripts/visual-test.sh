@@ -61,9 +61,12 @@ else
     s2_ok=0
     s2_fail=0
     for sample in "$SAMPLES_DIR"/sample.*; do
-        # Skip the just-produced and golden JSON, the PNGs, and the diff files.
+        # Skip the just-produced and golden token JSON, the PNGs, and the diff
+        # files. The pattern *_tokens.*.json catches both *_tokens.dark.json
+        # and *_tokens.dark.golden.json without colliding with sample.json
+        # (a real source file whose grammar is "json").
         case "$sample" in
-            *.json|*.png|*_diff.txt) continue ;;
+            *_tokens.*.json|*.png|*_diff.txt) continue ;;
         esac
         name="$(basename "$sample")"
         if "$SCREENSHOT_TOOL" "$sample" --colorizer --dump-tokens --dark > /dev/null 2>&1; then
