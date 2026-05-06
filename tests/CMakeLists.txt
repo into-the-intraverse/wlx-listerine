@@ -34,8 +34,8 @@ add_executable(colorizer-tests
     core_dll/abi/test_wlx_core_abi.cpp
     core_dll/registry/test_core_config.cpp
     core_dll/grammar/test_grammar_cache.cpp
+    tools/test_token_json_writer.cpp
 )
-
 
 target_link_libraries(colorizer-tests PRIVATE
     wlx-listerine-core
