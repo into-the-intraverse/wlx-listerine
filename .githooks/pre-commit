@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Only run visual tests when rendering-relevant files are staged
-RELEVANT="\.cpp$|\.h$|\.toml$|test_data/cases/.*\.md$"
+RELEVANT="\.cpp$|\.h$|\.toml$|test_data/cases/.*\.md$|test_data/grammar_samples/sample\.[^.]+$|test_data/colorizer_smokes/.*|config/themes/.*\.toml$|grammars/.*/queries/.*\.scm$"
 
 staged=$(git diff --cached --name-only --diff-filter=ACMR || true)
 if [[ -z "$staged" ]] || ! echo "$staged" | grep -qE "$RELEVANT"; then
