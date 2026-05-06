@@ -12,8 +12,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <string>
 
 #include "runtime/io/file_service.h"
@@ -23,6 +26,7 @@
 #include "core_dll/colorizer/colorizer.h"
 #include "plugin_colorizer/layout/colorizer_layout.h"
 #include "plugin_colorizer/language/routing.h"
+#include "tools/screenshot/token_json_writer.h"
 
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
@@ -92,16 +96,58 @@ CppGrammar parse_cpp_variant(const std::wstring& s) {
     return CppGrammar::Standard;
 }
 
-// Build the output PNG path: <stem>.<ext>.png next to the source. The dark
-// suffix (_dark) is appended when --dark is set, mirroring the markdown
-// pipeline's _dark suffix convention.
-std::wstring out_path_for_paint(const std::wstring& input_path, bool dark) {
+// Build sibling output path: <input_dir>/<filename><suffix>.
+// `filename` keeps the extension so sample.cpp.png is distinct from sample.cs.png.
+std::wstring sibling_path(const std::wstring& input_path,
+                          const std::wstring& suffix) {
     fs::path input(input_path);
-    std::wstring stem = input.filename().wstring();  // includes extension
-    std::wstring out_name = stem + (dark ? L"_dark.png" : L".png");
+    std::wstring out_name = input.filename().wstring() + suffix;
     return input.parent_path().empty()
         ? fs::path(out_name).wstring()
         : (input.parent_path() / out_name).wstring();
+}
+
+// FNV-1a hex over a canonical line-format serialization of the inputs that
+// influence colorize+layout output. The hash isn't cryptographic — its only
+// job is to flip when any of these inputs change, so the comparator can
+// distinguish "config drift, regenerate goldens" from "real semantic
+// regression". The schema doesn't pin the algorithm; if we later swap to
+// SHA1, regenerating goldens once is the only migration cost.
+std::string fnv1a_hex(const std::string& bytes) {
+    uint64_t h = 0xcbf29ce484222325ull;
+    for (unsigned char c : bytes) {
+        h ^= c;
+        h *= 0x100000001b3ull;
+    }
+    char buf[17];
+    std::snprintf(buf, sizeof(buf), "%016llx",
+                  static_cast<unsigned long long>(h));
+    return std::string(buf);
+}
+
+std::string compute_config_hash(const std::string& theme_name,
+                                bool dark_mode,
+                                const ColorizerDisplayConfig& d) {
+    // If a new ColorizerDisplayConfig field lands, this assert fires —
+    // forcing an update to the canonical serialization below. Without
+    // the guard, two configs differing only in the new field would
+    // silently hash to the same value.
+    static_assert(sizeof(ColorizerDisplayConfig) == 24,
+                  "ColorizerDisplayConfig layout changed; "
+                  "update compute_config_hash to include the new field(s).");
+
+    std::ostringstream s;
+    s << "theme="            << theme_name << '\n';
+    s << "dark="             << (dark_mode ? "1" : "0") << '\n';
+    s << "line_numbers="     << (d.line_numbers ? "1" : "0") << '\n';
+    s << "word_wrap="        << (d.word_wrap ? "1" : "0") << '\n';
+    s << "tab_width="        << d.tab_width << '\n';
+    s << "line_height="      << d.line_height_factor << '\n';
+    s << "show_whitespace="  << static_cast<int>(d.show_whitespace) << '\n';
+    s << "indent_guides="    << (d.show_indent_guides ? "1" : "0") << '\n';
+    s << "highlight_trail="  << (d.highlight_trailing ? "1" : "0") << '\n';
+    s << "cpp_grammar="      << static_cast<int>(d.cpp_grammar) << '\n';
+    return fnv1a_hex(s.str());
 }
 
 // Default config path for colorizer mode. If the user passed --config, that's
@@ -178,15 +224,60 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
     // ----- Colorize -----
     ColorizeResult colors = colorizer.colorize(content->raw_utf8, lang, opts.dark);
 
-    // ----- --dump-tokens branch (real impl in Stage 3.4) -----
+    // ----- Build display config (used by both paint and dump-tokens paths) -----
+    ColorizerDisplayConfig display;
+    display.cpp_grammar = variant;
+    // (Stage 3.5 will load --display-config TOML overrides here.)
+
+    // ----- --dump-tokens branch -----
     if (opts.dump_tokens) {
-        std::fprintf(stderr, "--dump-tokens not yet wired (Stage 3.4)\n");
-        return {};
+        // Placeholder: HelixTheme has no name() accessor today, and ThemeService
+        // doesn't expose the loaded theme's name either. A user setting
+        // `theme = "monokai"` in wlx-listerine-colorizer.toml would currently
+        // get "default_dark"/"default_light" in the JSON header. Note this
+        // doesn't break golden detection — a theme swap changes resolved
+        // colors, so per-token diffs fire even though config_hash is stable.
+        // TODO: when HelixTheme::name() lands, replace this literal.
+        const std::string theme_name_str = opts.dark ? "default_dark" : "default_light";
+        TokenJsonOptions json_opts;
+        json_opts.source_name = fs::path(opts.input_path).filename().string();
+        json_opts.language    = lang;
+        json_opts.theme_name  = theme_name_str;
+        json_opts.config_hash = compute_config_hash(theme_name_str, opts.dark, display);
+
+        std::string json = TokenJsonWriter::write(colors, content->raw_utf8, json_opts);
+
+        const std::wstring suffix = opts.dark
+            ? L"_tokens.dark.json"
+            : L"_tokens.light.json";
+        std::wstring out = sibling_path(opts.input_path, suffix);
+
+        std::error_code ec;
+        fs::create_directories(fs::path(out).parent_path(), ec);
+        if (ec) {
+            std::fprintf(stderr, "Cannot create output directory: %s\n",
+                         ec.message().c_str());
+            return {};
+        }
+
+        // std::ios::binary is load-bearing for determinism: without it, MSVC's
+        // text-mode ofstream translates '\n' → "\r\n" on write, which would
+        // produce non-deterministic byte sequences across platforms and break
+        // golden-file comparison via SHA256 / structural diff.
+        std::ofstream f(out, std::ios::binary);
+        if (!f) {
+            std::fprintf(stderr, "Failed to open %ls for writing\n", out.c_str());
+            return {};
+        }
+        f.write(json.data(), static_cast<std::streamsize>(json.size()));
+        if (!f) {
+            std::fprintf(stderr, "Failed to write %ls\n", out.c_str());
+            return {};
+        }
+        return out;
     }
 
     // ----- Layout (Stage 3.5 will load --display-config; for now, defaults) -----
-    ColorizerDisplayConfig display;
-    display.cpp_grammar = variant;
 
     auto layout = layout_source(dwrite_factory.Get(),
                                 content->text,        // wstring source
@@ -218,7 +309,7 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
     }
 
     // ----- Save -----
-    std::wstring out = out_path_for_paint(opts.input_path, opts.dark);
+    std::wstring out = sibling_path(opts.input_path, opts.dark ? L"_dark.png" : L".png");
     std::error_code ec;
     fs::create_directories(fs::path(out).parent_path(), ec);
     if (ec) {
