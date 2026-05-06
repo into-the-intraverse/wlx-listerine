@@ -50,7 +50,7 @@ static bool parse_args(int argc, char* argv[], Options& opts) {
         if      (std::strcmp(argv[i], "--width")       == 0 && i + 1 < argc) opts.width  = std::atoi(argv[++i]);
         else if (std::strcmp(argv[i], "--height")      == 0 && i + 1 < argc) opts.height = std::atoi(argv[++i]);
         else if (std::strcmp(argv[i], "--scroll")      == 0 && i + 1 < argc) opts.scroll = static_cast<float>(std::atof(argv[++i]));
-        else if (std::strcmp(argv[i], "--config")      == 0 && i + 1 < argc) opts.config_path = to_wstring(argv[++i]);
+        else if (std::strcmp(argv[i], "--config")      == 0 && i + 1 < argc) { opts.config_path = to_wstring(argv[++i]); opts.config_path_explicit = true; }
         else if (std::strcmp(argv[i], "--full")        == 0) opts.full = true;
         else if (std::strcmp(argv[i], "--dark")        == 0) opts.dark = true;
         else if (std::strcmp(argv[i], "--bench")       == 0) opts.bench = true;

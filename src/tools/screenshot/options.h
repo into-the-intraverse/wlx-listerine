@@ -7,6 +7,7 @@ namespace wlx::tools::screenshot {
 struct Options {
     std::wstring input_path;
     std::wstring config_path = L"config/wlx-listerine-md.toml";
+    bool         config_path_explicit = false;  // true iff --config was passed
     int   width  = 800;
     int   height = 600;
     float scroll = 0;

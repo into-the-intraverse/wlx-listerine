@@ -18,6 +18,7 @@ target_link_libraries(screenshot_tool PRIVATE
     wlx-core
     windowscodecs
     ole32
+    tomlplusplus::tomlplusplus
 )
 
 # Stage the binary alongside wlx-listerine-core.dll so visual-test.sh finds it.

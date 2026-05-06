@@ -4,6 +4,8 @@
 
 #include "tools/screenshot/colorizer_pipeline.h"
 
+#include <toml++/toml.hpp>
+
 #include <windows.h>
 #include <d2d1.h>
 #include <dwrite.h>
@@ -150,15 +152,47 @@ std::string compute_config_hash(const std::string& theme_name,
     return fnv1a_hex(s.str());
 }
 
-// Default config path for colorizer mode. If the user passed --config, that's
-// authoritative. If they left the default (the markdown config), swap to the
-// colorizer config — otherwise the colorizer would load markdown-only TOML
-// fields and miss the colorizer-specific [display]/[fonts.code] sections.
-std::wstring resolve_config_path(const std::wstring& opts_config_path) {
-    if (opts_config_path == L"config/wlx-listerine-md.toml") {
+// If the user didn't pass --config, default to the colorizer TOML rather than
+// the markdown one (which is Options' built-in default for legacy reasons).
+// Otherwise honor whatever --config was specified, even if it equals the
+// markdown default by coincidence.
+std::wstring resolve_config_path(const Options& opts) {
+    if (!opts.config_path_explicit) {
         return L"config/wlx-listerine-colorizer.toml";
     }
-    return opts_config_path;
+    return opts.config_path;
+}
+
+ColorizerDisplayConfig load_display_config(const std::wstring& path) {
+    ColorizerDisplayConfig d;  // defaults
+    if (path.empty()) return d;
+    std::string narrow_path = wlx::runtime::util::wstring_to_utf8(path);
+    try {
+        auto tbl = toml::parse_file(narrow_path);
+        if (auto v = tbl["line_numbers"].value<bool>())        d.line_numbers = *v;
+        if (auto v = tbl["word_wrap"].value<bool>())           d.word_wrap = *v;
+        if (auto v = tbl["tab_width"].value<int64_t>())        d.tab_width = static_cast<int>(*v);
+        if (auto v = tbl["line_height"].value<double>())       d.line_height_factor = static_cast<float>(*v);
+        if (auto v = tbl["show_indent_guides"].value<bool>())  d.show_indent_guides = *v;
+        if (auto v = tbl["highlight_trailing"].value<bool>())  d.highlight_trailing = *v;
+        if (auto v = tbl["show_whitespace"].value<std::string>()) {
+            using wlx::plugin_colorizer::layout::ShowWhitespace;
+            if      (*v == "all")      d.show_whitespace = ShowWhitespace::All;
+            else if (*v == "boundary") d.show_whitespace = ShowWhitespace::Boundary;
+            else if (*v == "none")     d.show_whitespace = ShowWhitespace::None;
+            else {
+                std::fprintf(stderr,
+                    "Unknown show_whitespace value \"%s\" in %ls — using default\n",
+                    v->c_str(), path.c_str());
+            }
+        }
+    } catch (const toml::parse_error& e) {
+        std::fprintf(stderr, "Failed to parse --display-config %ls: %s\n",
+                     path.c_str(), e.description().data());
+        // Return defaults rather than failing the whole pipeline — matches the
+        // idea that --display-config is an "override hint", not a hard config.
+    }
+    return d;
 }
 
 }  // namespace
@@ -191,7 +225,7 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
 
     // ----- Theme -----
     ThemeService theme;
-    theme.load(resolve_config_path(opts.config_path));
+    theme.load(resolve_config_path(opts));
 
     // ----- Colorizer -----
     Colorizer colorizer(L"grammars", L"config/themes");
@@ -225,9 +259,10 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
     ColorizeResult colors = colorizer.colorize(content->raw_utf8, lang, opts.dark);
 
     // ----- Build display config (used by both paint and dump-tokens paths) -----
-    ColorizerDisplayConfig display;
+    // Load TOML overrides first, then force cpp_grammar from --cpp-grammar
+    // (the flag wins over any value the TOML might set).
+    ColorizerDisplayConfig display = load_display_config(opts.display_config);
     display.cpp_grammar = variant;
-    // (Stage 3.5 will load --display-config TOML overrides here.)
 
     // ----- --dump-tokens branch -----
     if (opts.dump_tokens) {
@@ -277,7 +312,7 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
         return out;
     }
 
-    // ----- Layout (Stage 3.5 will load --display-config; for now, defaults) -----
+    // ----- Layout -----
 
     auto layout = layout_source(dwrite_factory.Get(),
                                 content->text,        // wstring source
