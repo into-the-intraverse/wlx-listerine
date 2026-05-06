@@ -42,3 +42,11 @@ target_link_libraries(colorizer-tests PRIVATE
     wlx-listerine-core
     doctest::doctest
 )
+
+# Stage test binaries alongside wlx-listerine-core.dll so they can resolve
+# the DLL at runtime, and so CI / docs can run them at build/<cfg>/<exe>.
+# Without this they default to build/tests/<cfg>/ after the source restructure.
+set_target_properties(tests colorizer-tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/Release"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG   "${CMAKE_BINARY_DIR}/Debug"
+)
