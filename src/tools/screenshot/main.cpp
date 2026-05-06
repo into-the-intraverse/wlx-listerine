@@ -10,6 +10,7 @@
 #include <string>
 
 #include "tools/screenshot/options.h"
+#include "tools/screenshot/colorizer_pipeline.h"
 #include "tools/screenshot/markdown_pipeline.h"
 
 namespace wlx::tools::screenshot {
@@ -26,7 +27,12 @@ static void print_usage() {
         "  --dark           Force dark mode\n"
         "  --bench          Print timing and memory stats\n"
         "  --search <term>  Run a search for <term> after layout\n"
-        "  --search-step N  Advance the search cursor by N steps (default 0)\n");
+        "  --search-step N  Advance the search cursor by N steps (default 0)\n"
+        "  --colorizer           Force colorizer mode (else inferred from extension)\n"
+        "  --lang <id>           Override grammar language (else inferred from extension)\n"
+        "  --cpp-grammar <kind>  \"standard\" or \"unreal\" — selects cpp grammar variant\n"
+        "  --dump-tokens         Write resolved-style token JSON instead of painting\n"
+        "  --display-config <p>  TOML overrides for ColorizerDisplayConfig\n");
 }
 
 static std::wstring to_wstring(const char* s) {
@@ -50,6 +56,11 @@ static bool parse_args(int argc, char* argv[], Options& opts) {
         else if (std::strcmp(argv[i], "--bench")       == 0) opts.bench = true;
         else if (std::strcmp(argv[i], "--search")      == 0 && i + 1 < argc) opts.search = to_wstring(argv[++i]);
         else if (std::strcmp(argv[i], "--search-step") == 0 && i + 1 < argc) opts.search_step = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--colorizer")     == 0) opts.colorizer = true;
+        else if (std::strcmp(argv[i], "--lang")          == 0 && i + 1 < argc) opts.lang = to_wstring(argv[++i]);
+        else if (std::strcmp(argv[i], "--cpp-grammar")   == 0 && i + 1 < argc) opts.cpp_grammar = to_wstring(argv[++i]);
+        else if (std::strcmp(argv[i], "--dump-tokens")   == 0) opts.dump_tokens = true;
+        else if (std::strcmp(argv[i], "--display-config")== 0 && i + 1 < argc) opts.display_config = to_wstring(argv[++i]);
         else { std::fprintf(stderr, "Unknown option: %s\n", argv[i]); return false; }
     }
     if (opts.width <= 0 || opts.height <= 0) {
@@ -76,7 +87,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::wstring result = run_markdown_pipeline(opts);
+    bool is_md = !opts.colorizer && opts.input_path.ends_with(L".md");
+
+    std::wstring result = is_md ? run_markdown_pipeline(opts)
+                                : run_colorizer_pipeline(opts);
 
     CoUninitialize();
 

@@ -1,6 +1,7 @@
 # screenshot_tool — generates rendered PNGs from markdown sources for visual regression.
 
 add_executable(screenshot_tool
+    colorizer_pipeline.cpp
     main.cpp
     markdown_pipeline.cpp
 )
