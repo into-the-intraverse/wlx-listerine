@@ -4,6 +4,10 @@ add_executable(screenshot_tool
     colorizer_pipeline.cpp
     main.cpp
     markdown_pipeline.cpp
+    # colorizer_layout is compiled into wlx-listerine-colorizer (a DLL) which
+    # screenshot_tool cannot link as an import lib. Compile the source directly
+    # here instead — it has no dllexport annotations, so this is safe.
+    ${CMAKE_SOURCE_DIR}/src/plugin_colorizer/layout/colorizer_layout.cpp
 )
 
 target_include_directories(screenshot_tool PRIVATE
