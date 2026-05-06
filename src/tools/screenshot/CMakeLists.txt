@@ -2,6 +2,7 @@
 
 add_executable(screenshot_tool
     main.cpp
+    markdown_pipeline.cpp
 )
 
 target_include_directories(screenshot_tool PRIVATE
