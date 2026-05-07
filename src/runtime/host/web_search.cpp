@@ -43,6 +43,10 @@ std::wstring normalize_whitespace(std::wstring_view in) {
             prev_space = false;
         }
     }
+    // Strip the trailing space left over by a whitespace run at end-of-input.
+    // The collapse loop emits a space the moment whitespace begins (when
+    // prev_space becomes false → true); if input ends mid-whitespace, that
+    // emitted space has nothing legitimate after it.
     if (!out.empty() && out.back() == L' ')
         out.pop_back();
     return out;
@@ -81,7 +85,12 @@ std::wstring build_google_search_url(std::wstring_view query) {
     if (normalized.empty()) return {};
     if (normalized.size() > kMaxQueryWchars)
         normalized.resize(kMaxQueryWchars);
-    return std::wstring(kPrefix) + percent_encode_utf8(normalized);
+    // Construct the result in-place from the prefix literal, then append the
+    // encoded query. Avoids the temporary `std::wstring(kPrefix)` that
+    // `kPrefix + encode(...)` would build before the concatenation.
+    std::wstring url(kPrefix);
+    url += percent_encode_utf8(normalized);
+    return url;
 }
 
 void search_with_google(std::wstring_view query) {
@@ -90,7 +99,12 @@ void search_with_google(std::wstring_view query) {
     HINSTANCE hi = ShellExecuteW(nullptr, L"open", url.c_str(),
                                  nullptr, nullptr, SW_SHOW);
     if (reinterpret_cast<INT_PTR>(hi) <= 32) {
-        WLX_TRACE(L"search_with_google: ShellExecuteW failed (%p)", hi);
+        // The HINSTANCE return is overloaded to carry an integer error code
+        // (1..31, per MSDN's ShellExecute table) when the call fails. Print
+        // it as a signed integer so traces are readable; %p would just show
+        // a pointer-width hex value.
+        WLX_TRACE(L"search_with_google: ShellExecuteW failed (code %lld)",
+                  static_cast<long long>(reinterpret_cast<INT_PTR>(hi)));
     }
 }
 
