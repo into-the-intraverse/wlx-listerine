@@ -31,7 +31,7 @@ public:
                                        const std::string& language,
                                        bool dark_mode);
     bool supports(const std::string& language);
-    std::vector<std::string> available_languages();
+    std::vector<std::string> available_languages() const;
     const theme::HelixTheme& theme(bool dark_mode) const;
 
 private:

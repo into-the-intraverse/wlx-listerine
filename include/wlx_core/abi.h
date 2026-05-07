@@ -35,7 +35,8 @@ WLX_CORE_API WlxCore*  wlx_core_acquire(void);
 WLX_CORE_API void      wlx_core_release(WlxCore*);
 
 // Return-code convention across this ABI:
-// negative = bad argument or core not initialized; non-negative = result.
+// negative = error (bad argument, uninitialized core, or allocation failure);
+// non-negative = result.
 WLX_CORE_API int       wlx_core_supports(WlxCore*, const char* language);
 
 WLX_CORE_API int       wlx_core_colorize(WlxCore*,
@@ -53,14 +54,17 @@ WLX_CORE_API int       wlx_core_theme_color(WlxCore*,
                                             uint8_t* out_modifiers);
 
 typedef struct WlxLanguageList {
-    char**   ids;     // array of `count` null-terminated UTF-8 strings
+    char**   ids;        // array of `count` null-terminated UTF-8 strings
     uint32_t count;
+    uint32_t _reserved;  // must be zero; reserves the implicit tail-padding
+                         // slot so a future flags/version field doesn't grow
+                         // the struct (mirrors WlxColorSpan::_pad)
 } WlxLanguageList;
 
 // Enumerates the grammars supported by the core. On success, fills *out_list
 // with a heap-owned array (must be freed with wlx_core_free_language_list)
-// and returns 0. Returns negative on bad arguments or if the core is
-// uninitialized.
+// and returns 0. Returns negative on bad arguments, uninitialized core, or
+// allocation failure (-1 / -2 respectively, per the convention above).
 WLX_CORE_API int  wlx_core_list_languages(WlxCore*, WlxLanguageList* out_list);
 
 // Frees the buffers owned by `*list` and zeros it. Safe to call on an
