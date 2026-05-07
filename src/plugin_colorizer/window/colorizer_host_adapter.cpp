@@ -130,6 +130,11 @@ struct ColorViewState {
 
     // Force-language override (session-only). Empty = auto-detect from extension.
     // Set by the right-click "Force Language" submenu; reset on file reload.
+    // Note: when non-empty, the value is taken as-is — apply_cpp_variant is
+    // bypassed (an explicit user pick should not be re-routed through the
+    // cpp_grammar config). Three call sites read this field:
+    // load_document, recolorize_with_force, and the lc_newparams dark-mode
+    // branch — keep them in sync if you add another colorize call.
     std::string force_grammar_id;
 
     SearchIndex search_index;
@@ -431,6 +436,12 @@ static void relayout(ColorViewState* vs) {
     do_layout(vs, vs->cached_text, vs->cached_raw_utf8, vs->cached_colors);
 }
 
+// Re-tokenize the in-memory cached source using the current force_grammar_id
+// (or the extension fallback when the override is empty), then re-layout
+// and invalidate. Does NOT read from disk — caller must have populated
+// vs->cached_text / vs->cached_raw_utf8 via a prior load_document.
+// (cached_raw_utf8 is always populated alongside cached_text; the empty
+// guard treats "no file loaded" as a no-op.)
 static void recolorize_with_force(ColorViewState* vs) {
     if (!vs || vs->cached_raw_utf8.empty()) return;
 
@@ -1014,10 +1025,16 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
             vs->renderer->set_dark_mode(new_dark);
             if (vs->hud) vs->hud->set_dark_mode(new_dark);
             apply_dark_mode(vs->hwnd, new_dark);
-            // Re-colorize with new palette (no file re-read)
-            std::string language = ext_to_language(vs->file_path);
-            if (language.empty()) language = filename_to_language(vs->file_path);
-            language = apply_cpp_variant(language, g_display_cfg.cpp_grammar, g_colorizer_handle);
+            // Re-colorize with new palette (no file re-read). Honor any
+            // force-language override the user set via the right-click
+            // submenu — without this, switching theme would silently drop
+            // back to extension-based detection and lose the override.
+            std::string language = vs->force_grammar_id;
+            if (language.empty()) {
+                language = ext_to_language(vs->file_path);
+                if (language.empty()) language = filename_to_language(vs->file_path);
+                language = apply_cpp_variant(language, g_display_cfg.cpp_grammar, g_colorizer_handle);
+            }
             vs->cached_colors = {};
             if (!language.empty() && g_colorizer_handle &&
                 wlx_core_supports(g_colorizer_handle, language.c_str()) == 1) {
