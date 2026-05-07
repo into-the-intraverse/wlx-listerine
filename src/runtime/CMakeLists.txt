@@ -13,6 +13,7 @@ add_library(wlx-core STATIC
     search/search_index.cpp
     search/search_hud_painter.cpp
     host/clipboard.cpp
+    host/context_menu.cpp
     host/dark_mode.cpp
     host/factories.cpp
     host/grammar_menu.cpp

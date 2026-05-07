@@ -15,6 +15,7 @@ add_executable(tests
     runtime/host/test_wlx_host_common.cpp
     runtime/host/test_view_actions.cpp
     runtime/host/test_web_search.cpp
+    runtime/host/test_context_menu.cpp
     runtime/host/test_grammar_menu.cpp
     runtime/search/test_search_counter_format.cpp
     runtime/search/test_search_hud_painter.cpp
