@@ -13,6 +13,7 @@ add_executable(tests
     runtime/search/test_search_engine.cpp
     runtime/search/test_search_ops.cpp
     runtime/host/test_wlx_host_common.cpp
+    runtime/host/test_view_actions.cpp
     runtime/search/test_search_counter_format.cpp
     runtime/search/test_search_hud_painter.cpp
 )

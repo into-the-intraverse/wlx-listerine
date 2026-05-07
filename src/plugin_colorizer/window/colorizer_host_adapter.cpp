@@ -43,6 +43,7 @@
 #include "runtime/host/module_path.h"
 #include "runtime/host/scroll_handler.h"
 #include "runtime/host/selection_helpers.h"
+#include "runtime/host/view_actions.h"
 #include "runtime/host/window_class.h"
 
 #include <toml++/toml.hpp>
@@ -699,23 +700,13 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
 
         // Ctrl+C — copy selection
         if (wp == 'C' && (GetKeyState(VK_CONTROL) & 0x8000)) {
-            if (vs->layout && vs->sel_anchor.valid() && vs->sel_anchor != vs->sel_active) {
-                auto lo = std::min(vs->sel_anchor, vs->sel_active);
-                auto hi = std::max(vs->sel_anchor, vs->sel_active);
-                auto text = extract_selected_text(*vs->layout, lo, hi);
-                copy_to_clipboard(hwnd, text);
-            }
+            wlx::runtime::host::copy_selection(*vs, hwnd);
             handled = true;
         }
         // Ctrl+A — select all
         else if (wp == 'A' && (GetKeyState(VK_CONTROL) & 0x8000)) {
-            if (vs->layout && !vs->layout->blocks.empty()) {
-                vs->sel_anchor = TextPosition{0, 0};
-                int last = static_cast<int>(vs->layout->blocks.size()) - 1;
-                vs->sel_active = TextPosition{last, block_text_length(vs->layout->blocks[last])};
-                vs->selecting = false;
+            if (wlx::runtime::host::select_all(*vs))
                 InvalidateRect(hwnd, nullptr, FALSE);
-            }
             handled = true;
         }
         // Escape — clear selection; if no selection but active matches, clear them;
