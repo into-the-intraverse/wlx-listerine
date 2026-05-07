@@ -15,6 +15,7 @@ add_library(wlx-core STATIC
     host/clipboard.cpp
     host/dark_mode.cpp
     host/factories.cpp
+    host/grammar_menu.cpp
     host/hit_test.cpp
     host/module_path.cpp
     host/web_search.cpp
