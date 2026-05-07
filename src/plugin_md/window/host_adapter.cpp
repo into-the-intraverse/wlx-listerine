@@ -40,7 +40,10 @@
 #include "runtime/host/module_path.h"
 #include "runtime/host/scroll_handler.h"
 #include "runtime/host/selection_helpers.h"
+#include "runtime/host/context_menu.h"
+#include "runtime/host/grammar_menu.h"
 #include "runtime/host/view_actions.h"
+#include "runtime/host/web_search.h"
 #include "runtime/host/window_class.h"
 
 #define WLX_TRACE_TAG L"wlx-md"
@@ -250,6 +253,40 @@ static void clear_selection(ViewState* vs) {
     wlx::runtime::host::clear_selection(*vs);
 }
 
+static void copy_code_block_at_index(ViewState* vs, int index) {
+    if (!vs || !vs->layout) return;
+    if (index < 0 || index >= static_cast<int>(vs->layout->blocks.size())) return;
+    const auto& block = vs->layout->blocks[index];
+    std::wstring code_text;
+    for (auto& run : block.text_runs) code_text += run.text;
+    copy_to_clipboard(vs->hwnd, code_text);
+    vs->copied_code_block = index;
+    SetTimer(vs->hwnd, TIMER_COPY_FEEDBACK, 1000, nullptr);
+    InvalidateRect(vs->hwnd, nullptr, FALSE);
+}
+
+static void invoke_link_action(ViewState* vs, const InteractionEngine::LinkAction& action) {
+    switch (action.action) {
+    case InteractionEngine::Action::ScrollToAnchor:
+        vs->scroll_y = std::clamp(action.scroll_y, 0.0f, vs->max_scroll_y);
+        update_scrollbar(vs);
+        break;
+    case InteractionEngine::Action::OpenExternal:
+        ShellExecuteW(nullptr, L"open", action.target.c_str(),
+                      nullptr, nullptr, SW_SHOW);
+        break;
+    case InteractionEngine::Action::ReloadDocument:
+        if (!vs->file_path.empty()) {
+            std::wstring dir = vs->file_path;
+            auto fpos = dir.find_last_of(L"\\/");
+            if (fpos != std::wstring::npos) dir = dir.substr(0, fpos + 1);
+            load_document(vs, (dir + action.target).c_str());
+        }
+        break;
+    default: break;
+    }
+}
+
 static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto* vs = reinterpret_cast<ViewState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
 
@@ -445,13 +482,8 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         for (int i = 0; i < static_cast<int>(vs->layout->blocks.size()); i++) {
             auto& block = vs->layout->blocks[i];
             if (is_in_copy_button(block, doc_x, doc_y)) {
-                std::wstring code_text;
-                for (auto& run : block.text_runs) code_text += run.text;
-                copy_to_clipboard(hwnd, code_text);
-                vs->copied_code_block = i;
-                SetTimer(hwnd, TIMER_COPY_FEEDBACK, 1000, nullptr);
+                copy_code_block_at_index(vs, i);
                 clear_selection(vs);
-                InvalidateRect(hwnd, nullptr, FALSE);
                 return 0;
             }
         }
@@ -469,25 +501,7 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 auto hit = vs->interaction->hit_test(doc_x, doc_y);
                 if (hit.hit) {
                     auto action = vs->interaction->resolve(hit.target);
-                    switch (action.action) {
-                    case InteractionEngine::Action::ScrollToAnchor:
-                        vs->scroll_y = std::clamp(action.scroll_y, 0.0f, vs->max_scroll_y);
-                        update_scrollbar(vs);
-                        break;
-                    case InteractionEngine::Action::OpenExternal:
-                        ShellExecuteW(nullptr, L"open", action.target.c_str(),
-                                      nullptr, nullptr, SW_SHOW);
-                        break;
-                    case InteractionEngine::Action::ReloadDocument:
-                        if (!vs->file_path.empty()) {
-                            std::wstring dir = vs->file_path;
-                            auto fpos = dir.find_last_of(L"\\/");
-                            if (fpos != std::wstring::npos) dir = dir.substr(0, fpos + 1);
-                            load_document(vs, (dir + action.target).c_str());
-                        }
-                        break;
-                    default: break;
-                    }
+                    invoke_link_action(vs, action);
                 }
             }
         }
@@ -518,6 +532,88 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             vs->last_dblclk_block = pos.block_index;
         }
         InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+    }
+
+    case WM_CONTEXTMENU: {
+        if (!vs || !vs->layout) return 0;
+
+        // Commit any in-progress drag-select.
+        if (vs->selecting) {
+            vs->selecting = false;
+            ReleaseCapture();
+            KillTimer(hwnd, TIMER_AUTOSCROLL);
+        }
+
+        // Convert screen→client→DIP→document for hit-test.
+        POINT screen_pt = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
+        float doc_x = 0, doc_y = 0;
+        if (screen_pt.x != -1 || screen_pt.y != -1) {
+            POINT client_pt = screen_pt;
+            ScreenToClient(hwnd, &client_pt);
+            doc_x = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(client_pt.x))
+                                 : static_cast<float>(client_pt.x);
+            float py = vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(client_pt.y))
+                                    : static_cast<float>(client_pt.y);
+            doc_y = py + vs->scroll_y;
+        }
+
+        auto ctx = wlx::runtime::host::build_md_menu_context(*vs, doc_x, doc_y);
+        ctx.config_path = get_module_dir() + L"wlx-listerine-md.toml";
+
+        auto result = wlx::runtime::host::show_context_menu(hwnd, screen_pt, ctx);
+
+        switch (result.kind) {
+        case wlx::runtime::host::MenuResult::Copy:
+            wlx::runtime::host::copy_selection(*vs, hwnd);
+            break;
+
+        case wlx::runtime::host::MenuResult::SelectAll:
+            if (wlx::runtime::host::select_all(*vs))
+                InvalidateRect(hwnd, nullptr, FALSE);
+            break;
+
+        case wlx::runtime::host::MenuResult::SearchGoogle: {
+            if (vs->sel_anchor.valid() && vs->sel_anchor != vs->sel_active) {
+                auto lo = std::min(vs->sel_anchor, vs->sel_active);
+                auto hi = std::max(vs->sel_anchor, vs->sel_active);
+                auto text = extract_selected_text(*vs->layout, lo, hi);
+                wlx::runtime::host::search_with_google(text);
+            }
+            break;
+        }
+
+        case wlx::runtime::host::MenuResult::OpenLink: {
+            if (vs->interaction) {
+                auto hit = vs->interaction->hit_test(doc_x, doc_y);
+                if (hit.hit) {
+                    auto action = vs->interaction->resolve(hit.target);
+                    invoke_link_action(vs, action);
+                }
+            }
+            break;
+        }
+
+        case wlx::runtime::host::MenuResult::CopyLinkAddress:
+            if (!ctx.link.url.empty())
+                copy_to_clipboard(hwnd, ctx.link.url);
+            break;
+
+        case wlx::runtime::host::MenuResult::CopyCodeBlock:
+            copy_code_block_at_index(vs, result.code_block_index);
+            break;
+
+        case wlx::runtime::host::MenuResult::EditConfig:
+            ShellExecuteW(nullptr, L"open", ctx.config_path.c_str(),
+                          nullptr, nullptr, SW_SHOW);
+            break;
+
+        case wlx::runtime::host::MenuResult::SetLanguage:
+        case wlx::runtime::host::MenuResult::None:
+        default:
+            break;  // markdown plugin doesn't expose Force Language
+        }
+
         return 0;
     }
 
