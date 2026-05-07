@@ -75,6 +75,14 @@ std::vector<LanguageOption> available_grammars(WlxCore* core) {
         return {};
     }
 
+    // RAII guard: free the C-side allocation even if a string copy below
+    // throws std::bad_alloc. Without this, the unwind path skips the
+    // explicit free at the end of the function and leaks list.ids.
+    struct ListGuard {
+        WlxLanguageList* p;
+        ~ListGuard() { wlx_core_free_language_list(p); }
+    } guard{&list};
+
     std::vector<LanguageOption> out;
     out.reserve(list.count);
     for (uint32_t i = 0; i < list.count; ++i) {
@@ -84,7 +92,6 @@ std::vector<LanguageOption> available_grammars(WlxCore* core) {
         opt.display_name = grammar_display_name(opt.grammar_id);
         out.push_back(std::move(opt));
     }
-    wlx_core_free_language_list(&list);
 
     std::sort(out.begin(), out.end(), [](const auto& a, const auto& b) {
         // Case-insensitive lexicographic compare on display_name.

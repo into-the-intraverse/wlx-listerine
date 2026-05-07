@@ -16,6 +16,10 @@ struct LanguageOption {
 // Pure mapping. Known grammar ids return their human-readable display
 // (e.g., "cpp" → "C++"). Unknown ids fall back to capitalized id
 // ("foobar" → "Foobar"). Empty input returns empty.
+//
+// `grammar_id` is expected to be ASCII (the tree-sitter grammar registry
+// guarantees this for the ids it loads); non-ASCII bytes are passed
+// through unchanged but not case-folded sensibly.
 std::wstring grammar_display_name(std::string_view grammar_id);
 
 // Enumerates grammars from the core ABI, attaches display names, sorts
