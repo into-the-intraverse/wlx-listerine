@@ -271,10 +271,16 @@ static void invoke_link_action(ViewState* vs, const InteractionEngine::LinkActio
         vs->scroll_y = std::clamp(action.scroll_y, 0.0f, vs->max_scroll_y);
         update_scrollbar(vs);
         break;
-    case InteractionEngine::Action::OpenExternal:
-        ShellExecuteW(nullptr, L"open", action.target.c_str(),
-                      nullptr, nullptr, SW_SHOW);
+    case InteractionEngine::Action::OpenExternal: {
+        HINSTANCE hi = ShellExecuteW(nullptr, L"open", action.target.c_str(),
+                                     nullptr, nullptr, SW_SHOW);
+        if (reinterpret_cast<INT_PTR>(hi) <= 32) {
+            WLX_TRACE(L"invoke_link_action: ShellExecuteW failed (code %lld) for %s",
+                      static_cast<long long>(reinterpret_cast<INT_PTR>(hi)),
+                      action.target.c_str());
+        }
         break;
+    }
     case InteractionEngine::Action::ReloadDocument:
         if (!vs->file_path.empty()) {
             std::wstring dir = vs->file_path;
@@ -545,10 +551,14 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             KillTimer(hwnd, TIMER_AUTOSCROLL);
         }
 
-        // Convert screen→client→DIP→document for hit-test.
+        // Convert screen→client→DIP→document for hit-test. lParam==(-1,-1)
+        // means the menu was keyboard-invoked (Shift+F10 / menu key) and
+        // there is no cursor position; in that case doc_x/doc_y stay 0
+        // and we suppress hit-test-derived items below.
         POINT screen_pt = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
+        const bool keyboard_invoked = (screen_pt.x == -1 && screen_pt.y == -1);
         float doc_x = 0, doc_y = 0;
-        if (screen_pt.x != -1 || screen_pt.y != -1) {
+        if (!keyboard_invoked) {
             POINT client_pt = screen_pt;
             ScreenToClient(hwnd, &client_pt);
             doc_x = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(client_pt.x))
@@ -558,32 +568,38 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             doc_y = py + vs->scroll_y;
         }
 
-        auto ctx = wlx::runtime::host::build_md_menu_context(*vs, doc_x, doc_y);
+        auto ctx = build_md_menu_context(*vs, doc_x, doc_y);
+        if (keyboard_invoked) {
+            // No cursor → hit-test at (0,0) would falsely match a link or
+            // code block at the document origin. Suppress those items.
+            ctx.link = {};
+            ctx.code_block = {};
+        }
         ctx.config_path = get_module_dir() + L"wlx-listerine-md.toml";
 
-        auto result = wlx::runtime::host::show_context_menu(hwnd, screen_pt, ctx);
+        auto result = show_context_menu(hwnd, screen_pt, ctx);
 
         switch (result.kind) {
-        case wlx::runtime::host::MenuResult::Copy:
-            wlx::runtime::host::copy_selection(*vs, hwnd);
+        case MenuResult::Copy:
+            copy_selection(*vs, hwnd);
             break;
 
-        case wlx::runtime::host::MenuResult::SelectAll:
-            if (wlx::runtime::host::select_all(*vs))
+        case MenuResult::SelectAll:
+            if (select_all(*vs))
                 InvalidateRect(hwnd, nullptr, FALSE);
             break;
 
-        case wlx::runtime::host::MenuResult::SearchGoogle: {
+        case MenuResult::SearchGoogle: {
             if (vs->sel_anchor.valid() && vs->sel_anchor != vs->sel_active) {
                 auto lo = std::min(vs->sel_anchor, vs->sel_active);
                 auto hi = std::max(vs->sel_anchor, vs->sel_active);
                 auto text = extract_selected_text(*vs->layout, lo, hi);
-                wlx::runtime::host::search_with_google(text);
+                search_with_google(text);
             }
             break;
         }
 
-        case wlx::runtime::host::MenuResult::OpenLink: {
+        case MenuResult::OpenLink: {
             if (vs->interaction) {
                 auto hit = vs->interaction->hit_test(doc_x, doc_y);
                 if (hit.hit) {
@@ -594,22 +610,28 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             break;
         }
 
-        case wlx::runtime::host::MenuResult::CopyLinkAddress:
+        case MenuResult::CopyLinkAddress:
             if (!ctx.link.url.empty())
                 copy_to_clipboard(hwnd, ctx.link.url);
             break;
 
-        case wlx::runtime::host::MenuResult::CopyCodeBlock:
+        case MenuResult::CopyCodeBlock:
             copy_code_block_at_index(vs, result.code_block_index);
             break;
 
-        case wlx::runtime::host::MenuResult::EditConfig:
-            ShellExecuteW(nullptr, L"open", ctx.config_path.c_str(),
-                          nullptr, nullptr, SW_SHOW);
+        case MenuResult::EditConfig: {
+            HINSTANCE hi = ShellExecuteW(nullptr, L"open", ctx.config_path.c_str(),
+                                         nullptr, nullptr, SW_SHOW);
+            if (reinterpret_cast<INT_PTR>(hi) <= 32) {
+                WLX_TRACE(L"EditConfig: ShellExecuteW failed (code %lld) for %s",
+                          static_cast<long long>(reinterpret_cast<INT_PTR>(hi)),
+                          ctx.config_path.c_str());
+            }
             break;
+        }
 
-        case wlx::runtime::host::MenuResult::SetLanguage:
-        case wlx::runtime::host::MenuResult::None:
+        case MenuResult::SetLanguage:
+        case MenuResult::None:
         default:
             break;  // markdown plugin doesn't expose Force Language
         }
