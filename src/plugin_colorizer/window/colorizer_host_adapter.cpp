@@ -128,6 +128,10 @@ struct ColorViewState {
 
     bool wrap_text = false;
 
+    // Force-language override (session-only). Empty = auto-detect from extension.
+    // Set by the right-click "Force Language" submenu; reset on file reload.
+    std::string force_grammar_id;
+
     SearchIndex search_index;
     std::vector<SearchMatch> matches;
     int current_match = -1;
@@ -371,6 +375,7 @@ static void do_layout(ColorViewState* vs, const std::wstring& text, const std::s
 static void load_document(ColorViewState* vs, const wchar_t* path) {
     vs->file_path = path;
     vs->scroll_y = 0;
+    vs->force_grammar_id.clear();
     vs->matches.clear();
     vs->current_match = -1;
     vs->last_query = SearchQuery{};
@@ -395,10 +400,13 @@ static void load_document(ColorViewState* vs, const wchar_t* path) {
     vs->cached_text = content->text;
     vs->cached_raw_utf8 = content->raw_utf8;
 
-    std::string language = ext_to_language(vs->file_path);
-    if (language.empty())
-        language = filename_to_language(vs->file_path);
-    language = apply_cpp_variant(language, g_display_cfg.cpp_grammar, g_colorizer_handle);
+    std::string language = vs->force_grammar_id;
+    if (language.empty()) {
+        language = ext_to_language(vs->file_path);
+        if (language.empty())
+            language = filename_to_language(vs->file_path);
+        language = apply_cpp_variant(language, g_display_cfg.cpp_grammar, g_colorizer_handle);
+    }
     vs->cached_colors = {};
     if (!language.empty() && g_colorizer_handle &&
         wlx_core_supports(g_colorizer_handle, language.c_str()) == 1) {
@@ -421,6 +429,35 @@ static void load_document(ColorViewState* vs, const wchar_t* path) {
 static void relayout(ColorViewState* vs) {
     if (vs->cached_text.empty() && vs->file_path.empty()) return;
     do_layout(vs, vs->cached_text, vs->cached_raw_utf8, vs->cached_colors);
+}
+
+static void recolorize_with_force(ColorViewState* vs) {
+    if (!vs || vs->cached_raw_utf8.empty()) return;
+
+    std::string language = vs->force_grammar_id;
+    if (language.empty()) {
+        language = ext_to_language(vs->file_path);
+        if (language.empty())
+            language = filename_to_language(vs->file_path);
+        language = apply_cpp_variant(language, g_display_cfg.cpp_grammar, g_colorizer_handle);
+    }
+
+    vs->cached_colors = {};
+    if (!language.empty() && g_colorizer_handle &&
+        wlx_core_supports(g_colorizer_handle, language.c_str()) == 1) {
+        WlxColorSpan* spans = nullptr;
+        uint32_t count = 0;
+        if (wlx_core_colorize(g_colorizer_handle,
+                              vs->cached_raw_utf8.c_str(),
+                              static_cast<uint32_t>(vs->cached_raw_utf8.size()),
+                              language.c_str(),
+                              vs->dark_mode ? 1 : 0,
+                              &spans, &count) == 0) {
+            vs->cached_colors = abi_spans_to_result(spans, count);
+        }
+    }
+    do_layout(vs, vs->cached_text, vs->cached_raw_utf8, vs->cached_colors);
+    InvalidateRect(vs->hwnd, nullptr, FALSE);
 }
 
 static void reload_view(ColorViewState& vs, const wchar_t* path) {
