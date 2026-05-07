@@ -70,3 +70,14 @@ TEST_CASE("view_actions::copy_selection returns false when no layout") {
     v.sel_active = TextPosition{0, 5};
     CHECK(copy_selection(v, /*hwnd*/ nullptr) == false);
 }
+
+TEST_CASE("view_actions::copy_selection returns false on collapsed-but-valid selection") {
+    // sel_anchor.valid() is true, but anchor == active (zero-length).
+    // Distinct from the default-constructed-anchor case above; exercises
+    // the third guard branch in copy_selection.
+    FakeView v;
+    v.layout = make_layout_with_blocks({L"hello"});
+    v.sel_anchor = TextPosition{0, 3};
+    v.sel_active = TextPosition{0, 3};
+    CHECK(copy_selection(v, /*hwnd*/ nullptr) == false);
+}
