@@ -7,9 +7,11 @@
 #include "runtime/host/grammar_menu.h"
 #include "runtime/interaction/interaction_engine.h"
 #include "runtime/layout/layout_document.h"
+#include "runtime/layout/text_position.h"
 #include "runtime/parser/block_node.h"
 #include "runtime/parser/link_target.h"
 
+#include <concepts>
 #include <string>
 #include <vector>
 #include <windows.h>
@@ -78,8 +80,32 @@ std::vector<MenuItem> build_menu_items_for_test(const MenuContext& ctx);
 
 // ---------- Per-plugin context builders ----------
 
+// Structural concepts for the per-plugin builders. Match the codebase
+// style established by Selectable / Scrollable / HostView in this same
+// directory: lvalue-reference checks on selection state plus member-
+// existence probes for layout and the plugin-specific bits. A view that
+// doesn't satisfy the concept fails at the call site instead of deep
+// inside the template body.
 template <typename V>
+concept MdViewLike = requires(V& v) {
+    { v.sel_anchor } -> std::same_as<wlx::runtime::layout::TextPosition&>;
+    { v.sel_active } -> std::same_as<wlx::runtime::layout::TextPosition&>;
+    v.layout;        // any pointer-like; dereferenced for ->blocks
+    v.interaction;   // any pointer-like; dereferenced for ->hit_test
+};
+
+template <typename V>
+concept ColorizerViewLike = requires(V& v) {
+    { v.sel_anchor } -> std::same_as<wlx::runtime::layout::TextPosition&>;
+    { v.sel_active } -> std::same_as<wlx::runtime::layout::TextPosition&>;
+    v.layout;
+    { v.force_grammar_id } -> std::same_as<std::string&>;
+};
+
+template <MdViewLike V>
 MenuContext build_md_menu_context(V& vs, float doc_x, float doc_y) {
+    using namespace wlx::runtime::parser;
+
     MenuContext ctx;
     ctx.has_selection = vs.sel_anchor.valid()
                      && vs.sel_anchor != vs.sel_active;
@@ -87,7 +113,6 @@ MenuContext build_md_menu_context(V& vs, float doc_x, float doc_y) {
     if (vs.layout && vs.interaction) {
         auto hit = vs.interaction->hit_test(doc_x, doc_y);
         if (hit.hit) {
-            using namespace wlx::runtime::parser;
             switch (hit.target.kind) {
                 case LinkKind::ExternalUrl:
                     ctx.link.present  = true;
@@ -107,7 +132,6 @@ MenuContext build_md_menu_context(V& vs, float doc_x, float doc_y) {
     }
 
     if (vs.layout) {
-        using namespace wlx::runtime::parser;
         for (int i = 0; i < static_cast<int>(vs.layout->blocks.size()); ++i) {
             const auto& b = vs.layout->blocks[i];
             if (b.type != BlockType::CodeFence) continue;
@@ -123,7 +147,7 @@ MenuContext build_md_menu_context(V& vs, float doc_x, float doc_y) {
     return ctx;
 }
 
-template <typename V>
+template <ColorizerViewLike V>
 MenuContext build_colorizer_menu_context(V& vs, std::vector<LanguageOption> langs) {
     MenuContext ctx;
     ctx.has_selection = vs.sel_anchor.valid()

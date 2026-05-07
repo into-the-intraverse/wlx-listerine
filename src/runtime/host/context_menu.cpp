@@ -95,8 +95,14 @@ HMENU build_language_submenu(const MenuContext& ctx) {
     return sub;
 }
 
+// Build the menu item for `kind` and append it to `menu`. The language
+// submenu is constructed lazily inside the LanguageSubmenuRoot case so
+// its ownership is unambiguous: if the case fires, AppendMenuW transfers
+// the submenu HMENU to `menu` (DestroyMenu(menu) destroys it
+// recursively); if the case never fires, the submenu is never built and
+// nothing leaks.
 void append_label(HMENU menu, MenuItemKind kind, bool enabled,
-                  const MenuContext& ctx, HMENU lang_sub) {
+                  const MenuContext& ctx) {
     UINT flags = enabled ? MF_STRING : (MF_STRING | MF_GRAYED);
     switch (kind) {
         case MenuItemKind::Separator:
@@ -116,23 +122,38 @@ void append_label(HMENU menu, MenuItemKind kind, bool enabled,
             AppendMenuW(menu, flags, kIdCopyCodeBlock, L"Copy Code &Block");     return;
         case MenuItemKind::EditConfig:
             AppendMenuW(menu, flags, kIdEditConfig, L"&Edit Plugin Config");    return;
-        case MenuItemKind::LanguageSubmenuRoot:
-            if (lang_sub) {
+        case MenuItemKind::LanguageSubmenuRoot: {
+            HMENU sub = build_language_submenu(ctx);
+            if (sub) {
                 AppendMenuW(menu, MF_STRING | MF_POPUP,
-                            reinterpret_cast<UINT_PTR>(lang_sub),
+                            reinterpret_cast<UINT_PTR>(sub),
                             L"&Force Language");
             }
             return;
+        }
     }
-    (void)ctx;
 }
 
 POINT resolve_anchor(HWND owner, POINT screen_pt) {
     if (screen_pt.x != -1 || screen_pt.y != -1) return screen_pt;
+    // TODO: spec says keyboard-invoked menus should anchor at the top-
+    // left of the current selection rect on screen, falling back to
+    // window-center only when there is no selection. Implementing that
+    // requires plumbing a screen-space selection rect through
+    // MenuContext (DWrite HitTestTextRange + DIP→client→screen
+    // conversion). Window-center is the documented fallback per spec
+    // when there is no selection; using it unconditionally here is a
+    // deliberate first cut. Right-click is the dominant invocation
+    // path; Shift+F10 still opens the menu, just at window center.
     RECT r{};
     GetWindowRect(owner, &r);
     return { (r.left + r.right) / 2, (r.top + r.bottom) / 2 };
 }
+
+// Maximum number of language entries the cmd-id range can encode:
+// kIdLangBase = 0x9200, the next allocated id block starts at 0x9300.
+// Keep the language list under this cap or extend the id namespace.
+constexpr UINT kMaxLanguages = 0x100;
 
 }  // namespace
 
@@ -148,10 +169,8 @@ MenuResult show_context_menu(HWND owner, POINT screen_pt, const MenuContext& ctx
         return result;
     }
 
-    HMENU lang_sub = ctx.languages.empty() ? nullptr : build_language_submenu(ctx);
-
     for (const auto& item : items)
-        append_label(menu, item.kind, item.enabled, ctx, lang_sub);
+        append_label(menu, item.kind, item.enabled, ctx);
 
     POINT anchor = resolve_anchor(owner, screen_pt);
 
@@ -179,7 +198,7 @@ MenuResult show_context_menu(HWND owner, POINT screen_pt, const MenuContext& ctx
         result.kind = MenuResult::SetLanguage;
         result.language_id.clear();
     }
-    else if (cmd >= kIdLangBase && cmd < kIdLangBase + 0x100) {
+    else if (cmd >= kIdLangBase && cmd < kIdLangBase + kMaxLanguages) {
         size_t idx = cmd - kIdLangBase;
         if (idx < ctx.languages.size()) {
             result.kind = MenuResult::SetLanguage;
