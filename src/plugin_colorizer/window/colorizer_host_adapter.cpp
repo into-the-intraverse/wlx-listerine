@@ -9,6 +9,7 @@
 #endif
 
 #include <windows.h>
+#include <shellapi.h>
 #include <windowsx.h>
 #include <dwmapi.h>
 #include <uxtheme.h>
@@ -36,14 +37,17 @@
 #include "plugin_colorizer/language/routing.h"
 #include "runtime/search/search_hud.h"
 #include "runtime/host/clipboard.h"
+#include "runtime/host/context_menu.h"
 #include "runtime/host/dark_mode.h"
 #include "runtime/host/factories.h"
+#include "runtime/host/grammar_menu.h"
 #include "runtime/host/hit_test.h"
 #include "runtime/host/host_integration.h"
 #include "runtime/host/module_path.h"
 #include "runtime/host/scroll_handler.h"
 #include "runtime/host/selection_helpers.h"
 #include "runtime/host/view_actions.h"
+#include "runtime/host/web_search.h"
 #include "runtime/host/window_class.h"
 
 #include <toml++/toml.hpp>
@@ -145,6 +149,7 @@ struct ColorViewState {
 };
 
 static_assert(SearchState<ColorViewState>);
+static_assert(ColorizerViewLike<ColorViewState>);
 
 // ---------- globals ----------
 
@@ -713,6 +718,72 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
             vs->last_dblclk_block = pos.block_index;
         }
         InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+    }
+
+    case WM_CONTEXTMENU: {
+        if (!vs || !vs->layout) return 0;
+
+        // Commit any in-progress drag-select.
+        if (vs->selecting) {
+            vs->selecting = false;
+            ReleaseCapture();
+            KillTimer(hwnd, TIMER_AUTOSCROLL);
+        }
+
+        POINT screen_pt = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
+
+        auto langs = available_grammars(g_colorizer_handle);
+        auto ctx = build_colorizer_menu_context(*vs, std::move(langs));
+        ctx.config_path = get_module_dir() + L"wlx-listerine-colorizer.toml";
+
+        auto result = show_context_menu(hwnd, screen_pt, ctx);
+
+        switch (result.kind) {
+        case MenuResult::Copy:
+            copy_selection(*vs, hwnd);
+            break;
+
+        case MenuResult::SelectAll:
+            if (select_all(*vs))
+                InvalidateRect(hwnd, nullptr, FALSE);
+            break;
+
+        case MenuResult::SearchGoogle: {
+            if (vs->sel_anchor.valid() && vs->sel_anchor != vs->sel_active) {
+                auto lo = std::min(vs->sel_anchor, vs->sel_active);
+                auto hi = std::max(vs->sel_anchor, vs->sel_active);
+                auto text = extract_selected_text(*vs->layout, lo, hi);
+                search_with_google(text);
+            }
+            break;
+        }
+
+        case MenuResult::EditConfig: {
+            HINSTANCE hi = ShellExecuteW(nullptr, L"open", ctx.config_path.c_str(),
+                                         nullptr, nullptr, SW_SHOW);
+            if (reinterpret_cast<INT_PTR>(hi) <= 32) {
+                WLX_TRACE(L"EditConfig: ShellExecuteW failed (code %lld) for %s",
+                          static_cast<long long>(reinterpret_cast<INT_PTR>(hi)),
+                          ctx.config_path.c_str());
+            }
+            break;
+        }
+
+        case MenuResult::SetLanguage:
+            // Empty language_id = auto-detect.
+            vs->force_grammar_id = result.language_id;
+            recolorize_with_force(vs);
+            break;
+
+        case MenuResult::OpenLink:
+        case MenuResult::CopyLinkAddress:
+        case MenuResult::CopyCodeBlock:
+        case MenuResult::None:
+        default:
+            break;  // colorizer has no links or code-block boundaries
+        }
+
         return 0;
     }
 
