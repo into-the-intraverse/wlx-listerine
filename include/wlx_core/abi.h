@@ -9,7 +9,7 @@
 #  define WLX_CORE_API __declspec(dllimport)
 #endif
 
-#define WLX_CORE_ABI_VERSION 1
+#define WLX_CORE_ABI_VERSION 2
 
 #ifdef __cplusplus
 extern "C" {
@@ -51,6 +51,21 @@ WLX_CORE_API int       wlx_core_theme_color(WlxCore*,
                                             int dark_mode,
                                             uint32_t* out_rgb,
                                             uint8_t* out_modifiers);
+
+typedef struct WlxLanguageList {
+    char**   ids;     // array of `count` null-terminated UTF-8 strings
+    uint32_t count;
+} WlxLanguageList;
+
+// Enumerates the grammars supported by the core. On success, fills *out_list
+// with a heap-owned array (must be freed with wlx_core_free_language_list)
+// and returns 0. Returns negative on bad arguments or if the core is
+// uninitialized.
+WLX_CORE_API int  wlx_core_list_languages(WlxCore*, WlxLanguageList* out_list);
+
+// Frees the buffers owned by `*list` and zeros it. Safe to call on an
+// already-zeroed list.
+WLX_CORE_API void wlx_core_free_language_list(WlxLanguageList* list);
 
 #ifdef __cplusplus
 } // extern "C"

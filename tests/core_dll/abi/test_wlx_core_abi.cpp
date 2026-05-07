@@ -58,3 +58,41 @@ TEST_CASE("colorize round-trips a tiny C source"
     wlx_core_free_spans(spans);
     wlx_core_release(core);
 }
+
+TEST_CASE("ABI version is 2") {
+    CHECK(wlx_core_abi_version() == 2);
+}
+
+TEST_CASE("wlx_core_list_languages returns a non-empty list including cpp"
+    * doctest::skip(!has_grammars())) {
+    WlxCore* core = wlx_core_acquire();
+    REQUIRE(core != nullptr);
+
+    WlxLanguageList list{};
+    REQUIRE(wlx_core_list_languages(core, &list) == 0);
+    REQUIRE(list.count > 0);
+    REQUIRE(list.ids != nullptr);
+
+    bool saw_cpp = false;
+    for (uint32_t i = 0; i < list.count; i++) {
+        REQUIRE(list.ids[i] != nullptr);
+        if (std::string(list.ids[i]) == "cpp") { saw_cpp = true; break; }
+    }
+    CHECK(saw_cpp);
+
+    wlx_core_free_language_list(&list);
+    CHECK(list.ids == nullptr);
+    CHECK(list.count == 0);
+
+    wlx_core_release(core);
+}
+
+TEST_CASE("wlx_core_list_languages returns -1 on null inputs") {
+    WlxLanguageList list{};
+    CHECK(wlx_core_list_languages(nullptr, &list) < 0);
+
+    WlxCore* core = wlx_core_acquire();
+    REQUIRE(core != nullptr);
+    CHECK(wlx_core_list_languages(core, nullptr) < 0);
+    wlx_core_release(core);
+}

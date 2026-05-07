@@ -6,6 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 
 namespace wlx::core::registry {
 
@@ -30,6 +31,7 @@ public:
                                        const std::string& language,
                                        bool dark_mode);
     bool supports(const std::string& language);
+    std::vector<std::string> available_languages();
     const theme::HelixTheme& theme(bool dark_mode) const;
 
 private:

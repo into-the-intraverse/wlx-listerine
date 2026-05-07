@@ -66,4 +66,10 @@ const HelixTheme& CoreRegistry::theme(bool dark_mode) const {
     return colorizer_ ? colorizer_->theme(dark_mode) : empty;
 }
 
+std::vector<std::string> CoreRegistry::available_languages() {
+    std::lock_guard<std::mutex> lk(mu_);
+    if (!colorizer_) return {};
+    return colorizer_->available_languages();
+}
+
 }  // namespace wlx::core::registry

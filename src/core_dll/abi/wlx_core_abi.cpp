@@ -82,3 +82,49 @@ wlx_core_theme_color(WlxCore* h, const char* scope, int dark_mode,
     if (out_modifiers) *out_modifiers = resolved->modifiers;
     return 0;
 }
+
+extern "C" WLX_CORE_API int
+wlx_core_list_languages(WlxCore* h, WlxLanguageList* out_list) {
+    if (!h || !out_list) return -1;
+    auto& reg = *reinterpret_cast<wlx::core::registry::CoreRegistry*>(h);
+
+    auto langs = reg.available_languages();
+
+    if (langs.empty()) {
+        out_list->ids = nullptr;
+        out_list->count = 0;
+        return 0;
+    }
+
+    auto** arr = static_cast<char**>(std::malloc(sizeof(char*) * langs.size()));
+    if (!arr) return -2;
+
+    for (size_t i = 0; i < langs.size(); ++i) {
+        const auto& s = langs[i];
+        arr[i] = static_cast<char*>(std::malloc(s.size() + 1));
+        if (!arr[i]) {
+            // Roll back: free what we've allocated so far.
+            for (size_t j = 0; j < i; ++j) std::free(arr[j]);
+            std::free(arr);
+            return -2;
+        }
+        std::memcpy(arr[i], s.data(), s.size());
+        arr[i][s.size()] = '\0';
+    }
+
+    out_list->ids = arr;
+    out_list->count = static_cast<uint32_t>(langs.size());
+    return 0;
+}
+
+extern "C" WLX_CORE_API void
+wlx_core_free_language_list(WlxLanguageList* list) {
+    if (!list) return;
+    if (list->ids) {
+        for (uint32_t i = 0; i < list->count; ++i)
+            std::free(list->ids[i]);
+        std::free(list->ids);
+    }
+    list->ids = nullptr;
+    list->count = 0;
+}
