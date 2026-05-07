@@ -22,6 +22,10 @@ node_modules/
 bun.lockb
 bun.lock
 
+# Python bytecode (test_data/ helper scripts)
+__pycache__/
+*.pyc
+
 # Grammar DLLs (built artifacts, not committed)
 grammars/**/*.dll
 

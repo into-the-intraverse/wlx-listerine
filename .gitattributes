@@ -1,0 +1,9 @@
+# Force LF on disk for files whose parsers / runtimes break on CRLF.
+#
+# .scm:  GrammarCache::get_query splits the `; inherits:` directive on '\n'
+#        only -- a stray '\r' in the parent name silently disables grammar
+#        inheritance (cpp loses all C-derived highlights). The parser is
+#        now CRLF-safe, but pinning the on-disk encoding is cheap defense.
+# .sh:   shell scripts must be LF to execute on Unix CI runners.
+*.scm  text eol=lf
+*.sh   text eol=lf
