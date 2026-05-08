@@ -1,7 +1,8 @@
 # Right-Click Context Menu — Design
 
 **Date:** 2026-05-07
-**Status:** Approved (brainstorm); pending implementation plan
+**Status:** Implemented (commits `512aef1`..`752ad35`, plus follow-up doc & test
+fixes through `0b3ad4b`+18). Plan: `docs/superpowers/plans/2026-05-07-context-menu.md`.
 **Owner:** aleksej.pawlowskij
 
 ## Problem
@@ -154,7 +155,7 @@ namespace wlx::runtime::host {
 // Whitespace-collapses, trims, truncates to 1500 wchars,
 // percent-encodes UTF-8, ShellExecuteWs the Google search URL.
 // No-op on empty/whitespace-only input.
-void search_with_google(const std::wstring& query);
+void search_with_google(std::wstring_view query);
 
 // Pure helper exposed for unit testing.
 std::wstring build_google_search_url(const std::wstring& query);
@@ -246,12 +247,14 @@ mouse path and the menu dispatcher call into one place.
   │  ──────────────────────│
   │     Bash               │
   │     C                  │
-  │     C++              ✓ │   ← checkmark on currently active grammar
   │     C#                 │
+  │     C++              ✓ │   ← checkmark on currently active grammar
   │     CMake              │
   │     CSS                │
   │     Dockerfile         │
+  │     Git Attributes     │
   │     Git Config         │
+  │     Git Ignore         │
   │     Git Rebase         │
   │     Go                 │
   │     HTML               │
@@ -259,9 +262,15 @@ mouse path and the menu dispatcher call into one place.
   │     JavaScript         │
   │     JSON               │
   │     Lua                │
+  │     PHP                │
+  │     PowerShell         │
   │     Python             │
   │     Rust               │
+  │     SQL                │
   │     TOML               │
+  │     TypeScript         │
+  │     Vim                │
+  │     XML                │
   │     YAML               │
   └────────────────────────┘
 ```
@@ -288,9 +297,12 @@ no double separators, no leading / trailing separators.
 Constexpr table in `grammar_menu.cpp` maps id → display:
 `cpp` → `C++`, `c_sharp` → `C#`, `javascript` → `JavaScript`,
 `html` → `HTML`, `css` → `CSS`, `json` → `JSON`, `toml` → `TOML`,
-`yaml` → `YAML`, `cmake` → `CMake`, `gitconfig` → `Git Config`,
-`git_rebase` → `Git Rebase`, etc. Unknown ids fall back to capitalized
-id. Submenu sorts alphabetically by display name.
+`yaml` → `YAML`, `cmake` → `CMake`, `git-config` → `Git Config`,
+`git_rebase` → `Git Rebase`, `gitattributes` → `Git Attributes`,
+`gitignore` → `Git Ignore`, `php` → `PHP`, `powershell` → `PowerShell`,
+`sql` → `SQL`, `vim` → `Vim`, `xml` → `XML`, etc. (27 entries total in
+`grammar_menu.cpp`'s `kDisplayTable`.) Unknown ids fall back to
+capitalized id. Submenu sorts alphabetically by display name.
 
 ### Selection on right-click
 

@@ -45,10 +45,10 @@ TEST_CASE("MenuResult::Kind enum values are stable") {
     CHECK(static_cast<int>(MenuResult::SetLanguage)      == 8);
 }
 
-// ---- build_menu_items_for_test: show/hide/enable rules ----
+// ---- build_menu_items: show/hide/enable rules ----
 TEST_CASE("build_menu_items: empty context shows the always-on items") {
     MenuContext ctx;
-    auto items = build_menu_items_for_test(ctx);
+    auto items = build_menu_items(ctx);
     // Expect: Copy(disabled), SelectAll, separator, SearchGoogle(disabled).
     REQUIRE(items.size() == 4);
     CHECK(items[0].kind == MenuItemKind::Copy);
@@ -63,7 +63,7 @@ TEST_CASE("build_menu_items: empty context shows the always-on items") {
 TEST_CASE("build_menu_items: with selection enables Copy and SearchGoogle") {
     MenuContext ctx;
     ctx.has_selection = true;
-    auto items = build_menu_items_for_test(ctx);
+    auto items = build_menu_items(ctx);
     REQUIRE(items.size() == 4);
     CHECK(items[0].kind == MenuItemKind::Copy);
     CHECK(items[0].enabled == true);
@@ -75,7 +75,7 @@ TEST_CASE("build_menu_items: link adds OpenLink + CopyLinkAddress under separato
     MenuContext ctx;
     ctx.link.present = true;
     ctx.link.url     = L"https://example.com";
-    auto items = build_menu_items_for_test(ctx);
+    auto items = build_menu_items(ctx);
     // Copy, SelectAll, Sep, SearchGoogle, Sep, OpenLink, CopyLinkAddress
     REQUIRE(items.size() == 7);
     CHECK(items[4].kind == MenuItemKind::Separator);
@@ -87,7 +87,7 @@ TEST_CASE("build_menu_items: code block adds CopyCodeBlock under separator") {
     MenuContext ctx;
     ctx.code_block.present     = true;
     ctx.code_block.block_index = 3;
-    auto items = build_menu_items_for_test(ctx);
+    auto items = build_menu_items(ctx);
     // Copy, SelectAll, Sep, SearchGoogle, Sep, CopyCodeBlock
     REQUIRE(items.size() == 6);
     CHECK(items[4].kind == MenuItemKind::Separator);
@@ -97,7 +97,7 @@ TEST_CASE("build_menu_items: code block adds CopyCodeBlock under separator") {
 TEST_CASE("build_menu_items: config_path adds EditConfig under separator") {
     MenuContext ctx;
     ctx.config_path = L"C:\\path\\to\\plugin.toml";
-    auto items = build_menu_items_for_test(ctx);
+    auto items = build_menu_items(ctx);
     // Copy, SelectAll, Sep, SearchGoogle, Sep, EditConfig
     REQUIRE(items.size() == 6);
     CHECK(items[4].kind == MenuItemKind::Separator);
@@ -106,7 +106,7 @@ TEST_CASE("build_menu_items: config_path adds EditConfig under separator") {
 
 TEST_CASE("build_menu_items: empty config_path hides EditConfig") {
     MenuContext ctx;
-    auto items = build_menu_items_for_test(ctx);
+    auto items = build_menu_items(ctx);
     for (const auto& i : items) CHECK(i.kind != MenuItemKind::EditConfig);
 }
 
@@ -115,7 +115,7 @@ TEST_CASE("build_menu_items: languages add Force Language root with separator be
     ctx.config_path = L"C:\\plugin.toml";
     ctx.languages = { {"cpp", L"C++"}, {"python", L"Python"} };
     ctx.active_grammar_id = "cpp";
-    auto items = build_menu_items_for_test(ctx);
+    auto items = build_menu_items(ctx);
     auto root_it = std::find_if(items.begin(), items.end(),
         [](const MenuItem& i) { return i.kind == MenuItemKind::LanguageSubmenuRoot; });
     REQUIRE(root_it != items.end());
@@ -125,7 +125,7 @@ TEST_CASE("build_menu_items: languages add Force Language root with separator be
 
 TEST_CASE("build_menu_items: never emits leading or trailing separators") {
     MenuContext ctx;
-    auto items = build_menu_items_for_test(ctx);
+    auto items = build_menu_items(ctx);
     REQUIRE(!items.empty());
     CHECK(items.front().kind != MenuItemKind::Separator);
     CHECK(items.back().kind != MenuItemKind::Separator);
@@ -138,7 +138,7 @@ TEST_CASE("build_menu_items: never emits two consecutive separators") {
     ctx.code_block.present = true;
     ctx.config_path = L"x";
     ctx.languages = { {"cpp", L"C++"} };
-    auto items = build_menu_items_for_test(ctx);
+    auto items = build_menu_items(ctx);
     for (size_t i = 1; i < items.size(); ++i) {
         bool both = items[i - 1].kind == MenuItemKind::Separator
                  && items[i].kind     == MenuItemKind::Separator;

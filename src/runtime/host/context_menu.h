@@ -61,7 +61,7 @@ struct MenuResult {
 
 MenuResult show_context_menu(HWND owner, POINT screen_pt, const MenuContext& ctx);
 
-// ---------- Test-only surface ----------
+// ---------- Menu-item model (used by show_context_menu and tests) ----------
 
 enum class MenuItemKind {
     Separator,
@@ -76,7 +76,11 @@ struct MenuItem {
     bool         enabled = true;
 };
 
-std::vector<MenuItem> build_menu_items_for_test(const MenuContext& ctx);
+// Pure function: produces the flat menu-item sequence for `ctx`. Called
+// internally by show_context_menu (which then builds the HMENU + tracks),
+// and exposed here so tests can verify show/hide/enable/separator rules
+// without spinning up a real Win32 message pump.
+std::vector<MenuItem> build_menu_items(const MenuContext& ctx);
 
 // ---------- Per-plugin context builders ----------
 

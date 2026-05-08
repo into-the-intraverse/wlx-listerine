@@ -39,7 +39,7 @@ void trim_trailing_separator(std::vector<MenuItem>& items) {
 
 }  // namespace
 
-std::vector<MenuItem> build_menu_items_for_test(const MenuContext& ctx) {
+std::vector<MenuItem> build_menu_items(const MenuContext& ctx) {
     std::vector<MenuItem> items;
 
     items.push_back({MenuItemKind::Copy,      ctx.has_selection});
@@ -160,7 +160,7 @@ constexpr UINT kMaxLanguages = 0x100;
 MenuResult show_context_menu(HWND owner, POINT screen_pt, const MenuContext& ctx) {
     MenuResult result;
 
-    auto items = build_menu_items_for_test(ctx);
+    auto items = build_menu_items(ctx);
     if (items.empty()) return result;
 
     HMENU menu = CreatePopupMenu();
