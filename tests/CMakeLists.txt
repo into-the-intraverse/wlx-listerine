@@ -35,6 +35,7 @@ add_executable(colorizer-tests
     core_dll/highlighting/test_colorizer_query_highlighter.cpp
     core_dll/grammar/test_colorizer_grammars.cpp
     plugin_colorizer/language/test_colorizer_routing.cpp
+    plugin_colorizer/language/test_path_to_language.cpp
     plugin_colorizer/test_colorizer_smoke.cpp
     core_dll/abi/test_wlx_core_abi.cpp
     core_dll/registry/test_core_config.cpp

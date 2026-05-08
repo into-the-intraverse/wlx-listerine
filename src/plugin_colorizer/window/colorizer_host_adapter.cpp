@@ -34,6 +34,7 @@
 #include "wlx_core/abi.h"
 #include "core_dll/colorizer/colorizer.h"  // ColorizeResult / ColorSpan still used by ColorViewState
 #include "plugin_colorizer/layout/colorizer_layout.h"
+#include "plugin_colorizer/language/path_to_language.h"
 #include "plugin_colorizer/language/routing.h"
 #include "runtime/search/search_hud.h"
 #include "runtime/host/clipboard.h"
@@ -172,111 +173,13 @@ static void reload_view(ColorViewState& vs, const wchar_t* path);
 
 static HostIntegration<ColorViewState> g_integration;
 
-// ---------- extension -> language map ----------
-
-static const struct { const wchar_t* ext; const char* lang; } kExtLangMap[] = {
-    // C / C++ — both .c and .h route to cpp; the C grammar stays on disk
-    // because cpp/highlights.scm `; inherits: c` consumes it.
-    { L"c",           "cpp"        },
-    { L"h",           "cpp"        },
-    { L"cpp",         "cpp"        },
-    { L"cc",          "cpp"        },
-    { L"cxx",         "cpp"        },
-    { L"hpp",         "cpp"        },
-    { L"hxx",         "cpp"        },
-    // Python
-    { L"py",          "python"     },
-    { L"pyi",         "python"     },
-    // JavaScript / TypeScript
-    { L"js",          "javascript" },
-    { L"mjs",         "javascript" },
-    { L"cjs",         "javascript" },
-    { L"jsx",         "javascript" },
-    { L"ts",          "typescript" },
-    { L"tsx",         "typescript" },
-    { L"mts",         "typescript" },
-    // Rust
-    { L"rs",          "rust"       },
-    // Go
-    { L"go",          "go"         },
-    // Java
-    { L"java",        "java"       },
-    // C#
-    { L"cs",          "c-sharp"    },
-    // PHP
-    { L"php",         "php"        },
-    // Lua
-    { L"lua",         "lua"        },
-    // Shell
-    { L"sh",          "bash"       },
-    { L"bash",        "bash"       },
-    { L"zsh",         "bash"       },
-    // PowerShell
-    { L"ps1",         "powershell" },
-    { L"psm1",        "powershell" },
-    { L"psd1",        "powershell" },
-    // Vim
-    { L"vim",         "vim"        },
-    { L"vimrc",       "vim"        },
-    // Data / Config
-    { L"json",        "json"       },
-    { L"jsonc",       "json"       },
-    { L"toml",        "toml"       },
-    { L"yaml",        "yaml"       },
-    { L"yml",         "yaml"       },
-    // Markup
-    { L"html",        "html"       },
-    { L"htm",         "html"       },
-    { L"xml",         "xml"        },
-    { L"svg",         "xml"        },
-    { L"css",         "css"        },
-    // .md / .markdown intentionally NOT handled here — the wlx-listerine-md
-    // plugin owns markdown rendering.
-    // Build / DevOps
-    { L"cmake",       "cmake"      },
-    { L"dockerfile",  "dockerfile" },
-    { L"sql",         "sql"        },
-    // Git
-    { L"gitconfig",   "git-config" },
-    { L"gitignore",   "gitignore"  },
-    { L"gitattributes", "gitattributes" },
-};
-
-static std::string ext_to_language(const std::wstring& path) {
-    auto dot = path.find_last_of(L'.');
-    if (dot == std::wstring::npos) return {};
-    std::wstring ext = path.substr(dot + 1);
-    // lowercase
-    for (auto& c : ext) c = static_cast<wchar_t>(towlower(c));
-    for (auto& e : kExtLangMap) {
-        if (ext == e.ext) return e.lang;
-    }
-    return {};
-}
-
-static std::string filename_to_language(const std::wstring& path) {
-    auto slash = path.find_last_of(L"\\/");
-    std::wstring filename = (slash != std::wstring::npos)
-        ? path.substr(slash + 1) : path;
-    for (auto& c : filename) c = static_cast<wchar_t>(towlower(c));
-
-    if (filename == L"dockerfile" || filename == L"containerfile")
-        return "dockerfile";
-    if (filename.find(L"dockerfile") != std::wstring::npos)
-        return "dockerfile";
-    if (filename == L"cmakelists.txt")
-        return "cmake";
-    if (filename == L".gitconfig")
-        return "git-config";
-    if (filename == L".gitignore")
-        return "gitignore";
-    if (filename == L".gitattributes")
-        return "gitattributes";
-    if (filename.find(L"git-rebase-todo") != std::wstring::npos)
-        return "git_rebase";
-
-    return {};
-}
+// ---------- extension / filename → language ----------
+//
+// The lookup tables and the two pure functions live in
+// plugin_colorizer/language/path_to_language.h so they can be unit-tested
+// in isolation. We just import them here.
+using wlx::plugin_colorizer::language::ext_to_language;
+using wlx::plugin_colorizer::language::filename_to_language;
 
 // ---------- helpers ----------
 
@@ -291,16 +194,52 @@ static std::wstring get_module_dir() {
 }
 
 
+// TC's detect_string syntax supports EXT="…" (matched against whatever
+// follows the LAST dot in the filename) plus content tests. It does NOT
+// support filename-pattern matchers, so dotless files like Pipfile must
+// rely on TC treating the whole filename as the "extension" — that's why
+// EXT="DOCKERFILE" / EXT="MAKEFILE" / EXT="PIPFILE" work for files with
+// no dot at all.
+//
+// Dotfile entries (e.g., .bashrc → ext "bashrc") are listed without the
+// leading dot per TC convention.
+//
+// Adding a row here is half the wiring; the other half is updating
+// kExtTable in plugin_colorizer/language/path_to_language.h so the
+// language lookup actually returns a grammar id.
 static constexpr wchar_t kDefaultDetectString[] =
+    // C / C++ / Python / JS / TS
     L"EXT=\"C\" | EXT=\"H\" | EXT=\"CPP\" | EXT=\"CC\" | EXT=\"CXX\" | EXT=\"HPP\" | "
     L"EXT=\"HXX\" | EXT=\"PY\" | EXT=\"PYI\" | EXT=\"JS\" | EXT=\"MJS\" | EXT=\"CJS\" | "
     L"EXT=\"JSX\" | EXT=\"TS\" | EXT=\"TSX\" | EXT=\"MTS\" | EXT=\"RS\" | EXT=\"GO\" | "
-    L"EXT=\"JAVA\" | EXT=\"CS\" | EXT=\"PHP\" | EXT=\"LUA\" | EXT=\"SH\" | EXT=\"BASH\" | "
-    L"EXT=\"ZSH\" | EXT=\"PS1\" | EXT=\"PSM1\" | EXT=\"PSD1\" | EXT=\"VIM\" | "
-    L"EXT=\"VIMRC\" | EXT=\"JSON\" | EXT=\"JSONC\" | EXT=\"TOML\" | EXT=\"YAML\" | "
-    L"EXT=\"YML\" | EXT=\"HTML\" | EXT=\"HTM\" | EXT=\"XML\" | EXT=\"SVG\" | EXT=\"CSS\" | "
-    L"EXT=\"CMAKE\" | EXT=\"SQL\" | EXT=\"DOCKERFILE\" | "
-    L"EXT=\"GITCONFIG\" | EXT=\"GITIGNORE\" | EXT=\"GITATTRIBUTES\"";
+    L"EXT=\"JAVA\" | EXT=\"CS\" | EXT=\"PHP\" | EXT=\"LUA\" | "
+    // Shell + dotfile rc files (TC treats `.bashrc` as ext=BASHRC, etc.)
+    L"EXT=\"SH\" | EXT=\"BASH\" | EXT=\"ZSH\" | "
+    L"EXT=\"BASHRC\" | EXT=\"BASH_PROFILE\" | EXT=\"BASH_ALIASES\" | EXT=\"BASH_LOGOUT\" | "
+    L"EXT=\"ZSHRC\" | EXT=\"ZSHENV\" | EXT=\"ZPROFILE\" | EXT=\"ZLOGIN\" | EXT=\"ZLOGOUT\" | "
+    L"EXT=\"PROFILE\" | EXT=\"ENVRC\" | "
+    // PowerShell / Vim
+    L"EXT=\"PS1\" | EXT=\"PSM1\" | EXT=\"PSD1\" | "
+    L"EXT=\"VIM\" | EXT=\"VIMRC\" | EXT=\"NVIMRC\" | "
+    // Data / config
+    L"EXT=\"JSON\" | EXT=\"JSONC\" | EXT=\"TOML\" | EXT=\"YAML\" | EXT=\"YML\" | "
+    // Markup
+    L"EXT=\"HTML\" | EXT=\"HTM\" | EXT=\"XML\" | EXT=\"SVG\" | EXT=\"CSS\" | "
+    // Visual Studio / MSBuild XML
+    L"EXT=\"VCXPROJ\" | EXT=\"CSPROJ\" | EXT=\"FSPROJ\" | EXT=\"VBPROJ\" | EXT=\"PROJ\" | "
+    L"EXT=\"PROPS\" | EXT=\"TARGETS\" | EXT=\"FILTERS\" | EXT=\"XAML\" | EXT=\"RESX\" | "
+    // Build / DevOps
+    L"EXT=\"CMAKE\" | EXT=\"SQL\" | EXT=\"DOCKERFILE\" | EXT=\"DOCKERIGNORE\" | "
+    // Git
+    L"EXT=\"GITCONFIG\" | EXT=\"GITMODULES\" | EXT=\"GITIGNORE\" | EXT=\"GITATTRIBUTES\" | "
+    // npm / general ignore files
+    L"EXT=\"NPMIGNORE\" | "
+    // Filename-routed catch-alls — these claim broader extensions and rely
+    // on filename_to_language() to specialize the few names we actually
+    // want (CMakeLists.txt / CMakeCache.txt / uv.lock / Pipfile.lock /
+    // bun.lock / poetry.lock). Files we don't recognize fall through to
+    // plain-text rendering inside our viewer.
+    L"EXT=\"TXT\" | EXT=\"LOCK\" | EXT=\"PIPFILE\"";
 
 // Phase 4 (Task 4.9 audit): NOT lifted to runtime/host. This plugin's
 // ensure_theme overrides the default detect_string and parses a colorizer-
