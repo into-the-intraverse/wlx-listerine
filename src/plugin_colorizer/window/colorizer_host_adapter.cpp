@@ -227,7 +227,8 @@ static constexpr wchar_t kDefaultDetectString[] =
     L"EXT=\"HTML\" | EXT=\"HTM\" | EXT=\"XML\" | EXT=\"SVG\" | EXT=\"CSS\" | "
     // Visual Studio / MSBuild XML
     L"EXT=\"VCXPROJ\" | EXT=\"CSPROJ\" | EXT=\"FSPROJ\" | EXT=\"VBPROJ\" | EXT=\"PROJ\" | "
-    L"EXT=\"PROPS\" | EXT=\"TARGETS\" | EXT=\"FILTERS\" | EXT=\"XAML\" | EXT=\"RESX\" | "
+    L"EXT=\"PROPS\" | EXT=\"TARGETS\" | EXT=\"FILTERS\" | EXT=\"SLNX\" | "
+    L"EXT=\"XAML\" | EXT=\"RESX\" | "
     // Build / DevOps
     L"EXT=\"CMAKE\" | EXT=\"SQL\" | EXT=\"DOCKERFILE\" | EXT=\"DOCKERIGNORE\" | "
     // Git

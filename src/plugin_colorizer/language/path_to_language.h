@@ -90,6 +90,7 @@ constexpr ExtEntry kExtTable[] = {
     { L"props",          "xml"        },
     { L"targets",        "xml"        },
     { L"filters",        "xml"        },
+    { L"slnx",           "xml"        },  // VS 17.13+ XML solution format
     { L"xaml",           "xml"        },
     { L"resx",           "xml"        },
     // ---- Build / DevOps

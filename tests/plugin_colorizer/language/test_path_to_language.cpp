@@ -77,6 +77,7 @@ TEST_CASE("ext_to_language: Visual Studio / MSBuild XML") {
     CHECK(ext_to_language(L"common.props")    == "xml");
     CHECK(ext_to_language(L"common.targets")  == "xml");
     CHECK(ext_to_language(L"app.vcxproj.filters") == "xml");  // .filters
+    CHECK(ext_to_language(L"MyApp.slnx")    == "xml");  // VS 17.13+ XML solution
     CHECK(ext_to_language(L"main.xaml") == "xml");
     CHECK(ext_to_language(L"strings.resx") == "xml");
 }
