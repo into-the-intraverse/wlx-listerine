@@ -51,7 +51,8 @@ private:
     };
 
     TextLayoutResult create_text_layout(const std::vector<parser::InlineNode>& inlines,
-                                        float max_width, uint32_t default_color);
+                                        float max_width, uint32_t default_color,
+                                        IDWriteTextFormat* format = nullptr);
 
     // Font helpers
     ComPtr<IDWriteTextFormat> get_body_format(float size);

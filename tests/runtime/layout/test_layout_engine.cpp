@@ -206,3 +206,37 @@ TEST_CASE("Different viewport widths produce different layouts") {
     // Narrow layout should be taller due to more wrapping
     CHECK(narrow.total_height >= wide.total_height);
 }
+
+TEST_CASE("layout_heading - inline link produces an interactive span") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    MarkdownParser p;
+    const char* md = "## Style Guide [^](#table-of-contents)\n";
+    auto doc = p.parse(md, std::strlen(md));
+    ThemeService theme;
+    LayoutEngine eng(factory.Get(), theme, false);
+    auto layout = eng.layout(doc, 800.0f);
+
+    int heading_idx = -1;
+    for (int i = 0; i < (int)layout.blocks.size(); i++) {
+        if (layout.blocks[i].type == BlockType::Heading) {
+            heading_idx = i;
+            break;
+        }
+    }
+    REQUIRE(heading_idx >= 0);
+
+    auto& blk = layout.blocks[heading_idx];
+    REQUIRE(blk.spans.size() == 1);
+    auto& span = blk.spans[0];
+    CHECK(span.target.kind == LinkKind::InternalAnchor);
+    CHECK(span.target.anchor_fragment == L"table-of-contents");
+    CHECK(span.rect.right > span.rect.left);
+    CHECK(span.rect.bottom > span.rect.top);
+    // Span rect must lie inside the heading block rect — verifies the
+    // local-to-document coordinate translation in layout_heading.
+    CHECK(span.rect.left   >= blk.rect.left);
+    CHECK(span.rect.right  <= blk.rect.right);
+    CHECK(span.rect.top    >= blk.rect.top);
+    CHECK(span.rect.bottom <= blk.rect.bottom);
+}

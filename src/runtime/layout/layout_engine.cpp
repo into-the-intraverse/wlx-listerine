@@ -106,7 +106,8 @@ std::wstring LayoutEngine::slugify(const std::vector<InlineNode>& inlines) {
 // ---------- create_text_layout ----------
 
 LayoutEngine::TextLayoutResult LayoutEngine::create_text_layout(
-    const std::vector<InlineNode>& inlines, float max_width, uint32_t default_color) {
+    const std::vector<InlineNode>& inlines, float max_width, uint32_t default_color,
+    IDWriteTextFormat* format) {
 
     TextLayoutResult result;
 
@@ -143,11 +144,12 @@ LayoutEngine::TextLayoutResult LayoutEngine::create_text_layout(
 
     result.full_text = full_text;
 
-    // Create text layout from body format
+    // Create text layout from body format (or caller-supplied format)
+    IDWriteTextFormat* fmt = format ? format : body_format_.Get();
     ComPtr<IDWriteTextLayout> layout;
     HRESULT hr = dwrite_->CreateTextLayout(
         full_text.c_str(), static_cast<UINT32>(full_text.size()),
-        body_format_.Get(), max_width, 100000.0f,
+        fmt, max_width, 100000.0f,
         layout.GetAddressOf());
 
     if (FAILED(hr) || !layout) return result;
@@ -278,42 +280,47 @@ void LayoutEngine::layout_heading(const BlockNode& node, float& y, float left, f
     int level = std::clamp(node.heading_level, 1, 6);
     float font_size = kHeadingSizes[level - 1];
 
-    // Create text layout with heading size
     auto fmt = get_body_format(font_size);
     if (!fmt) return;
 
-    std::wstring full_text;
-    for (auto& n : node.inlines) {
-        if (n.type == InlineType::SoftBreak || n.type == InlineType::HardBreak)
-            full_text += L' ';
-        else
-            full_text += n.text;
-    }
-
     float max_width = right - left;
-    ComPtr<IDWriteTextLayout> text_layout;
-    dwrite_->CreateTextLayout(full_text.c_str(), static_cast<UINT32>(full_text.size()),
-                              fmt.Get(), max_width, 100000.0f, text_layout.GetAddressOf());
-    if (!text_layout) return;
+    auto tlr = create_text_layout(node.inlines, max_width, colors_.heading, fmt.Get());
+    if (!tlr.layout) return;
 
-    // Bold the entire heading
-    DWRITE_TEXT_RANGE all = {0, static_cast<UINT32>(full_text.size())};
-    text_layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, all);
+    // Bold the entire heading.
+    DWRITE_TEXT_RANGE all = {0, static_cast<UINT32>(tlr.full_text.size())};
+    tlr.layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, all);
 
-    DWRITE_TEXT_METRICS metrics;
-    text_layout->GetMetrics(&metrics);
+    // Bold widens glyphs and may change wrap/height. Re-measure so the
+    // block rect and y-advance reflect the bolded layout. (Span rects in
+    // tlr.spans were measured pre-bold and are sub-pixel stale; not worth
+    // fixing for typical short [^] back-link text inside headings.)
+    DWRITE_TEXT_METRICS bold_metrics;
+    tlr.layout->GetMetrics(&bold_metrics);
+    tlr.height = bold_metrics.height;
 
     LayoutBlock lb;
     lb.type = BlockType::Heading;
     lb.heading_level = level;
-    lb.rect = D2D1::RectF(left, y, right, y + metrics.height);
+    lb.rect = D2D1::RectF(left, y, right, y + tlr.height);
 
     TextRun run;
-    run.text = full_text;
+    run.text = tlr.full_text;
     run.rect = lb.rect;
-    run.layout = text_layout;
+    run.layout = tlr.layout;
     run.color = colors_.heading;
+    run.color_ranges = std::move(tlr.color_ranges);
+    run.code_bg_rects = std::move(tlr.code_bg_rects);
     lb.text_runs.push_back(std::move(run));
+
+    // Offset interactive span rects to document coordinates and append.
+    for (auto& s : tlr.spans) {
+        s.rect.left  += left;
+        s.rect.right += left;
+        s.rect.top   += y;
+        s.rect.bottom += y;
+        lb.spans.push_back(std::move(s));
+    }
 
     // H1/H2 bottom border
     if (level <= 2) {
@@ -327,7 +334,7 @@ void LayoutEngine::layout_heading(const BlockNode& node, float& y, float left, f
         result_.anchors.push_back({slug, y});
     }
 
-    y += metrics.height + spacing_.heading_spacing_below;
+    y += tlr.height + spacing_.heading_spacing_below;
     result_.blocks.push_back(std::move(lb));
 }
 
