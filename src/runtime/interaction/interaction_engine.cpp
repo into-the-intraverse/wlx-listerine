@@ -1,4 +1,5 @@
 #include "runtime/interaction/interaction_engine.h"
+#include <cwctype>
 
 namespace wlx::runtime::interaction {
 
@@ -64,9 +65,17 @@ InteractionEngine::LinkAction InteractionEngine::resolve(const LinkTarget& targe
     return action;
 }
 
+static std::wstring normalize_fragment(std::wstring s) {
+    for (auto& c : s) c = static_cast<wchar_t>(towlower(c));
+    while (!s.empty() && s.front() == L'-') s.erase(s.begin());
+    while (!s.empty() && s.back()  == L'-') s.pop_back();
+    return s;
+}
+
 std::optional<float> InteractionEngine::anchor_y(const std::wstring& slug) const {
+    std::wstring needle = normalize_fragment(slug);
     for (auto& anchor : layout_.anchors) {
-        if (anchor.slug == slug)
+        if (anchor.slug == needle)
             return anchor.y_offset;
     }
     return std::nullopt;
