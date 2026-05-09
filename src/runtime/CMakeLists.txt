@@ -10,6 +10,7 @@ add_library(wlx-core STATIC
     theme/theme_service.cpp
     cache/cache_service.cpp
     interaction/text_selection.cpp
+    interaction/url_scanner.cpp
     search/search_index.cpp
     search/search_hud_painter.cpp
     host/clipboard.cpp

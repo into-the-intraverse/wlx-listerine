@@ -19,6 +19,12 @@
 #include <algorithm>
 #include <vector>
 
+// WLX_TRACE_TAG must be defined before any project header includes
+// runtime/diagnostics/wlx_trace.h — link_actions.h transitively pulls
+// it in, and the macro fallback would otherwise lock to L"wlx".
+#define WLX_TRACE_TAG L"wlx-md"
+#include "runtime/diagnostics/wlx_trace.h"
+
 #include "listerplugin.h"
 #include "runtime/io/file_service.h"
 #include "runtime/parser/markdown_parser.h"
@@ -43,11 +49,9 @@
 #include "runtime/host/scroll_handler.h"
 #include "runtime/host/selection_helpers.h"
 #include "runtime/host/view_actions.h"
+#include "runtime/host/link_actions.h"
 #include "runtime/host/web_search.h"
 #include "runtime/host/window_class.h"
-
-#define WLX_TRACE_TAG L"wlx-md"
-#include "runtime/diagnostics/wlx_trace.h"
 
 using namespace wlx::runtime::cache;
 using namespace wlx::runtime::diagnostics;
@@ -271,16 +275,9 @@ static void invoke_link_action(ViewState* vs, const InteractionEngine::LinkActio
         vs->scroll_y = std::clamp(action.scroll_y, 0.0f, vs->max_scroll_y);
         update_scrollbar(vs);
         break;
-    case InteractionEngine::Action::OpenExternal: {
-        HINSTANCE hi = ShellExecuteW(nullptr, L"open", action.target.c_str(),
-                                     nullptr, nullptr, SW_SHOW);
-        if (reinterpret_cast<INT_PTR>(hi) <= 32) {
-            WLX_TRACE(L"invoke_link_action: ShellExecuteW failed (code %lld) for %s",
-                      static_cast<long long>(reinterpret_cast<INT_PTR>(hi)),
-                      action.target.c_str());
-        }
+    case InteractionEngine::Action::OpenExternal:
+        wlx::runtime::host::open_external_url(action.target);
         break;
-    }
     case InteractionEngine::Action::ReloadDocument:
         if (!vs->file_path.empty()) {
             std::wstring dir = vs->file_path;
