@@ -22,8 +22,16 @@
 #include <memory>
 #include <vector>
 
+// WLX_TRACE_TAG must be defined before any project header includes
+// runtime/diagnostics/wlx_trace.h — link_actions.h transitively pulls
+// it in, and the macro fallback would otherwise lock to L"wlx".
+#define WLX_TRACE_TAG L"wlx-clr"
+#include "runtime/diagnostics/wlx_trace.h"
+
 #include "listerplugin.h"
 #include "runtime/interaction/text_selection.h"
+#include "runtime/interaction/interaction_engine.h"
+#include "runtime/host/link_actions.h"
 #include "runtime/io/file_service.h"
 #include "runtime/layout/layout_engine.h"
 #include "runtime/render/render_engine.h"
@@ -52,9 +60,6 @@
 #include "runtime/host/window_class.h"
 
 #include <toml++/toml.hpp>
-
-#define WLX_TRACE_TAG L"wlx-clr"
-#include "runtime/diagnostics/wlx_trace.h"
 
 using namespace wlx::core::colorizer;
 
@@ -110,6 +115,7 @@ struct ColorViewState {
     std::shared_ptr<LayoutDocument> layout;
     std::unique_ptr<RenderEngine> renderer;
     std::unique_ptr<SearchHud> hud;
+    std::unique_ptr<wlx::runtime::interaction::InteractionEngine> interaction;
 
     float scroll_y = 0;
     float max_scroll_y = 0;
@@ -318,6 +324,7 @@ static void do_layout(ColorViewState* vs, const std::wstring& text, const std::s
                       colors, g_theme, vs->dark_mode, viewport_width, cfg));
 
     vs->layout = layout;
+    vs->interaction = std::make_unique<InteractionEngine>(*vs->layout);
     update_scrollbar(vs);
     vs->index_dirty = true;
 }
@@ -559,6 +566,16 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
             float py = vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(GET_Y_LPARAM(lp)))
                                     : static_cast<float>(GET_Y_LPARAM(lp));
             float doc_y = py + vs->scroll_y;
+
+            // URL hit: switch to hand cursor and bail early.
+            if (vs->interaction) {
+                auto hit = vs->interaction->hit_test(px, doc_y);
+                if (hit.hit) {
+                    SetCursor(LoadCursor(nullptr, IDC_HAND));
+                    return 0;
+                }
+            }
+
             bool over_text = false;
             for (auto& block : vs->layout->blocks) {
                 if (block.text_runs.empty()) continue;
@@ -582,6 +599,15 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         float py = vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(GET_Y_LPARAM(lp)))
                                 : static_cast<float>(GET_Y_LPARAM(lp));
         float doc_y = py + vs->scroll_y;
+
+        // URL click: open in browser and bail before starting a selection drag.
+        if (vs->interaction) {
+            auto hit = vs->interaction->hit_test(px, doc_y);
+            if (hit.hit && hit.target.kind == wlx::runtime::parser::LinkKind::ExternalUrl) {
+                wlx::runtime::host::open_external_url(hit.target.url);
+                return 0;
+            }
+        }
 
         auto pos = hit_test_position(*vs->layout, px, doc_y);
 
@@ -673,8 +699,17 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
 
         POINT screen_pt = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
 
+        // Convert the screen-space WM_CONTEXTMENU coords into doc coords.
+        POINT client_pt = screen_pt;
+        ScreenToClient(hwnd, &client_pt);
+        float ctx_doc_x = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(client_pt.x))
+                                       : static_cast<float>(client_pt.x);
+        float ctx_doc_y_local = vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(client_pt.y))
+                                             : static_cast<float>(client_pt.y);
+        float ctx_doc_y = ctx_doc_y_local + vs->scroll_y;
+
         auto langs = available_grammars(g_colorizer_handle);
-        auto ctx = build_colorizer_menu_context(*vs, std::move(langs));
+        auto ctx = build_colorizer_menu_context(*vs, std::move(langs), ctx_doc_x, ctx_doc_y);
         ctx.config_path = get_module_dir() + L"wlx-listerine-colorizer.toml";
 
         auto result = show_context_menu(hwnd, screen_pt, ctx);
@@ -717,11 +752,23 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
             break;
 
         case MenuResult::OpenLink:
+            if (ctx.link.present)
+                wlx::runtime::host::open_external_url(ctx.link.url);
+            break;
+
         case MenuResult::CopyLinkAddress:
+            if (ctx.link.present) {
+                // Reuse the existing clipboard helper. Signature:
+                //   bool copy_to_clipboard(HWND owner, const std::wstring& text)
+                // declared in runtime/host/clipboard.h.
+                wlx::runtime::host::copy_to_clipboard(hwnd, ctx.link.url);
+            }
+            break;
+
         case MenuResult::CopyCodeBlock:
         case MenuResult::None:
         default:
-            break;  // colorizer has no links or code-block boundaries
+            break;  // colorizer has no code-block boundaries
         }
 
         return 0;
@@ -834,10 +881,8 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         break;
 
     case WM_SETCURSOR:
-        if (LOWORD(lp) == HTCLIENT) {
-            SetCursor(vs && vs->cursor ? vs->cursor : LoadCursorW(nullptr, IDC_ARROW));
+        if (LOWORD(lp) == HTCLIENT)
             return TRUE;
-        }
         break;
 
     case WM_ERASEBKGND:

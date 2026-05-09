@@ -100,6 +100,7 @@ def main():
         list(cases_dir.glob("*.md")) +
         list(cases_dir.glob("*.cpp")) +
         list(cases_dir.glob("*.py")) +
+        list(cases_dir.glob("*.toml")) +
         list(cases_dir.glob("*.txt"))
     )
 

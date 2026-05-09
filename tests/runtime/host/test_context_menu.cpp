@@ -25,6 +25,7 @@ struct FakeMdView {
 // Minimal fake colorizer view for build_colorizer_menu_context.
 struct FakeColorizerView {
     std::shared_ptr<LayoutDocument> layout;
+    std::unique_ptr<wlx::runtime::interaction::InteractionEngine> interaction;
     TextPosition sel_anchor;
     TextPosition sel_active;
     std::string force_grammar_id;
@@ -205,7 +206,7 @@ TEST_CASE("build_md_menu_context: cursor outside any code block leaves it absent
 TEST_CASE("build_colorizer_menu_context: marks auto-detect when no force_grammar_id") {
     FakeColorizerView vs;
     auto ctx = build_colorizer_menu_context(vs,
-        std::vector<LanguageOption>{ {"cpp", L"C++"} });
+        std::vector<LanguageOption>{ {"cpp", L"C++"} }, 0.0f, 0.0f);
     CHECK(ctx.auto_detect_active == true);
     CHECK(ctx.active_grammar_id.empty());
     CHECK(ctx.languages.size() == 1);
@@ -215,7 +216,7 @@ TEST_CASE("build_colorizer_menu_context: forwards force_grammar_id to active") {
     FakeColorizerView vs;
     vs.force_grammar_id = "python";
     auto ctx = build_colorizer_menu_context(vs,
-        std::vector<LanguageOption>{ {"cpp", L"C++"}, {"python", L"Python"} });
+        std::vector<LanguageOption>{ {"cpp", L"C++"}, {"python", L"Python"} }, 0.0f, 0.0f);
     CHECK(ctx.auto_detect_active == false);
     CHECK(ctx.active_grammar_id == "python");
 }

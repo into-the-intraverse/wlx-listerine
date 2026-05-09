@@ -4,6 +4,9 @@
 
 #include "plugin_colorizer/layout/colorizer_layout.h"
 #include "runtime/parser/block_node.h"
+#include "runtime/interaction/url_scanner.h"
+#include "runtime/layout/interactive_span.h"
+#include "wlx_core/text_modifier.h"
 
 #include <algorithm>
 #include <cstring>
@@ -312,6 +315,53 @@ wlx::runtime::layout::LayoutDocument layout_source(
             block_height = std::max(line_height, m.height);
         }
 
+        // ---- URL detection ----
+        // Scan the expanded line text for URLs; emit one InteractiveSpan
+        // per pixel-row covered, plus a ColorRange that overrides
+        // foreground to palette.link and adds MOD_UNDERLINE.
+        std::vector<wlx::runtime::layout::InteractiveSpan> url_spans;
+        if (text_layout && !expanded.empty() &&
+            expanded.find(L':') != std::wstring::npos) {  // cheap pre-filter
+
+            auto url_matches = wlx::runtime::interaction::scan_urls(expanded);
+            for (const auto& um : url_matches) {
+                int len = um.end - um.start;
+                if (len <= 0) continue;
+
+                // Style override: link color + underline.
+                wlx::runtime::layout::ColorRange link_cr;
+                link_cr.start     = static_cast<uint32_t>(um.start);
+                link_cr.length    = static_cast<uint32_t>(len);
+                link_cr.color     = palette.link;
+                link_cr.has_bg    = false;
+                link_cr.modifiers = MOD_UNDERLINE;
+                color_ranges.push_back(link_cr);
+
+                // Interactive rect(s).
+                UINT32 hit_count = 0;
+                text_layout->HitTestTextRange(
+                    static_cast<UINT32>(um.start), static_cast<UINT32>(len),
+                    0, 0, nullptr, 0, &hit_count);
+                if (hit_count > 0) {
+                    std::vector<DWRITE_HIT_TEST_METRICS> hits(hit_count);
+                    text_layout->HitTestTextRange(
+                        static_cast<UINT32>(um.start), static_cast<UINT32>(len),
+                        0, 0, hits.data(), hit_count, &hit_count);
+
+                    std::wstring url(expanded.data() + um.start, static_cast<size_t>(len));
+                    for (auto& h : hits) {
+                        wlx::runtime::layout::InteractiveSpan span;
+                        span.target.kind = wlx::runtime::parser::LinkKind::ExternalUrl;
+                        span.target.url  = url;
+                        // Local rects (will be offset to document coords below).
+                        span.rect = D2D1::RectF(h.left, h.top,
+                                                h.left + h.width, h.top + h.height);
+                        url_spans.push_back(std::move(span));
+                    }
+                }
+            }
+        }
+
         LayoutBlock lb;
         lb.type = BlockType::Paragraph; // closest generic type; renderer handles color ranges
         lb.rect = D2D1::RectF(code_left, y, viewport_width - right_margin, y + block_height);
@@ -326,6 +376,15 @@ wlx::runtime::layout::LayoutDocument layout_source(
         run.is_code       = true;
         run.color_ranges  = std::move(color_ranges);
         lb.text_runs.push_back(std::move(run));
+
+        // Offset URL span rects to document coordinates and append.
+        for (auto& s : url_spans) {
+            s.rect.left   += code_left;
+            s.rect.right  += code_left;
+            s.rect.top    += y;
+            s.rect.bottom += y;
+            lb.spans.push_back(std::move(s));
+        }
 
         // Whitespace markers
         if (display.show_whitespace != ShowWhitespace::None && text_layout && !orig_line.empty()) {

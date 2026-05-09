@@ -103,6 +103,7 @@ concept ColorizerViewLike = requires(V& v) {
     { v.sel_anchor } -> std::same_as<wlx::runtime::layout::TextPosition&>;
     { v.sel_active } -> std::same_as<wlx::runtime::layout::TextPosition&>;
     v.layout;
+    v.interaction;
     { v.force_grammar_id } -> std::same_as<std::string&>;
 };
 
@@ -152,13 +153,25 @@ MenuContext build_md_menu_context(V& vs, float doc_x, float doc_y) {
 }
 
 template <ColorizerViewLike V>
-MenuContext build_colorizer_menu_context(V& vs, std::vector<LanguageOption> langs) {
+MenuContext build_colorizer_menu_context(V& vs, std::vector<LanguageOption> langs,
+                                         float doc_x, float doc_y) {
+    using namespace wlx::runtime::parser;
+
     MenuContext ctx;
     ctx.has_selection = vs.sel_anchor.valid()
                      && vs.sel_anchor != vs.sel_active;
     ctx.languages = std::move(langs);
     ctx.active_grammar_id  = vs.force_grammar_id;
     ctx.auto_detect_active = vs.force_grammar_id.empty();
+
+    if (vs.layout && vs.interaction) {
+        auto hit = vs.interaction->hit_test(doc_x, doc_y);
+        if (hit.hit && hit.target.kind == LinkKind::ExternalUrl) {
+            ctx.link.present  = true;
+            ctx.link.url      = hit.target.url;
+            ctx.link.external = true;
+        }
+    }
     return ctx;
 }
 
