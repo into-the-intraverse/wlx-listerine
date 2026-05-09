@@ -64,6 +64,7 @@ std::pair<int, int> find_word_boundaries(const std::wstring& text, int offset) {
     offset = std::clamp(offset, 0, len - 1);
 
     auto is_word_char = [](wchar_t c) {
+        if (c == L'_' || c == L'-') return true;
         return !iswspace(c) && !iswpunct(c);
     };
 

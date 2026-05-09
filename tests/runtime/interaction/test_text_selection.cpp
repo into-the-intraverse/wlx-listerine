@@ -249,3 +249,98 @@ TEST_CASE("find_word_boundaries - end of text") {
     CHECK(start == 0);
     CHECK(end == 5);
 }
+
+TEST_CASE("find_word_boundaries - underscore is part of word") {
+    std::wstring text = L"foo_bar baz";
+    // offset inside "foo_bar"
+    auto [s1, e1] = find_word_boundaries(text, 0);
+    CHECK(s1 == 0);
+    CHECK(e1 == 7);
+    auto [s2, e2] = find_word_boundaries(text, 4);  // on the 'b' after '_'
+    CHECK(s2 == 0);
+    CHECK(e2 == 7);
+    auto [s3, e3] = find_word_boundaries(text, 3);  // on the '_' itself
+    CHECK(s3 == 0);
+    CHECK(e3 == 7);
+}
+
+TEST_CASE("find_word_boundaries - hyphen is part of word") {
+    std::wstring text = L"kebab-case word";
+    auto [s, e] = find_word_boundaries(text, 0);
+    CHECK(s == 0);
+    CHECK(e == 10);
+    auto [s2, e2] = find_word_boundaries(text, 5);  // on the '-'
+    CHECK(s2 == 0);
+    CHECK(e2 == 10);
+    auto [s3, e3] = find_word_boundaries(text, 6);  // on the 'c' after '-'
+    CHECK(s3 == 0);
+    CHECK(e3 == 10);
+}
+
+TEST_CASE("find_word_boundaries - leading underscore") {
+    std::wstring text = L"_leading rest";
+    auto [s, e] = find_word_boundaries(text, 0);
+    CHECK(s == 0);
+    CHECK(e == 8);
+}
+
+TEST_CASE("find_word_boundaries - trailing hyphen") {
+    std::wstring text = L"trailing- rest";
+    auto [s, e] = find_word_boundaries(text, 4);
+    CHECK(s == 0);
+    CHECK(e == 9);  // includes the trailing '-'
+}
+
+TEST_CASE("find_word_boundaries - cli-style double-dash flag") {
+    std::wstring text = L"run --flag value";
+    auto [s, e] = find_word_boundaries(text, 5);  // on the second '-' of "--flag"
+    CHECK(s == 4);
+    CHECK(e == 10);  // "--flag"
+    auto [s2, e2] = find_word_boundaries(text, 6);  // on the 'f' inside "--flag"
+    CHECK(s2 == 4);
+    CHECK(e2 == 10);  // "--flag"
+}
+
+TEST_CASE("find_word_boundaries - mixed underscore and hyphen") {
+    std::wstring text = L"foo-bar_baz qux";
+    auto [s, e] = find_word_boundaries(text, 5);  // inside the token
+    CHECK(s == 0);
+    CHECK(e == 11);  // "foo-bar_baz"
+}
+
+TEST_CASE("find_word_boundaries - dot is still a word break") {
+    // .  is iswpunct true and NOT in our word-char allow-list,
+    // so foo.txt selects just "foo" or just "txt"
+    std::wstring text = L"foo.txt rest";
+    auto [s, e] = find_word_boundaries(text, 0);
+    CHECK(s == 0);
+    CHECK(e == 3);  // "foo"
+    auto [s2, e2] = find_word_boundaries(text, 4);
+    CHECK(s2 == 4);
+    CHECK(e2 == 7);  // "txt"
+}
+
+TEST_CASE("find_word_boundaries - path with hyphen and underscore") {
+    // / and . are NOT in the word-char allow-list, so they must remain
+    // breaks; - and _ ARE in the allow-list and must be part of the token.
+    std::wstring text = L"path/to-file_name.ext";
+    // Indices: 0='p' 4='/' 5='t' 6='o' 7='-' 8='f' ... 12='_' 13='n' ...
+    //          16='e' 17='.' 18='e' 19='x' 20='t'
+    auto [s, e] = find_word_boundaries(text, 8);  // on 'f' inside "to-file_name"
+    CHECK(s == 5);   // start at 't' after the '/'
+    CHECK(e == 17);  // end before the '.'
+    auto [s2, e2] = find_word_boundaries(text, 7);  // on the '-'
+    CHECK(s2 == 5);
+    CHECK(e2 == 17);
+    auto [s3, e3] = find_word_boundaries(text, 12);  // on the '_'
+    CHECK(s3 == 5);
+    CHECK(e3 == 17);
+    // Sanity: 'path' segment is its own word.
+    auto [s4, e4] = find_word_boundaries(text, 1);
+    CHECK(s4 == 0);
+    CHECK(e4 == 4);
+    // Sanity: 'ext' segment is its own word.
+    auto [s5, e5] = find_word_boundaries(text, 19);
+    CHECK(s5 == 18);
+    CHECK(e5 == 21);
+}
