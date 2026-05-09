@@ -138,6 +138,11 @@ FetchContent_Declare(ts-html
     GIT_TAG        v0.23.2
     GIT_SHALLOW    TRUE
 )
+FetchContent_Declare(ts-xml
+    GIT_REPOSITORY git@github.com:tree-sitter-grammars/tree-sitter-xml.git
+    GIT_TAG        v0.7.0
+    GIT_SHALLOW    TRUE
+)
 FetchContent_Declare(ts-css
     GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-css.git
     GIT_TAG        v0.25.0
@@ -235,6 +240,7 @@ fetch_grammar(ts-java)
 fetch_grammar(ts-c-sharp)
 fetch_grammar(ts-json)
 fetch_grammar(ts-html)
+fetch_grammar(ts-xml)
 fetch_grammar(ts-css)
 fetch_grammar(ts-bash)
 fetch_grammar(ts-toml)
@@ -277,6 +283,11 @@ add_grammar(git_rebase  "${ts-git-rebase_SOURCE_DIR}")
 # --- Special grammars ---
 # TypeScript: split repo, grammar lives in typescript/ subdir
 add_grammar(typescript  "${ts-typescript_SOURCE_DIR}/typescript" QUERY_DIR "${ts-typescript_SOURCE_DIR}/queries")
+
+# XML: split repo (xml/ + dtd/), we only ship the xml parser.
+# Parser src is at xml/src/parser.c; highlights at queries/xml/highlights.scm
+# (queries live at the repo root, like the vim layout).
+add_grammar(xml         "${ts-xml_SOURCE_DIR}/xml" QUERY_DIR "${ts-xml_SOURCE_DIR}/queries/xml")
 
 # PHP: split repo, use php/ subdir (exports tree_sitter_php)
 add_grammar(php         "${ts-php_SOURCE_DIR}/php" QUERY_DIR "${ts-php_SOURCE_DIR}/queries")
