@@ -220,3 +220,60 @@ TEST_CASE("build_colorizer_menu_context: forwards force_grammar_id to active") {
     CHECK(ctx.auto_detect_active == false);
     CHECK(ctx.active_grammar_id == "python");
 }
+
+TEST_CASE("build_colorizer_menu_context: surfaces ExternalUrl hit on ctx.link") {
+    using namespace wlx::runtime::layout;
+    using namespace wlx::runtime::parser;
+    using namespace wlx::runtime::interaction;
+
+    FakeColorizerView vs;
+    vs.layout = std::make_shared<LayoutDocument>();
+
+    LayoutBlock block;
+    block.rect = D2D1::RectF(0.0f, 0.0f, 200.0f, 30.0f);
+    InteractiveSpan span;
+    span.target.kind = LinkKind::ExternalUrl;
+    span.target.url  = L"https://example.com/x";
+    span.rect = D2D1::RectF(0.0f, 0.0f, 100.0f, 20.0f);
+    block.spans.push_back(span);
+    vs.layout->blocks.push_back(block);
+
+    vs.interaction = std::make_unique<InteractionEngine>(*vs.layout);
+
+    auto ctx = build_colorizer_menu_context(vs,
+        std::vector<LanguageOption>{ {"cpp", L"C++"} },
+        50.0f, 10.0f);
+
+    CHECK(ctx.link.present  == true);
+    CHECK(ctx.link.url      == L"https://example.com/x");
+    CHECK(ctx.link.external == true);
+}
+
+TEST_CASE("build_colorizer_menu_context: ignores InternalAnchor hits") {
+    // The colorizer view deliberately surfaces ONLY ExternalUrl hits in the
+    // menu (unlike the markdown view, which surfaces InternalAnchor and
+    // RelativeDoc too). Defend that divergence here.
+    using namespace wlx::runtime::layout;
+    using namespace wlx::runtime::parser;
+    using namespace wlx::runtime::interaction;
+
+    FakeColorizerView vs;
+    vs.layout = std::make_shared<LayoutDocument>();
+
+    LayoutBlock block;
+    block.rect = D2D1::RectF(0.0f, 0.0f, 200.0f, 30.0f);
+    InteractiveSpan span;
+    span.target.kind = LinkKind::InternalAnchor;
+    span.target.anchor_fragment = L"intro";
+    span.rect = D2D1::RectF(0.0f, 0.0f, 100.0f, 20.0f);
+    block.spans.push_back(span);
+    vs.layout->blocks.push_back(block);
+
+    vs.interaction = std::make_unique<InteractionEngine>(*vs.layout);
+
+    auto ctx = build_colorizer_menu_context(vs,
+        std::vector<LanguageOption>{ {"cpp", L"C++"} },
+        50.0f, 10.0f);
+
+    CHECK(ctx.link.present == false);
+}
