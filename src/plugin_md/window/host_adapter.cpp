@@ -616,16 +616,9 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             copy_code_block_at_index(vs, result.code_block_index);
             break;
 
-        case MenuResult::EditConfig: {
-            HINSTANCE hi = ShellExecuteW(nullptr, L"open", ctx.config_path.c_str(),
-                                         nullptr, nullptr, SW_SHOW);
-            if (reinterpret_cast<INT_PTR>(hi) <= 32) {
-                WLX_TRACE(L"EditConfig: ShellExecuteW failed (code %lld) for %s",
-                          static_cast<long long>(reinterpret_cast<INT_PTR>(hi)),
-                          ctx.config_path.c_str());
-            }
+        case MenuResult::EditConfig:
+            wlx::runtime::host::open_external_url(ctx.config_path);
             break;
-        }
 
         case MenuResult::SetLanguage:
         case MenuResult::None:
