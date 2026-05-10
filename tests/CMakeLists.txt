@@ -9,6 +9,7 @@ add_executable(tests
     runtime/parser/test_markdown_parser.cpp
     runtime/cache/test_cache_service.cpp
     runtime/layout/test_layout_engine.cpp
+    runtime/interaction/test_interaction_engine.cpp
     runtime/interaction/test_text_selection.cpp
     runtime/interaction/test_url_scanner.cpp
     runtime/search/test_search_engine.cpp
