@@ -38,14 +38,17 @@ add_executable(colorizer-tests
     core_dll/grammar/test_colorizer_grammars.cpp
     plugin_colorizer/language/test_colorizer_routing.cpp
     plugin_colorizer/language/test_path_to_language.cpp
+    plugin_colorizer/layout/test_colorizer_layout.cpp
     plugin_colorizer/test_colorizer_smoke.cpp
     core_dll/abi/test_wlx_core_abi.cpp
     core_dll/registry/test_core_config.cpp
     core_dll/grammar/test_grammar_cache.cpp
     tools/test_token_json_writer.cpp
+    ${CMAKE_SOURCE_DIR}/src/plugin_colorizer/layout/colorizer_layout.cpp
 )
 
 target_link_libraries(colorizer-tests PRIVATE
+    wlx-core
     wlx-listerine-core
     doctest::doctest
 )
