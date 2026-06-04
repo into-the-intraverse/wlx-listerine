@@ -11,6 +11,7 @@
 #include <wincodec.h>
 #include <wrl/client.h>
 
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -30,7 +31,8 @@ public:
     void resize(UINT width, UINT height);
 
     void paint(const layout::LayoutDocument& layout, float scroll_y,
-               layout::TextPosition sel_start = {}, layout::TextPosition sel_end = {});
+               layout::TextPosition sel_start = {}, layout::TextPosition sel_end = {},
+               const std::wstring* goto_input = nullptr, int goto_total = 0);
 
     void set_dark_mode(bool dark);
     void set_hovered_span(int index) { hovered_span_ = index; }
@@ -60,6 +62,8 @@ private:
     void paint_inline_code_bg(const layout::LayoutBlock& block, float offset_y);
     void paint_block_decoration(const layout::LayoutBlock& block, float offset_y);
     void paint_bullet(const layout::LayoutBlock& block, float offset_y);
+    void paint_line_numbers(const layout::LayoutDocument& layout, float scroll_y);
+    void paint_goto_prompt(const std::wstring& input, int total);
     void paint_text_runs(const layout::LayoutBlock& block, float offset_y);
     void paint_selection_highlight(const layout::LayoutBlock& block, int block_index,
                                    float offset_y, layout::TextPosition sel_start, layout::TextPosition sel_end);
@@ -83,6 +87,8 @@ private:
 
     // Cached text format for bullet rendering
     ComPtr<IDWriteTextFormat> bullet_format_;
+    ComPtr<IDWriteTextFormat> line_number_format_;
+    ComPtr<IDWriteTextFormat> prompt_format_;
 
     int hovered_span_ = -1;
     int hovered_code_block_ = -1;

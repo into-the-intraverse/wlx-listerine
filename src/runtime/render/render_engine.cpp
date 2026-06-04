@@ -215,7 +215,8 @@ ID2D1SolidColorBrush* RenderEngine::get_brush(uint32_t color, float alpha) {
 }
 
 void RenderEngine::paint(const LayoutDocument& layout, float scroll_y,
-                          TextPosition sel_start, TextPosition sel_end) {
+                          TextPosition sel_start, TextPosition sel_end,
+                          const std::wstring* goto_input, int goto_total) {
     if (!rt_) return;
 
     const auto& colors = theme_.palette(dark_mode_);
@@ -253,7 +254,13 @@ void RenderEngine::paint(const LayoutDocument& layout, float scroll_y,
         paint_copy_button(block, block_idx, 0);
     }
 
+    if (layout.gutter_width > 0.0f)
+        paint_line_numbers(layout, scroll_y);
+
     rt_->SetTransform(D2D1::Matrix3x2F::Identity());
+
+    if (goto_input)
+        paint_goto_prompt(*goto_input, goto_total);
 
     HRESULT hr = rt_->EndDraw();
     if (hr == D2DERR_RECREATE_TARGET) {
@@ -658,6 +665,76 @@ void RenderEngine::paint_indent_guides(const LayoutBlock& block, float offset_y)
             D2D1::Point2F(gx, top),
             D2D1::Point2F(gx, bottom),
             brush, 1.0f);
+    }
+}
+
+void RenderEngine::paint_line_numbers(const LayoutDocument& layout, float scroll_y) {
+    if (!rt_ || layout.line_tops.empty()) return;
+
+    if (!line_number_format_) {
+        dwrite_factory_->CreateTextFormat(
+            theme_.fonts().code_family.c_str(), nullptr,
+            DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+            theme_.fonts().code_size, L"", line_number_format_.GetAddressOf());
+        if (line_number_format_) {
+            line_number_format_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
+            line_number_format_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+        }
+    }
+    if (!line_number_format_) return;
+
+    auto* brush = get_brush(theme_.palette(dark_mode_).muted);
+    if (!brush) return;
+
+    float viewport_h = dip_height();
+    float line_h = theme_.fonts().code_size * 1.6f;
+    float right = layout.gutter_width - 8.0f;  // small right gap before the text column
+
+    for (size_t i = 0; i < layout.line_tops.size(); ++i) {
+        float y = layout.line_tops[i];
+        if (y - scroll_y + line_h < 0.0f) continue;       // above viewport
+        if (y - scroll_y > viewport_h) break;             // below viewport (line_tops ascending)
+
+        wchar_t buf[16];
+        _snwprintf_s(buf, _countof(buf), _TRUNCATE, L"%zu", i + 1);
+        D2D1_RECT_F r = D2D1::RectF(0.0f, y, right, y + line_h);
+        rt_->DrawText(buf, static_cast<UINT32>(wcslen(buf)),
+                      line_number_format_.Get(), r, brush);
+    }
+}
+
+void RenderEngine::paint_goto_prompt(const std::wstring& input, int total) {
+    if (!rt_) return;
+
+    if (!prompt_format_) {
+        dwrite_factory_->CreateTextFormat(
+            theme_.fonts().body_family.c_str(), nullptr,
+            DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+            theme_.fonts().body_size, L"", prompt_format_.GetAddressOf());
+        if (prompt_format_)
+            prompt_format_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+    }
+    if (!prompt_format_) return;
+
+    const auto& colors = theme_.palette(dark_mode_);
+    float box_w = 260.0f;
+    float box_h = theme_.fonts().body_size * 2.2f;
+    float vh = dip_height();
+    float x0 = 12.0f;
+    float y0 = vh - box_h - 12.0f;
+    D2D1_RECT_F box = D2D1::RectF(x0, y0, x0 + box_w, y0 + box_h);
+
+    if (auto* bg = get_brush(colors.code_bg)) rt_->FillRectangle(box, bg);
+    if (auto* border = get_brush(colors.muted)) rt_->DrawRectangle(box, border, 1.0f);
+
+    wchar_t head[64];
+    _snwprintf_s(head, _countof(head), _TRUNCATE, L"Go to line (1-%d): ", total);
+    std::wstring text = std::wstring(head) + input + L"▏";  // trailing caret bar
+
+    if (auto* fg = get_brush(colors.text)) {
+        D2D1_RECT_F tr = D2D1::RectF(x0 + 8.0f, y0, x0 + box_w - 8.0f, y0 + box_h);
+        rt_->DrawText(text.c_str(), static_cast<UINT32>(text.size()),
+                      prompt_format_.Get(), tr, fg);
     }
 }
 
