@@ -48,6 +48,8 @@
 #include "runtime/host/module_path.h"
 #include "runtime/host/scroll_handler.h"
 #include "runtime/host/selection_helpers.h"
+#include "runtime/layout/line_index.h"
+#include "runtime/host/goto_line.h"
 #include "runtime/host/view_actions.h"
 #include "runtime/host/link_actions.h"
 #include "runtime/host/web_search.h"
@@ -104,6 +106,8 @@ struct ViewState {
     int current_match = -1;
     SearchQuery last_query;
     bool index_dirty = true;
+
+    wlx::runtime::host::GotoPrompt goto_prompt;
 };
 
 static_assert(SearchState<ViewState>);
@@ -171,7 +175,21 @@ static void do_layout(ViewState* vs) {
     lk.theme_hash = g_theme.theme_hash();
 
     LayoutEngine engine(dwrite_factory(), g_theme, vs->dark_mode, g_colorizer_handle);
-    auto layout = std::make_shared<LayoutDocument>(engine.layout(*vs->document, viewport_width, vs->wrap_text));
+
+    // Pass 1: no gutter — lay out and count logical lines.
+    auto layout = std::make_shared<LayoutDocument>(
+        engine.layout(*vs->document, viewport_width, vs->wrap_text, 0.0f));
+    wlx::runtime::layout::build_line_index(*layout);
+
+    // Pass 2: if the gutter is enabled, reserve a column sized to the line count
+    // and re-lay out (narrower text column changes wrapping, so rebuild the index).
+    if (g_theme.config().line_numbers && !layout->line_tops.empty()) {
+        int digits = static_cast<int>(std::to_wstring(layout->line_tops.size()).size());
+        float gutter_w = 16.0f + g_theme.fonts().code_size * 0.62f * digits + 8.0f;
+        layout = std::make_shared<LayoutDocument>(
+            engine.layout(*vs->document, viewport_width, vs->wrap_text, gutter_w));
+        wlx::runtime::layout::build_line_index(*layout);
+    }
 
     vs->layout = layout;
     vs->interaction = std::make_unique<InteractionEngine>(*vs->layout);
@@ -304,7 +322,9 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             vs->renderer->set_copied_code_block(vs->copied_code_block);
             auto sel_lo = std::min(vs->sel_anchor, vs->sel_active);
             auto sel_hi = std::max(vs->sel_anchor, vs->sel_active);
-            vs->renderer->paint(*vs->layout, vs->scroll_y, sel_lo, sel_hi);
+            vs->renderer->paint(*vs->layout, vs->scroll_y, sel_lo, sel_hi,
+                                vs->goto_prompt.active ? &vs->goto_prompt.buffer : nullptr,
+                                static_cast<int>(vs->layout->line_tops.size()));
         }
         EndPaint(hwnd, &ps);
         return 0;
@@ -658,13 +678,31 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_KEYDOWN: {
         WLX_TRACE(L"WndProc WM_KEYDOWN hwnd=%p vk=0x%X", hwnd, (unsigned)wp);
         if (!vs) break;
+
+        // Go-to-line prompt swallows all keystrokes while active.
+        if (vs->goto_prompt.active) {
+            auto step = wlx::runtime::host::goto_handle_key(vs->goto_prompt, (unsigned)wp);
+            if (step.action == wlx::runtime::host::GotoAction::Jump)
+                wlx::runtime::host::scroll_to_line(*vs, step.line);
+            else if (step.action != wlx::runtime::host::GotoAction::Ignore)
+                InvalidateRect(hwnd, nullptr, FALSE);
+            return 0;
+        }
+
         float page = vs->renderer ? vs->renderer->dip_height() : 100.0f;
         float line = g_theme.fonts().body_size * g_theme.spacing().line_height_factor;
 
         bool handled = false;
 
+        // Ctrl+G — open the go-to-line prompt
+        if (wp == 'G' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            vs->goto_prompt.active = true;
+            vs->goto_prompt.buffer.clear();
+            InvalidateRect(hwnd, nullptr, FALSE);
+            handled = true;
+        }
         // Ctrl+C — copy selection
-        if (wp == 'C' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+        else if (wp == 'C' && (GetKeyState(VK_CONTROL) & 0x8000)) {
             wlx::runtime::host::copy_selection(*vs, hwnd);
             handled = true;
         }
