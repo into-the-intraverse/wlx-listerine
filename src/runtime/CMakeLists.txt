@@ -18,6 +18,7 @@ add_library(wlx-core STATIC
     host/context_menu.cpp
     host/dark_mode.cpp
     host/factories.cpp
+    host/goto_line.cpp
     host/grammar_menu.cpp
     host/hit_test.cpp
     host/module_path.cpp
