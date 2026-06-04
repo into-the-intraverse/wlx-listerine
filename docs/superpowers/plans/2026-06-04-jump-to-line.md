@@ -970,35 +970,32 @@ git commit -m "feat(plugin-colorizer): Ctrl+G go-to-line prompt"
 
 ---
 
-### Task 9: Visual regression golden for the markdown gutter
+### Task 9: Confirm visual regression unaffected (NO gutter golden)
 
-**Files:**
-- Create: `test_data/cases/NN_line_numbers/` (input `.md` + generated golden), following the existing case layout.
+**Correction (made during execution):** The original intent here — add a Chrome golden showing the gutter — is **not possible and not needed**, for a concrete reason discovered while wiring the plugins:
 
-- [ ] **Step 1: Inspect the existing case format**
+- The visual suite compares `screenshot_tool` output against **Chromium/Playwright**-rendered goldens (`scripts/update-goldens.ts`). Chromium renders the markdown as HTML and has **no line-number gutter** — there is no reference image a gutter could match.
+- The `screenshot_tool` markdown path (`src/tools/screenshot/markdown_pipeline.cpp`) calls `layout_engine.layout(doc, viewport_width)` with **no `gutter_width`**, so it renders with `gutter_width == 0` — i.e. **no gutter and no prompt**. The gutter/prompt are plugin-only chrome (enabled in the plugin's `do_layout` via `g_theme.config().line_numbers`), deliberately outside the document-fidelity comparison.
 
-Run: `ls test_data/cases/ | head; ls test_data/cases/01_headings_atx`
-Confirm the per-case file layout (input `.md`, `*_chrome.png` golden, any metadata) before adding a new one.
+Therefore the gutter is **intentionally excluded** from visual regression. Its line **math** is covered by `test_line_index.cpp` (Task 2); the prompt logic by `test_goto_line.cpp` (Task 3); its on-screen **appearance** by the manual smoke in Tasks 7/8. Do **not** run `update-goldens` to "add the gutter" — that would overwrite valid Chromium references with non-comparable output.
 
-- [ ] **Step 2: Add a case exercising the gutter**
+**Files:** none (verification + this doc correction only).
 
-Create a small markdown input under a new case dir (e.g. `test_data/cases/28_line_numbers/`) containing a heading, a multi-line wrapping paragraph, a fenced code block, and a short list — so the golden shows contiguous numbers, a shared number across a wrapped paragraph, and per-line numbers in the code fence.
+- [ ] **Step 1: Confirm screenshot_tool still builds**
 
-- [ ] **Step 3: Generate the golden**
+Run: `cmake --build --preset conan-release --target screenshot_tool`
+Expected: builds clean (the `paint(...)` and `layout(...)` signature changes are additive/defaulted, so the 2-arg `layout(doc, width)` and 4-arg `paint(...)` calls in the pipelines still compile).
 
-Run: `bun run update-goldens -- 28_line_numbers`
-(Adjust the case name to match Step 2.) Confirm the produced PNG shows the gutter as intended.
+- [ ] **Step 2: Run the full visual suite — confirm NO regression**
 
-- [ ] **Step 4: Run the visual suite**
+Run: `bash scripts/visual-test.sh` (Git-bash on Windows; needs `uv`).
+Expected: all three stages PASS — Stage 1 (markdown), Stage 2 (colorizer tokens), Stage 3 (colorizer pixel smokes) — because the screenshot path is byte-for-byte unchanged (gutter off). If Stage 1 markdown cases regress, something inadvertently turned the gutter on in the screenshot pipeline — investigate rather than regenerate goldens.
 
-Run: `./scripts/visual-test.sh`
-Expected: the new case PASSes (>= 95% similarity) and no existing case regresses. **Note:** existing markdown goldens now include the gutter, so they must be regenerated if the suite compares against pre-gutter PNGs — if many cases fail purely due to the new left column, run `bun run update-goldens` and review the diffs to confirm the only change is the gutter.
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 3: Commit the doc correction**
 
 ```bash
-git add test_data/cases
-git commit -m "test(visual): golden for markdown line-number gutter"
+git add docs/superpowers/plans/2026-06-04-jump-to-line.md
+git commit -m "docs(plan): correct Task 9 — gutter is plugin-only, excluded from visual regression"
 ```
 
 ---
@@ -1015,7 +1012,7 @@ git commit -m "test(visual): golden for markdown line-number gutter"
 - Colorizer reuses the index, keeps its gutter → Task 8. ✓
 - Edge cases (clamp, empty, cap, non-digit) → Task 3 tests. ✓
 - Hotkey-delivery verification + `WH_GETMESSAGE` fallback → Tasks 7/8 manual smoke notes. ✓
-- Tests (line index, jump math, state machine, visual golden) → Tasks 2, 3, 9. ✓
+- Tests (line index, jump math, state machine) → Tasks 2, 3; visual-regression confirmed unaffected (gutter is plugin-only, no Chrome reference) → Task 9. ✓
 
 **Known simplifications (documented, matching the spec's non-goals/edge calls):**
 - Hard breaks count only inside Paragraph/CodeFence blocks; a `<br>` inside a list item or blockquote counts as one line. (Spec flagged tables/containers as the judgment-call area.)
