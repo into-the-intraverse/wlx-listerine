@@ -75,3 +75,32 @@ TEST_CASE("build_line_index: hard breaks in a paragraph add lines; soft wrap doe
     CHECK(doc.line_tops[0] == doctest::Approx(0.0f));
     CHECK(doc.line_tops[1] > 0.0f);  // second segment sits below the first
 }
+
+TEST_CASE("build_line_index: a code fence yields one line per code line") {
+    ComPtr<IDWriteFactory> factory;
+    REQUIRE(SUCCEEDED(DWriteCreateFactory(
+        DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+        reinterpret_cast<IUnknown**>(factory.GetAddressOf()))));
+
+    ComPtr<IDWriteTextFormat> fmt;
+    REQUIRE(SUCCEEDED(factory->CreateTextFormat(
+        L"Cascadia Code", nullptr, DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STYLE_NORMAL,
+        DWRITE_FONT_STRETCH_NORMAL, 13.0f, L"", fmt.GetAddressOf())));
+    fmt->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+
+    std::wstring code = L"int main() {\n    return 0;\n}";  // 3 code lines
+    ComPtr<IDWriteTextLayout> tl;
+    REQUIRE(SUCCEEDED(factory->CreateTextLayout(
+        code.c_str(), static_cast<UINT32>(code.size()), fmt.Get(),
+        1000.0f, 1000.0f, tl.GetAddressOf())));
+
+    LayoutDocument doc;
+    doc.blocks.push_back(make_block(BlockType::CodeFence, 0.0f, code, tl.Get()));
+
+    build_line_index(doc);
+
+    REQUIRE(doc.line_tops.size() == 3);
+    CHECK(doc.line_tops[0] == doctest::Approx(0.0f));
+    CHECK(doc.line_tops[1] > doc.line_tops[0]);
+    CHECK(doc.line_tops[2] > doc.line_tops[1]);
+}

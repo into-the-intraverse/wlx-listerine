@@ -342,6 +342,7 @@ static void load_document(ColorViewState* vs, const wchar_t* path) {
     vs->current_match = -1;
     vs->last_query = SearchQuery{};
     vs->index_dirty = true;
+    vs->goto_prompt = {};
     // Also clear matches in the renderer: its search_matches_ still holds
     // SearchMatch objects whose block_index values point into the previous
     // file's layout. Any repaint before the next F7 would walk them against

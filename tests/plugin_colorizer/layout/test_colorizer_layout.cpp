@@ -4,6 +4,7 @@
 #include "plugin_colorizer/layout/colorizer_layout.h"
 #include "core_dll/colorizer/colorize_result.h"
 #include "runtime/layout/layout_document.h"
+#include "runtime/layout/line_index.h"
 #include "runtime/parser/link_target.h"
 #include "runtime/theme/theme_service.h"
 
@@ -139,4 +140,17 @@ TEST_CASE("layout_source: trailing punctuation is excluded from the URL span") {
             }
 
     CHECK(captured == L"https://example.com");  // trailing dot trimmed by scan_urls
+}
+
+TEST_CASE("layout_source + build_line_index: one line_top per source line") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    auto layout = run_layout(factory.Get(), L"a\nbb\nccc\ndddd");
+
+    wlx::runtime::layout::build_line_index(layout);
+
+    REQUIRE(layout.line_tops.size() == 4);
+    CHECK(layout.line_tops[0] < layout.line_tops[1]);
+    CHECK(layout.line_tops[1] < layout.line_tops[2]);
+    CHECK(layout.line_tops[2] < layout.line_tops[3]);
 }
