@@ -23,7 +23,8 @@ public:
     LayoutEngine(IDWriteFactory* dwrite, const theme::ThemeService& theme, bool dark_mode,
                  WlxCore* core = nullptr);
 
-    LayoutDocument layout(const parser::Document& doc, float viewport_width, bool wrap_code = false);
+    LayoutDocument layout(const parser::Document& doc, float viewport_width, bool wrap_code = false,
+                          float gutter_width = 0.0f);
 
 private:
     void layout_blocks(const std::vector<parser::BlockNode>& blocks, float& y,

@@ -220,14 +220,16 @@ LayoutEngine::TextLayoutResult LayoutEngine::create_text_layout(
 
 // ---------- layout entry point ----------
 
-LayoutDocument LayoutEngine::layout(const Document& doc, float viewport_width, bool wrap_code) {
+LayoutDocument LayoutEngine::layout(const Document& doc, float viewport_width, bool wrap_code,
+                                    float gutter_width) {
     result_ = LayoutDocument{};
     result_.viewport_width = viewport_width;
+    result_.gutter_width = gutter_width;
     wrap_code_ = wrap_code;
 
     float content_padding = 16.0f;
     float y = content_padding;
-    float left = content_padding;
+    float left = (gutter_width > 0.0f) ? gutter_width : content_padding;
     float right = viewport_width - content_padding;
 
     layout_blocks(doc.blocks, y, left, right, 0);
