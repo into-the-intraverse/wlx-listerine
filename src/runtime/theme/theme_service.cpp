@@ -105,6 +105,9 @@ void ThemeService::load(const std::wstring& toml_path) {
             }
         }
 
+        if (auto v = tbl["general"]["line_numbers"].value<bool>())
+            config_.line_numbers = *v;
+
         // [fonts]
         if (auto v = tbl["fonts"]["body"].value<std::string>())
             config_.fonts.body_family = utf8_to_wstring(*v);

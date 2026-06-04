@@ -21,6 +21,9 @@ struct ThemeConfig {
 
     // Code highlighting
     std::string code_default_language;  // empty = no highlighting for untagged blocks
+
+    // Markdown line-number gutter (rendered logical lines). Default on.
+    bool line_numbers = true;
 };
 
 }  // namespace wlx::runtime::theme
