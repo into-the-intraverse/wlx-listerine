@@ -5,6 +5,7 @@
 #endif
 
 #include "runtime/host/host_view.h"
+#include "runtime/host/goto_line.h"
 
 #include <windows.h>
 #include <commctrl.h>
@@ -53,18 +54,34 @@ template <HostView V>
 LRESULT CALLBACK HostIntegration<V>::get_msg_hook_(int code, WPARAM wp, LPARAM lp) {
     if (code == HC_ACTION && wp == PM_REMOVE && self_) {
         MSG* m = reinterpret_cast<MSG*>(lp);
-        if (m && m->message == WM_KEYDOWN && m->wParam == VK_F2) {
+        if (m && m->message == WM_KEYDOWN) {
             auto it = self_->views_.find(m->hwnd);
             if (it != self_->views_.end()) {
                 V* vs = it->second;
-                if (!vs->file_path.empty()) {
-                    reload_view(*vs, vs->file_path.c_str());
-                }
-                // Eat F2 iff we already know the reload cmd (otherwise let TC
-                // dispatch it normally so WM_INITMENUPOPUP discovery still
-                // has a chance to learn the ID).
-                if (self_->reload_menu_id_ != 0) {
-                    m->message = WM_NULL;
+                if (m->wParam == VK_F2) {
+                    if (!vs->file_path.empty()) {
+                        reload_view(*vs, vs->file_path.c_str());
+                    }
+                    // Eat F2 iff we already know the reload cmd (otherwise let TC
+                    // dispatch it normally so WM_INITMENUPOPUP discovery still
+                    // has a chance to learn the ID).
+                    if (self_->reload_menu_id_ != 0) {
+                        m->message = WM_NULL;
+                    }
+                } else if (m->wParam >= '0' && m->wParam <= '9') {
+                    // Top-row digit keys: TC's Lister binds them to view-mode
+                    // switches and claims them in its own pump before they reach
+                    // the plugin WndProc (numpad VK_NUMPADn aren't bound, which
+                    // is why those already work). While the go-to-line prompt is
+                    // open, feed the digit to the prompt and swallow it so TC
+                    // doesn't switch view mode instead.
+                    if constexpr (requires { vs->goto_prompt; }) {
+                        if (vs->goto_prompt.active) {
+                            goto_handle_key(vs->goto_prompt, static_cast<unsigned>(m->wParam));
+                            InvalidateRect(m->hwnd, nullptr, FALSE);
+                            m->message = WM_NULL;
+                        }
+                    }
                 }
             }
         }
