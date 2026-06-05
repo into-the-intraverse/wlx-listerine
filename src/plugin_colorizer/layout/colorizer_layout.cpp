@@ -6,6 +6,7 @@
 #include "runtime/parser/block_node.h"
 #include "runtime/interaction/url_scanner.h"
 #include "runtime/layout/interactive_span.h"
+#include "runtime/layout/line_index.h"
 #include "wlx_core/text_modifier.h"
 
 #include <algorithm>
@@ -487,14 +488,11 @@ wlx::runtime::layout::LayoutDocument layout_source(
             }
         }
 
-        // Line number bullet
-        if (display.line_numbers && ln_fmt) {
-            wchar_t ln_buf[16];
-            _snwprintf_s(ln_buf, _countof(ln_buf), _TRUNCATE, L"%d", li + 1);
-            lb.bullet_text  = ln_buf;
-            lb.bullet_pos   = D2D1::Point2F(left_margin, y);
-            lb.bullet_color = palette.muted;
-        }
+        // Line numbers are rendered by the shared gutter renderer
+        // (RenderEngine::paint_line_numbers, driven by doc.gutter_width +
+        // doc.line_tops below) — NOT the markdown list-bullet path, which drew
+        // them in a fixed 24px wrapping box (4-digit numbers collapsed) with the
+        // body font and left alignment (wasted space on small files).
 
         y += block_height;
         doc.blocks.push_back(std::move(lb));
@@ -502,6 +500,14 @@ wlx::runtime::layout::LayoutDocument layout_source(
 
     y += 4.0f; // bottom padding
     doc.total_height = y;
+
+    // Reserve the gutter column and build the per-line index so the shared
+    // RenderEngine::paint_line_numbers draws right-aligned, NO_WRAP, code-font
+    // numbers sized to the digit count. Populated here (not only in the host)
+    // so the screenshot tool / any caller renders the gutter too.
+    doc.gutter_width = display.line_numbers ? code_left : 0.0f;
+    build_line_index(doc);
+
     return doc;
 }
 

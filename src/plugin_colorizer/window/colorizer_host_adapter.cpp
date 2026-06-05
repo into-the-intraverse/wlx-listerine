@@ -55,7 +55,6 @@
 #include "runtime/host/module_path.h"
 #include "runtime/host/scroll_handler.h"
 #include "runtime/host/selection_helpers.h"
-#include "runtime/layout/line_index.h"
 #include "runtime/host/goto_line.h"
 #include "runtime/host/view_actions.h"
 #include "runtime/host/web_search.h"
@@ -326,7 +325,7 @@ static void do_layout(ColorViewState* vs, const std::wstring& text, const std::s
     auto layout = std::make_shared<LayoutDocument>(
         layout_source(dwrite_factory(), text, raw_utf8,
                       colors, g_theme, vs->dark_mode, viewport_width, cfg));
-    wlx::runtime::layout::build_line_index(*layout);
+    // layout_source already builds the line index + gutter.
 
     vs->layout = layout;
     vs->interaction = std::make_unique<InteractionEngine>(*vs->layout);

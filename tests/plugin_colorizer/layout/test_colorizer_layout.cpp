@@ -70,6 +70,24 @@ TEST_CASE("layout_source: no URL in source produces no ExternalUrl spans") {
     CHECK(count_external_url_spans(layout) == 0);
 }
 
+TEST_CASE("layout_source: line numbers render via the gutter, not per-block bullets") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    auto layout = run_layout(factory.Get(), L"line one\nline two\nline three");
+
+    // layout_source itself populates the line index and reserves a gutter,
+    // so every caller (host + screenshot tool) gets line numbers without a
+    // separate build_line_index() call.
+    CHECK(layout.line_tops.size() == 3);
+    CHECK(layout.gutter_width > 0.0f);
+
+    // Line numbers are drawn by the shared gutter renderer (paint_line_numbers),
+    // NOT the markdown list-bullet path (which wrapped 4-digit numbers in a
+    // fixed 24px box). So no block should carry bullet text.
+    for (const auto& b : layout.blocks)
+        CHECK(b.bullet_text.empty());
+}
+
 TEST_CASE("layout_source: single URL on one line produces one ExternalUrl span") {
     auto factory = create_dwrite_factory();
     REQUIRE(factory);
