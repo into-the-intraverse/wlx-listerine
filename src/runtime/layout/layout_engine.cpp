@@ -107,7 +107,7 @@ std::wstring LayoutEngine::slugify(const std::vector<InlineNode>& inlines) {
 
 LayoutEngine::TextLayoutResult LayoutEngine::create_text_layout(
     const std::vector<InlineNode>& inlines, float max_width, uint32_t default_color,
-    IDWriteTextFormat* format) {
+    IDWriteTextFormat* format, bool force_bold) {
 
     TextLayoutResult result;
 
@@ -172,6 +172,15 @@ LayoutEngine::TextLayoutResult LayoutEngine::create_text_layout(
             layout->SetUnderline(TRUE, drange);
             result.color_ranges.push_back({drange.startPosition, drange.length, colors_.link});
         }
+    }
+
+    // Headings bold the whole run. Apply it BEFORE measuring and hit-testing so
+    // span/code-background rects land on the final (bold) glyph positions —
+    // otherwise bold widens the preceding text and the rects end up shifted left
+    // of the code.
+    if (force_bold) {
+        DWRITE_TEXT_RANGE all = {0, static_cast<UINT32>(full_text.size())};
+        layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, all);
     }
 
     // Measure
@@ -286,20 +295,12 @@ void LayoutEngine::layout_heading(const BlockNode& node, float& y, float left, f
     if (!fmt) return;
 
     float max_width = right - left;
-    auto tlr = create_text_layout(node.inlines, max_width, colors_.heading, fmt.Get());
+    // force_bold=true bolds the whole heading inside create_text_layout, before
+    // it measures and computes span/code-background rects — so those rects match
+    // the bold glyph positions (height/width also reflect the bold layout).
+    auto tlr = create_text_layout(node.inlines, max_width, colors_.heading, fmt.Get(),
+                                  /*force_bold=*/true);
     if (!tlr.layout) return;
-
-    // Bold the entire heading.
-    DWRITE_TEXT_RANGE all = {0, static_cast<UINT32>(tlr.full_text.size())};
-    tlr.layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, all);
-
-    // Bold widens glyphs and may change wrap/height. Re-measure so the
-    // block rect and y-advance reflect the bolded layout. (Span rects in
-    // tlr.spans were measured pre-bold and are sub-pixel stale; not worth
-    // fixing for typical short [^] back-link text inside headings.)
-    DWRITE_TEXT_METRICS bold_metrics;
-    tlr.layout->GetMetrics(&bold_metrics);
-    tlr.height = bold_metrics.height;
 
     LayoutBlock lb;
     lb.type = BlockType::Heading;

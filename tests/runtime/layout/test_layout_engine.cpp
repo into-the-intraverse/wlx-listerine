@@ -6,6 +6,10 @@
 #include <dwrite.h>
 #include <wrl/client.h>
 
+#include <cmath>
+#include <cstring>
+#include <string>
+
 using namespace wlx::runtime::layout;
 using namespace wlx::runtime::parser;
 using namespace wlx::runtime::theme;
@@ -68,6 +72,35 @@ TEST_CASE("Heading produces anchor") {
 
     REQUIRE(!layout.anchors.empty());
     CHECK(layout.anchors[0].slug == L"hello-world");
+}
+
+TEST_CASE("Inline code background in a heading aligns to the bold glyphs") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+
+    // Regression: headings bold the whole run. If the code-background rect is
+    // measured before the bold is applied, the bold-widened prefix pushes the
+    // code text right while the rect stays left of it. Use a long prefix so the
+    // bold-vs-regular width gap is clearly more than 1px.
+    auto doc = parse("## a long heading prefix `cd`");
+    auto layout = do_layout(factory.Get(), doc);
+
+    REQUIRE(!layout.blocks.empty());
+    REQUIRE(layout.blocks[0].type == BlockType::Heading);
+    auto& run = layout.blocks[0].text_runs[0];
+    REQUIRE(run.layout);
+    REQUIRE(!run.code_bg_rects.empty());
+
+    // Where does the code ("cd") actually start in the final (bold) layout?
+    size_t code_off = run.text.find(L"cd");
+    REQUIRE(code_off != std::wstring::npos);
+    float hx = 0, hy = 0;
+    DWRITE_HIT_TEST_METRICS hm = {};
+    run.layout->HitTestTextPosition(static_cast<UINT32>(code_off), FALSE, &hx, &hy, &hm);
+
+    // The code-bg rect insets the hit by a 2px pad (see create_text_layout).
+    // It must track the bold glyph position, not the pre-bold one.
+    CHECK(std::abs(run.code_bg_rects[0].rect.left - (hx - 2.0f)) < 1.0f);
 }
 
 TEST_CASE("H1 and H2 have bottom rule") {
