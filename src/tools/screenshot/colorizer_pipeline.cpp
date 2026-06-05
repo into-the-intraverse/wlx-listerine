@@ -13,6 +13,7 @@
 #include <wrl/client.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -231,12 +232,14 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
     Colorizer colorizer(L"grammars", L"config/themes");
 
     // ----- Read source -----
+    auto _t0 = std::chrono::steady_clock::now();
     FileService file_service;
     auto content = file_service.read(opts.input_path.c_str());
     if (!content) {
         std::fprintf(stderr, "Failed to read: %ls\n", opts.input_path.c_str());
         return {};
     }
+    auto _tread = std::chrono::steady_clock::now();
 
     // ----- Resolve language + cpp variant -----
     std::string base_lang = infer_language(opts.input_path, opts.lang);
@@ -257,6 +260,7 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
 
     // ----- Colorize -----
     ColorizeResult colors = colorizer.colorize(content->raw_utf8, lang, opts.dark);
+    auto _tcolor = std::chrono::steady_clock::now();
 
     // ----- Build display config (used by both paint and dump-tokens paths) -----
     // Load TOML overrides first, then force cpp_grammar from --cpp-grammar
@@ -322,6 +326,7 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
                                 opts.dark,
                                 static_cast<float>(opts.width),
                                 display);
+    auto _tlayout = std::chrono::steady_clock::now();
 
     // ----- Bitmap dimensions -----
     int bmp_width = opts.width;
@@ -341,6 +346,22 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
     if (renderer.needs_recreate()) {
         std::fprintf(stderr, "Render target lost during paint\n");
         return {};
+    }
+    auto _tpaint = std::chrono::steady_clock::now();
+
+    if (opts.bench) {
+        auto ms = [](auto a, auto b) {
+            return std::chrono::duration<double, std::milli>(b - a).count();
+        };
+        int lines = 1;
+        for (char c : content->raw_utf8) if (c == '\n') ++lines;
+        std::fprintf(stderr, "Colorizer timing (%d lines, lang=%s):\n", lines, lang.c_str());
+        std::fprintf(stderr, "  file read  %7.2f ms\n", ms(_t0, _tread));
+        std::fprintf(stderr, "  colorize   %7.2f ms  (tree-sitter parse + query)\n", ms(_tread, _tcolor));
+        std::fprintf(stderr, "  layout     %7.2f ms  (per-line IDWriteTextLayout)\n", ms(_tcolor, _tlayout));
+        std::fprintf(stderr, "  paint      %7.2f ms\n", ms(_tlayout, _tpaint));
+        std::fprintf(stderr, "  hot total  %7.2f ms  (read+colorize+layout+paint)\n", ms(_t0, _tpaint));
+        std::fprintf(stderr, "  per line   %7.3f ms\n", ms(_tcolor, _tlayout) / std::max(1, lines));
     }
 
     // ----- Save -----
