@@ -1,8 +1,6 @@
 #define NOMINMAX
 #include "core_dll/grammar/grammar_registry.h"
 #include <filesystem>
-#include <fstream>
-#include <sstream>
 
 namespace wlx::core::grammar {
 
@@ -28,7 +26,7 @@ void GrammarRegistry::scan_directory(const std::wstring& grammar_dir) {
         if (!subdir.is_directory()) continue;
         std::string lang = subdir.path().filename().string();
         std::wstring dll_path;
-        std::string query_source;
+        std::wstring scm_path;
         for (auto& file : fs::directory_iterator(subdir.path(), ec)) {
             if (!file.is_regular_file()) continue;
             auto filename = file.path().filename().string();
@@ -37,16 +35,13 @@ void GrammarRegistry::scan_directory(const std::wstring& grammar_dir) {
                 filename.substr(filename.size() - 4) == ".dll") {
                 dll_path = file.path().wstring();
             } else if (filename == "highlights.scm") {
-                std::ifstream ifs(file.path(), std::ios::binary);
-                if (ifs) {
-                    std::ostringstream oss;
-                    oss << ifs.rdbuf();
-                    query_source = oss.str();
-                }
+                // Defer the read: register_entry_path slurps it lazily on first
+                // query use, so opening one language doesn't read all 28 .scm.
+                scm_path = file.path().wstring();
             }
         }
         if (!dll_path.empty()) {
-            cache_.register_entry(lang, std::move(dll_path), std::move(query_source));
+            cache_.register_entry_path(lang, std::move(dll_path), std::move(scm_path));
         }
     }
 }

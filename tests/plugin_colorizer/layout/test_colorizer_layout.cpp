@@ -61,6 +61,17 @@ int count_external_url_spans(const LayoutDocument& doc) {
     return n;
 }
 
+// Simulate what RenderEngine::paint does on first paint of each visible block:
+// build the deferred per-line IDWriteTextLayout + decorations (URL spans,
+// whitespace markers, ...). The no-wrap path defers this via
+// doc.materialize_block; the eager (word-wrap) path leaves the hook null, so
+// this is a no-op there.
+void materialize_all(LayoutDocument& doc) {
+    if (!doc.materialize_block) return;
+    for (int i = 0; i < static_cast<int>(doc.blocks.size()); ++i)
+        doc.materialize_block(doc.blocks[i], i);
+}
+
 }  // namespace
 
 TEST_CASE("layout_source: no URL in source produces no ExternalUrl spans") {
@@ -93,6 +104,7 @@ TEST_CASE("layout_source: single URL on one line produces one ExternalUrl span")
     REQUIRE(factory);
     auto layout = run_layout(factory.Get(),
         L"// see https://example.com/page for details");
+    materialize_all(layout);  // URL spans are built lazily, on first paint
 
     int total = 0;
     bool url_seen = false;
@@ -149,6 +161,7 @@ TEST_CASE("layout_source: trailing punctuation is excluded from the URL span") {
     REQUIRE(factory);
     auto layout = run_layout(factory.Get(),
         L"// see https://example.com.");
+    materialize_all(layout);  // URL spans are built lazily, on first paint
 
     std::wstring captured;
     for (const auto& b : layout.blocks)

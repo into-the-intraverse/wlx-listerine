@@ -36,7 +36,9 @@ namespace fs = std::filesystem;
 
 using wlx::core::colorizer::Colorizer;
 using wlx::core::colorizer::ColorizeResult;
+using wlx::core::colorizer::ColorizeTimings;
 using wlx::plugin_colorizer::layout::ColorizerDisplayConfig;
+using wlx::plugin_colorizer::layout::LayoutTimings;
 using wlx::plugin_colorizer::layout::CppGrammar;
 using wlx::plugin_colorizer::layout::layout_source;
 using wlx::plugin_colorizer::language::apply_cpp_variant;
@@ -259,7 +261,8 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
     }
 
     // ----- Colorize -----
-    ColorizeResult colors = colorizer.colorize(content->raw_utf8, lang, opts.dark);
+    ColorizeTimings ctimings;
+    ColorizeResult colors = colorizer.colorize(content->raw_utf8, lang, opts.dark, &ctimings);
     auto _tcolor = std::chrono::steady_clock::now();
 
     // ----- Build display config (used by both paint and dump-tokens paths) -----
@@ -318,6 +321,7 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
 
     // ----- Layout -----
 
+    LayoutTimings ltimings;
     auto layout = layout_source(dwrite_factory.Get(),
                                 content->text,        // wstring source
                                 content->raw_utf8,    // utf-8 source
@@ -325,7 +329,8 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
                                 theme,
                                 opts.dark,
                                 static_cast<float>(opts.width),
-                                display);
+                                display,
+                                &ltimings);
     auto _tlayout = std::chrono::steady_clock::now();
 
     // ----- Bitmap dimensions -----
@@ -355,13 +360,34 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
         };
         int lines = 1;
         for (char c : content->raw_utf8) if (c == '\n') ++lines;
+
+        // Warm colorize: the grammar DLL + compiled query are now cached
+        // process-wide, so this re-run measures the steady-state cost every
+        // 2nd+ file of this language pays (no LoadLibrary, no ts_query_new).
+        // Result discarded — only the timings matter.
+        ColorizeTimings cwarm;
+        auto _w0 = std::chrono::steady_clock::now();
+        (void) colorizer.colorize(content->raw_utf8, lang, opts.dark, &cwarm);
+        auto _w1 = std::chrono::steady_clock::now();
+
         std::fprintf(stderr, "Colorizer timing (%d lines, lang=%s):\n", lines, lang.c_str());
-        std::fprintf(stderr, "  file read  %7.2f ms\n", ms(_t0, _tread));
-        std::fprintf(stderr, "  colorize   %7.2f ms  (tree-sitter parse + query)\n", ms(_tread, _tcolor));
-        std::fprintf(stderr, "  layout     %7.2f ms  (per-line IDWriteTextLayout)\n", ms(_tcolor, _tlayout));
-        std::fprintf(stderr, "  paint      %7.2f ms\n", ms(_tlayout, _tpaint));
-        std::fprintf(stderr, "  hot total  %7.2f ms  (read+colorize+layout+paint)\n", ms(_t0, _tpaint));
-        std::fprintf(stderr, "  per line   %7.3f ms\n", ms(_tcolor, _tlayout) / std::max(1, lines));
+        std::fprintf(stderr, "  file read        %8.2f ms\n", ms(_t0, _tread));
+        std::fprintf(stderr, "  colorize (cold)  %8.2f ms\n", ms(_tread, _tcolor));
+        std::fprintf(stderr, "    grammar load   %8.2f ms  (LoadLibrary, cold only)\n", ctimings.grammar_load_ms);
+        std::fprintf(stderr, "    query compile  %8.2f ms  (ts_query_new, cold only)\n", ctimings.query_compile_ms);
+        std::fprintf(stderr, "    parse          %8.2f ms  (tree-sitter)\n", ctimings.parse_ms);
+        std::fprintf(stderr, "    highlight      %8.2f ms  (query exec)\n", ctimings.highlight_ms);
+        std::fprintf(stderr, "  colorize (warm)  %8.2f ms  (grammar+query cached)\n", ms(_w0, _w1));
+        std::fprintf(stderr, "    parse          %8.2f ms\n", cwarm.parse_ms);
+        std::fprintf(stderr, "    highlight      %8.2f ms\n", cwarm.highlight_ms);
+        std::fprintf(stderr, "  layout           %8.2f ms  (per-line IDWriteTextLayout)\n", ms(_tcolor, _tlayout));
+        std::fprintf(stderr, "    line split     %8.2f ms\n", ltimings.line_split_ms);
+        std::fprintf(stderr, "    span index     %8.2f ms\n", ltimings.span_index_ms);
+        std::fprintf(stderr, "    build blocks   %8.2f ms  (CreateTextLayout + decorations)\n", ltimings.build_blocks_ms);
+        std::fprintf(stderr, "    line index     %8.2f ms\n", ltimings.line_index_ms);
+        std::fprintf(stderr, "  paint            %8.2f ms\n", ms(_tlayout, _tpaint));
+        std::fprintf(stderr, "  hot total        %8.2f ms  (read+colorize+layout+paint)\n", ms(_t0, _tpaint));
+        std::fprintf(stderr, "  per line         %8.3f ms\n", ms(_tcolor, _tlayout) / std::max(1, lines));
     }
 
     // ----- Save -----

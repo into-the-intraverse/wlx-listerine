@@ -9,7 +9,7 @@
 #  define WLX_CORE_API __declspec(dllimport)
 #endif
 
-#define WLX_CORE_ABI_VERSION 2
+#define WLX_CORE_ABI_VERSION 3
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,6 +38,14 @@ WLX_CORE_API void      wlx_core_release(WlxCore*);
 // negative = error (bad argument, uninitialized core, or allocation failure);
 // non-negative = result.
 WLX_CORE_API int       wlx_core_supports(WlxCore*, const char* language);
+
+// Force the cold work for `language` — grammar DLL load + ts_query_new query
+// compile — to happen now, so a later wlx_core_colorize() of the same language
+// hits the warm process-wide cache. Intended to be called on a background
+// thread at file open to overlap the ~50ms query compile with window/renderer
+// setup. Takes the same registry mutex as colorize() (so it serializes with
+// it, never races the grammar cache); safe no-op for null/unknown languages.
+WLX_CORE_API void      wlx_core_prewarm(WlxCore*, const char* language);
 
 WLX_CORE_API int       wlx_core_colorize(WlxCore*,
                                          const char* source, uint32_t len,

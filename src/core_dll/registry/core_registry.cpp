@@ -60,6 +60,11 @@ bool CoreRegistry::supports(const std::string& language) {
     return colorizer_ && colorizer_->supports(language);
 }
 
+void CoreRegistry::prewarm(const std::string& language) {
+    std::lock_guard<std::mutex> lk(mu_);
+    if (colorizer_) colorizer_->prewarm(language);
+}
+
 const HelixTheme& CoreRegistry::theme(bool dark_mode) const {
     std::lock_guard<std::mutex> lk(mu_);
     static HelixTheme empty;

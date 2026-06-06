@@ -79,6 +79,8 @@ struct ViewState {
     bool dark_mode = false;
     bool wrap_text = false;
     std::wstring file_path;
+    ParseCacheKey parse_key;     // identity of the loaded file (layout cache key)
+    int source_line_count = 0;   // cheap gutter-size estimate (source '\n' + 1)
 
     std::shared_ptr<Document> document;
     std::shared_ptr<LayoutDocument> layout;
@@ -168,29 +170,60 @@ static void do_layout(ViewState* vs) {
 
     // Use DIP width — IDWriteTextLayout measures in DIPs, not physical pixels
     float viewport_width = vs->renderer ? vs->renderer->dip_width() : 1.0f;
+    const bool line_numbers = g_theme.config().line_numbers;
 
-    // Check layout cache
+    // Layout cache: a full relayout (one IDWriteTextLayout per block, plus a
+    // wlx_core_colorize per fenced code block) is skippable when the same file
+    // is re-laid at the same width bucket/theme/dark/wrap/line-number state —
+    // e.g. revisiting a file, toggling dark/wrap then back, or a resize that
+    // stays in the same width bucket. The key must capture every layout-
+    // affecting input (theme_hash does NOT encode dark/wrap/line_numbers).
     LayoutCacheKey lk;
+    lk.parse_key = vs->parse_key;
     lk.viewport_width_bucket = CacheService::bucket_width(static_cast<int>(viewport_width));
     lk.theme_hash = g_theme.theme_hash();
+    lk.dark_mode = vs->dark_mode;
+    lk.wrap_text = vs->wrap_text;
+    lk.line_numbers = line_numbers;
+
+    if (auto hit = g_cache.lookup_layout(lk)) {
+        vs->layout = hit;
+        vs->interaction = std::make_unique<InteractionEngine>(*vs->layout);
+        update_scrollbar(vs);
+        vs->index_dirty = true;
+        return;
+    }
 
     LayoutEngine engine(dwrite_factory(), g_theme, vs->dark_mode, g_colorizer_handle);
 
-    // Pass 1: no gutter — lay out and count logical lines.
+    auto gutter_for = [&](int lines) -> float {
+        if (!line_numbers || lines <= 0) return 0.0f;
+        int digits = static_cast<int>(std::to_wstring(lines).size());
+        return 16.0f + g_theme.fonts().code_size * 0.62f * digits + 8.0f;
+    };
+
+    // Single pass: size the gutter from a cheap source-line estimate. The
+    // logical line count (line_tops.size(), hard breaks only) is width-
+    // independent, so the gutter's digit count is stable; we only re-lay if the
+    // estimate's digit count was off (rare: it straddled a power of 10). This
+    // replaces the old unconditional two full layout passes.
+    int est_lines = vs->source_line_count > 0 ? vs->source_line_count : 1;
+    float gutter_w = gutter_for(est_lines);
     auto layout = std::make_shared<LayoutDocument>(
-        engine.layout(*vs->document, viewport_width, vs->wrap_text, 0.0f));
+        engine.layout(*vs->document, viewport_width, vs->wrap_text, gutter_w));
     wlx::runtime::layout::build_line_index(*layout);
 
-    // Pass 2: if the gutter is enabled, reserve a column sized to the line count
-    // and re-lay out (narrower text column changes wrapping, so rebuild the index).
-    if (g_theme.config().line_numbers && !layout->line_tops.empty()) {
-        int digits = static_cast<int>(std::to_wstring(layout->line_tops.size()).size());
-        float gutter_w = 16.0f + g_theme.fonts().code_size * 0.62f * digits + 8.0f;
-        layout = std::make_shared<LayoutDocument>(
-            engine.layout(*vs->document, viewport_width, vs->wrap_text, gutter_w));
-        wlx::runtime::layout::build_line_index(*layout);
+    if (line_numbers && !layout->line_tops.empty()) {
+        int real = static_cast<int>(layout->line_tops.size());
+        if (std::to_wstring(real).size() != std::to_wstring(std::max(1, est_lines)).size()) {
+            gutter_w = gutter_for(real);
+            layout = std::make_shared<LayoutDocument>(
+                engine.layout(*vs->document, viewport_width, vs->wrap_text, gutter_w));
+            wlx::runtime::layout::build_line_index(*layout);
+        }
     }
 
+    g_cache.store_layout(lk, layout);
     vs->layout = layout;
     vs->interaction = std::make_unique<InteractionEngine>(*vs->layout);
 
@@ -227,6 +260,10 @@ static void load_document(ViewState* vs, const wchar_t* path) {
     pk.size = content->identity.size;
     pk.mtime = content->identity.mtime;
     pk.parser_version = MarkdownParser::parser_version();
+    vs->parse_key = pk;
+    vs->source_line_count =
+        static_cast<int>(std::count(content->raw_utf8.begin(),
+                                    content->raw_utf8.end(), '\n')) + 1;
 
     auto cached_doc = g_cache.lookup_parse(pk);
     if (cached_doc) {

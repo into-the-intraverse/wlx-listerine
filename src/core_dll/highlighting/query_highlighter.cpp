@@ -1,13 +1,27 @@
 #include "core_dll/highlighting/query_highlighter.h"
 #include <algorithm>
+#include <functional>
 #include <regex>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 
 namespace wlx::core::highlighting {
 
 using namespace wlx::core::colorizer;
 using namespace wlx::core::theme;
+
+// Transparent hash so the predicate regex cache can be looked up by a
+// std::string_view (the tree-sitter query's pattern storage) without
+// allocating a std::string on every #match? evaluation. Content-keyed (not
+// pointer-keyed) so a recompiled query whose storage address is reused can't
+// collide with a stale entry.
+struct TransparentStringHash {
+    using is_transparent = void;
+    size_t operator()(std::string_view sv) const noexcept {
+        return std::hash<std::string_view>{}(sv);
+    }
+};
 
 struct RawSpan {
     uint32_t start;
@@ -19,15 +33,17 @@ struct RawSpan {
     uint8_t modifiers;
 };
 
-// Get the text for a capture within a match, given the source string.
-static std::string capture_text(const TSQueryMatch& match, uint32_t capture_index,
-                                const std::string& source) {
+// Get the text for a capture within a match as a view into `source` (no
+// allocation — this runs once per captured identifier under predicated
+// patterns like the c grammar's `#match? @constant`).
+static std::string_view capture_text(const TSQueryMatch& match, uint32_t capture_index,
+                                     const std::string& source) {
     for (uint16_t i = 0; i < match.capture_count; i++) {
         if (match.captures[i].index == capture_index) {
             uint32_t start = ts_node_start_byte(match.captures[i].node);
             uint32_t end = ts_node_end_byte(match.captures[i].node);
             if (start <= end && end <= source.size()) {
-                return source.substr(start, end - start);
+                return std::string_view(source).substr(start, end - start);
             }
             return {};
         }
@@ -44,8 +60,9 @@ static bool evaluate_predicates(const TSQuery* query, const TSQueryMatch& match,
 
     if (step_count == 0) return true;
 
-    // Cache compiled regexes across calls
-    static std::unordered_map<std::string, std::regex> regex_cache;
+    // Cache compiled regexes across calls (heterogeneous lookup by string_view)
+    static std::unordered_map<std::string, std::regex,
+                              TransparentStringHash, std::equal_to<>> regex_cache;
 
     uint32_t i = 0;
     while (i < step_count) {
@@ -83,14 +100,14 @@ static bool evaluate_predicates(const TSQuery* query, const TSQueryMatch& match,
             if (args.size() < 2) continue;
             if (!args[0].is_capture) continue;
 
-            std::string lhs = capture_text(match, args[0].value_id, source);
-            std::string rhs;
+            std::string_view lhs = capture_text(match, args[0].value_id, source);
+            std::string_view rhs;
             if (args[1].is_capture) {
                 rhs = capture_text(match, args[1].value_id, source);
             } else {
                 uint32_t len = 0;
                 const char* s = ts_query_string_value_for_id(query, args[1].value_id, &len);
-                rhs.assign(s, len);
+                rhs = std::string_view(s, len);
             }
 
             bool equal = (lhs == rhs);
@@ -102,25 +119,26 @@ static bool evaluate_predicates(const TSQuery* query, const TSQueryMatch& match,
             if (!args[0].is_capture) continue;
             if (args[1].is_capture) continue; // regex must be a string literal
 
-            std::string text = capture_text(match, args[0].value_id, source);
+            std::string_view text = capture_text(match, args[0].value_id, source);
 
             uint32_t pat_len = 0;
             const char* pat_ptr = ts_query_string_value_for_id(query, args[1].value_id, &pat_len);
-            std::string pattern(pat_ptr, pat_len);
+            std::string_view pattern(pat_ptr, pat_len);
 
-            // Get or compile regex
+            // Get or compile regex (lookup by view; allocate only on a miss).
             auto it = regex_cache.find(pattern);
             if (it == regex_cache.end()) {
                 try {
-                    it = regex_cache.emplace(pattern,
-                        std::regex(pattern, std::regex::ECMAScript | std::regex::optimize)).first;
+                    it = regex_cache.emplace(std::string(pattern),
+                        std::regex(std::string(pattern),
+                                   std::regex::ECMAScript | std::regex::optimize)).first;
                 } catch (const std::regex_error&) {
                     // Invalid regex — treat predicate as passing
                     continue;
                 }
             }
 
-            bool matched = std::regex_search(text, it->second);
+            bool matched = std::regex_search(text.begin(), text.end(), it->second);
             if (pred_name == "match?" && !matched) return false;
             if (pred_name == "not-match?" && matched) return false;
 
@@ -128,7 +146,7 @@ static bool evaluate_predicates(const TSQuery* query, const TSQueryMatch& match,
             if (args.size() < 2) continue;
             if (!args[0].is_capture) continue;
 
-            std::string text = capture_text(match, args[0].value_id, source);
+            std::string_view text = capture_text(match, args[0].value_id, source);
 
             bool found = false;
             for (size_t a = 1; a < args.size(); a++) {

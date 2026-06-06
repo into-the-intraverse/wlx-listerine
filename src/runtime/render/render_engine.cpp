@@ -214,7 +214,7 @@ ID2D1SolidColorBrush* RenderEngine::get_brush(uint32_t color, float alpha) {
     return ptr;
 }
 
-void RenderEngine::paint(const LayoutDocument& layout, float scroll_y,
+void RenderEngine::paint(LayoutDocument& layout, float scroll_y,
                           TextPosition sel_start, TextPosition sel_end,
                           const std::wstring* goto_input, int goto_total) {
     if (!rt_) return;
@@ -232,13 +232,28 @@ void RenderEngine::paint(const LayoutDocument& layout, float scroll_y,
     rt_->SetTransform(D2D1::Matrix3x2F::Translation(0, -scroll_y));
 
     size_t search_cursor = 0;
-    for (int block_idx = 0; block_idx < static_cast<int>(layout.blocks.size()); block_idx++) {
+    // Blocks are emitted in ascending Y (and stack non-overlapping, with table
+    // rows sharing a Y span), so the visible window is a contiguous run. Binary-
+    // search the first block whose bottom edge reaches the viewport, then stop
+    // at the first block past the bottom — O(visible + log N) instead of O(N)
+    // per frame. paint_search_highlights re-seeds its own cursor, so starting
+    // mid-vector is safe.
+    auto first_visible = std::lower_bound(
+        layout.blocks.begin(), layout.blocks.end(), scroll_y,
+        [](const LayoutBlock& b, float sy) { return b.rect.bottom < sy; });
+    for (int block_idx = static_cast<int>(first_visible - layout.blocks.begin());
+         block_idx < static_cast<int>(layout.blocks.size()); block_idx++) {
         auto& block = layout.blocks[block_idx];
         // Visibility culling
         float block_top = block.rect.top - scroll_y;
         float block_bottom = block.rect.bottom - scroll_y;
-        if (block_bottom < 0) continue;
-        if (block_top > viewport_h) continue;
+        if (block_bottom < 0) continue;          // above viewport (defensive)
+        if (block_top > viewport_h) break;       // past viewport — Y-sorted, done
+
+        // Lazy layout: build this visible block's IDWriteTextLayout +
+        // decorations on first paint (no-op for fully-eager documents).
+        if (layout.materialize_block)
+            layout.materialize_block(block, block_idx);
 
         paint_block_background(block, 0);
         paint_trailing_ws(block, 0);

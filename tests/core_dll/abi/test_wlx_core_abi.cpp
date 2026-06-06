@@ -59,8 +59,30 @@ TEST_CASE("colorize round-trips a tiny C source"
     wlx_core_release(core);
 }
 
-TEST_CASE("ABI version is 2") {
-    CHECK(wlx_core_abi_version() == 2);
+TEST_CASE("ABI version is 3") {
+    CHECK(wlx_core_abi_version() == 3);
+}
+
+TEST_CASE("wlx_core_prewarm is a safe no-op on null args") {
+    wlx_core_prewarm(nullptr, "c");   // must not crash
+    WlxCore* core = wlx_core_acquire();
+    wlx_core_prewarm(core, nullptr);  // must not crash
+    wlx_core_release(core);
+}
+
+TEST_CASE("wlx_core_prewarm warms a grammar so a later colorize succeeds"
+    * doctest::skip(!has_grammars())) {
+    WlxCore* core = wlx_core_acquire();
+    wlx_core_prewarm(core, "c");  // load grammar + compile query up front
+    CHECK(wlx_core_supports(core, "c") == 1);
+    const char* src = "int main(){return 0;}";
+    WlxColorSpan* spans = nullptr;
+    uint32_t count = 0;
+    CHECK(wlx_core_colorize(core, src, (uint32_t)strlen(src),
+                            "c", /*dark=*/1, &spans, &count) == 0);
+    CHECK(count > 0);
+    wlx_core_free_spans(spans);
+    wlx_core_release(core);
 }
 
 TEST_CASE("wlx_core_list_languages returns a non-empty list including cpp"

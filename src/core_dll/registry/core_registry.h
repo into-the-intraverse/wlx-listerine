@@ -31,6 +31,9 @@ public:
                                        const std::string& language,
                                        bool dark_mode);
     bool supports(const std::string& language);
+    // Force the cold grammar load + query compile for `language` to happen now
+    // (under the registry mutex) so a later colorize() of it is warm.
+    void prewarm(const std::string& language);
     std::vector<std::string> available_languages() const;
     const theme::HelixTheme& theme(bool dark_mode) const;
 

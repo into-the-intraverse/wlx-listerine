@@ -30,7 +30,9 @@ public:
     void discard_device_resources();
     void resize(UINT width, UINT height);
 
-    void paint(const layout::LayoutDocument& layout, float scroll_y,
+    // Non-const: the renderer may lazily materialize visible blocks
+    // (layout.materialize_block) before drawing them.
+    void paint(layout::LayoutDocument& layout, float scroll_y,
                layout::TextPosition sel_start = {}, layout::TextPosition sel_end = {},
                const std::wstring* goto_input = nullptr, int goto_total = 0);
 

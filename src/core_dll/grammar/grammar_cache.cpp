@@ -1,6 +1,7 @@
 #define NOMINMAX
 #include "core_dll/grammar/grammar_cache.h"
 #include <algorithm>
+#include <fstream>
 #include <sstream>
 
 namespace wlx::core::grammar {
@@ -66,6 +67,38 @@ void GrammarCache::register_entry(const std::string& language,
     auto& e = entries_[language];
     e.dll_path = std::move(dll_path);
     e.query_source = std::move(query_source);
+    e.scm_loaded = true;  // source provided directly; no deferred file read
+}
+
+void GrammarCache::register_entry_path(const std::string& language,
+                                       std::wstring dll_path,
+                                       std::wstring scm_path) {
+    auto& e = entries_[language];
+    e.dll_path = std::move(dll_path);
+    e.scm_path = std::move(scm_path);
+    e.scm_loaded = false;  // highlights.scm read lazily on first query use
+}
+
+const std::string& GrammarCache::source_for(const Entry& e) const {
+    if (!e.scm_loaded) {
+        if (!e.scm_path.empty()) {
+            std::ifstream ifs(e.scm_path, std::ios::binary);
+            if (ifs) {
+                std::ostringstream oss;
+                oss << ifs.rdbuf();
+                e.query_source = oss.str();
+            }
+        }
+        // Normalize CRLF -> LF (see register_entry's note: the `; inherits:`
+        // parser splits on '\n' alone, so a stray '\r' would corrupt parent
+        // grammar lookup). Applied here so the deferred read matches the
+        // eager register_entry path.
+        e.query_source.erase(
+            std::remove(e.query_source.begin(), e.query_source.end(), '\r'),
+            e.query_source.end());
+        e.scm_loaded = true;
+    }
+    return e.query_source;
 }
 
 const TSLanguage* GrammarCache::get_grammar(const std::string& language) {
@@ -108,7 +141,7 @@ const TSQuery* GrammarCache::get_query(const std::string& language) {
     if (!lang) return nullptr;
 
     // Resolve `; inherits:` chain.
-    std::string source = e.query_source;
+    std::string source = source_for(e);
     if (!source.empty()) {
         auto first_newline = source.find('\n');
         std::string first_line = (first_newline != std::string::npos)
@@ -152,7 +185,7 @@ const TSQuery* GrammarCache::get_query(const std::string& language) {
 
 std::string GrammarCache::raw_query_source(const std::string& language) const {
     auto it = entries_.find(language);
-    return (it == entries_.end()) ? std::string{} : it->second.query_source;
+    return (it == entries_.end()) ? std::string{} : source_for(it->second);
 }
 
 bool GrammarCache::is_loaded(const std::string& language) const {

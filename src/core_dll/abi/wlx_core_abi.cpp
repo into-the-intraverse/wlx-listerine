@@ -28,6 +28,12 @@ wlx_core_supports(WlxCore* h, const char* language) {
     return reinterpret_cast<wlx::core::registry::CoreRegistry*>(h)->supports(language) ? 1 : 0;
 }
 
+extern "C" WLX_CORE_API void
+wlx_core_prewarm(WlxCore* h, const char* language) {
+    if (!h || !language) return;
+    reinterpret_cast<wlx::core::registry::CoreRegistry*>(h)->prewarm(language);
+}
+
 extern "C" WLX_CORE_API int
 wlx_core_colorize(WlxCore* h,
                   const char* source, uint32_t len,

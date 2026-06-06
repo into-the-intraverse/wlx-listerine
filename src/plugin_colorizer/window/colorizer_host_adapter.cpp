@@ -20,6 +20,7 @@
 #include <unordered_map>
 #include <string>
 #include <memory>
+#include <thread>
 #include <vector>
 
 // WLX_TRACE_TAG must be defined before any project header includes
@@ -393,6 +394,29 @@ static void relayout(ColorViewState* vs) {
     do_layout(vs, vs->cached_text, vs->cached_raw_utf8, vs->cached_colors);
 }
 
+// No-wrap line breaking is width-independent, so a horizontal resize doesn't
+// change line layout — only the right edge each block's selection highlight
+// fills to. Skip the full relayout (which would rebuild every block + the
+// interaction engine + re-defer materialization) and just stretch the block
+// rects to the new width; materialized per-line layouts stay valid.
+static void resize_widths_nowrap(ColorViewState* vs) {
+    if (!vs->layout || !vs->renderer) return;
+    auto& doc = *vs->layout;
+    const float new_vw = vs->renderer->dip_width();
+    if (!doc.blocks.empty()) {
+        // Derive the right margin from existing geometry (rect.right was
+        // viewport_width - right_margin) rather than hardcoding it here.
+        const float right_margin = doc.viewport_width - doc.blocks.front().rect.right;
+        const float new_right = new_vw - right_margin;
+        for (auto& b : doc.blocks) {
+            b.rect.right = new_right;
+            for (auto& r : b.text_runs) r.rect.right = new_right;
+        }
+    }
+    doc.viewport_width = new_vw;
+    update_scrollbar(vs);
+}
+
 // Re-tokenize the in-memory cached source using the current force_grammar_id
 // (or the extension fallback when the override is empty), then re-layout
 // and invalidate. Does NOT read from disk — caller must have populated
@@ -485,7 +509,12 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         UINT h = HIWORD(lp);
         if (vs && vs->renderer && w > 0 && h > 0) {
             vs->renderer->resize(w, h);
-            relayout(vs);
+            // No-wrap: line layout is width-independent — skip the full relayout
+            // and just restretch block widths. Wrap mode must relayout to rewrap.
+            if (vs->wrap_text)
+                relayout(vs);
+            else
+                resize_widths_nowrap(vs);
             if (vs->hud) vs->hud->on_parent_resize();
             InvalidateRect(hwnd, nullptr, FALSE);
         }
@@ -984,6 +1013,26 @@ HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
 
     apply_dark_mode(hwnd, dark);
 
+    // Prewarm the likely grammar's cold work (ts_query_new query-compile, ~50ms
+    // on the first file of a language) on a background thread so it overlaps the
+    // renderer + device-resource + HUD setup below. We join before
+    // load_document so its colorize() finds the grammar+query warm; the prewarm
+    // serializes with colorize via the core mutex (never races the cache). A
+    // jthread auto-joins if anything below throws before the explicit join.
+    std::jthread prewarm_thread;
+    if (FileToLoad && g_colorizer_handle) {
+        std::wstring path = FileToLoad;
+        std::string lang = ext_to_language(path);
+        if (lang.empty()) lang = filename_to_language(path);
+        lang = apply_cpp_variant(lang, g_display_cfg.cpp_grammar, g_colorizer_handle);
+        if (!lang.empty()) {
+            WlxCore* handle = g_colorizer_handle;
+            prewarm_thread = std::jthread([handle, lang]() {
+                wlx_core_prewarm(handle, lang.c_str());
+            });
+        }
+    }
+
     auto* vs = new ColorViewState{};
     vs->hwnd = hwnd;
     vs->parent = ParentWin;
@@ -1010,6 +1059,10 @@ HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
         vs->hud->update(r.cursor + 1, static_cast<int>(r.matches.size()));
         InvalidateRect(vs->hwnd, nullptr, FALSE);
     };
+
+    // Ensure the prewarm finished (grammar+query now warm) before colorizing.
+    if (prewarm_thread.joinable())
+        prewarm_thread.join();
 
     load_document(vs, FileToLoad);
 

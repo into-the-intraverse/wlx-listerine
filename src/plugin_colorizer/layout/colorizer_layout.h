@@ -23,6 +23,17 @@ struct ColorizerDisplayConfig {
     CppGrammar cpp_grammar = CppGrammar::Standard;
 };
 
+// Per-call layout timing breakdown, populated only when a non-null pointer is
+// passed to layout_source (diagnostic/bench use). Splits the opaque "layout"
+// number into its phases so the per-line CreateTextLayout cost (the lazy-layout
+// target) is separable from line splitting, span indexing, and the line index.
+struct LayoutTimings {
+    double line_split_ms   = 0;  // UTF-8 split into per-line wchar text
+    double span_index_ms   = 0;  // map color spans onto lines
+    double build_blocks_ms = 0;  // per-line CreateTextLayout + GetMetrics + decorations
+    double line_index_ms   = 0;  // build_line_index
+};
+
 // Convert source code lines + color spans into a LayoutDocument the RenderEngine can paint.
 //
 // NOTE: Color span offsets from ColorizeResult are UTF-8 byte offsets in the original source.
@@ -36,6 +47,7 @@ wlx::runtime::layout::LayoutDocument layout_source(
     const wlx::runtime::theme::ThemeService& theme,
     bool dark_mode,
     float viewport_width,
-    const ColorizerDisplayConfig& display);
+    const ColorizerDisplayConfig& display,
+    LayoutTimings* timings = nullptr);
 
 }  // namespace wlx::plugin_colorizer::layout

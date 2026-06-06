@@ -54,6 +54,13 @@ public:
                         std::wstring dll_path,
                         std::string query_source);
 
+    // Like register_entry but defers reading highlights.scm: stores the path
+    // and slurps it lazily on first query use (avoids reading every grammar's
+    // .scm at startup when only one language is opened). Used by scan_directory.
+    void register_entry_path(const std::string& language,
+                             std::wstring dll_path,
+                             std::wstring scm_path);
+
     // Returns the loaded TSLanguage, loading the DLL on first call. Updates
     // LRU/last_used. Triggers eviction sweep if (cap exceeded AND tail
     // stale). Returns nullptr if entry unknown or load failed previously.
@@ -87,7 +94,11 @@ private:
 
     struct Entry {
         std::wstring dll_path;
-        std::string  query_source;
+        std::wstring scm_path;             // deferred highlights.scm source path
+        // Lazily slurped from scm_path (CRLF-stripped) on first use, or set
+        // directly by register_entry. mutable so raw_query_source stays const.
+        mutable std::string query_source;
+        mutable bool scm_loaded = false;   // query_source is populated/finalized
         HMODULE      handle = nullptr;
         const TSLanguage* language = nullptr;
         TSQuery*     query = nullptr;
@@ -99,6 +110,9 @@ private:
         // the iterator is dangling but handle is also nulled, so the next
         // get_grammar reseats both atomically.
     };
+
+    // Returns the entry's query source, reading scm_path on first call.
+    const std::string& source_for(const Entry& e) const;
 
     std::unordered_map<std::string, Entry> entries_;
     std::list<std::string> lru_;       // MRU at front
