@@ -35,31 +35,20 @@ wlx_core_prewarm(WlxCore* h, const char* language) {
     reinterpret_cast<wlx::core::registry::CoreRegistry*>(h)->prewarm(language);
 }
 
-extern "C" WLX_CORE_API int
-wlx_core_colorize(WlxCore* h,
-                  const char* source, uint32_t len,
-                  const char* language,
-                  int dark_mode,
-                  uint32_t range_start, uint32_t range_end,
-                  WlxColorSpan** out_spans, uint32_t* out_count) {
-    if (!h || !source || !language || !out_spans || !out_count) return -1;
-    auto& reg = *reinterpret_cast<wlx::core::registry::CoreRegistry*>(h);
-
-    // View the caller's buffer directly — colorize() is synchronous and reads
-    // it only for the duration of this call, so no owning copy is needed.
-    auto result = reg.colorize(std::string_view(source, len), language,
-                               dark_mode != 0, range_start, range_end);
-
+// Marshal colored spans into a freshly malloc'd C array (caller frees with
+// wlx_core_free_spans). Returns 0 on success (incl. empty -> null/0), -2 on
+// allocation failure. Shared by wlx_core_colorize and wlx_core_highlight_range
+// so the two paths can never drift in how they pack the C span struct.
+static int marshal_spans(const wlx::core::colorizer::ColorizeResult& result,
+                         WlxColorSpan** out_spans, uint32_t* out_count) {
     if (result.spans.empty()) {
         *out_spans = nullptr;
         *out_count = 0;
         return 0;
     }
-
     auto* arr = static_cast<WlxColorSpan*>(
         std::malloc(sizeof(WlxColorSpan) * result.spans.size()));
     if (!arr) return -2;
-
     for (size_t i = 0; i < result.spans.size(); ++i) {
         const auto& s = result.spans[i];
         arr[i].start     = s.start;
@@ -74,6 +63,25 @@ wlx_core_colorize(WlxCore* h,
     *out_spans = arr;
     *out_count = static_cast<uint32_t>(result.spans.size());
     return 0;
+}
+
+extern "C" WLX_CORE_API int
+wlx_core_colorize(WlxCore* h,
+                  const char* source, uint32_t len,
+                  const char* language,
+                  int dark_mode,
+                  uint32_t range_start, uint32_t range_end,
+                  WlxColorSpan** out_spans, uint32_t* out_count) {
+    if (!h || !source || !language || !out_spans || !out_count) return -1;
+    auto& reg = *reinterpret_cast<wlx::core::registry::CoreRegistry*>(h);
+
+    // View the caller's buffer directly — colorize() is synchronous and reads
+    // it only for the duration of this call, so no owning copy is needed.
+    // View the caller's buffer directly — colorize() is synchronous and reads
+    // it only for the duration of this call, so no owning copy is needed.
+    auto result = reg.colorize(std::string_view(source, len), language,
+                               dark_mode != 0, range_start, range_end);
+    return marshal_spans(result, out_spans, out_count);
 }
 
 extern "C" WLX_CORE_API void wlx_core_free_spans(WlxColorSpan* spans) {
@@ -95,31 +103,7 @@ wlx_core_highlight_range(WlxCore* h, WlxTree* t, int dark_mode,
     auto& reg = *reinterpret_cast<wlx::core::registry::CoreRegistry*>(h);
 
     auto result = reg.highlight_tree_range(t, dark_mode != 0, range_start, range_end);
-
-    if (result.spans.empty()) {
-        *out_spans = nullptr;
-        *out_count = 0;
-        return 0;
-    }
-
-    auto* arr = static_cast<WlxColorSpan*>(
-        std::malloc(sizeof(WlxColorSpan) * result.spans.size()));
-    if (!arr) return -2;
-
-    for (size_t i = 0; i < result.spans.size(); ++i) {
-        const auto& s = result.spans[i];
-        arr[i].start     = s.start;
-        arr[i].length    = s.length;
-        arr[i].color     = s.color;
-        arr[i].bg_color  = s.bg_color;
-        arr[i].has_bg    = s.has_bg ? 1 : 0;
-        arr[i].modifiers = s.modifiers;
-        arr[i]._pad[0]   = 0;
-        arr[i]._pad[1]   = 0;
-    }
-    *out_spans = arr;
-    *out_count = static_cast<uint32_t>(result.spans.size());
-    return 0;
+    return marshal_spans(result, out_spans, out_count);
 }
 
 extern "C" WLX_CORE_API void wlx_core_free_tree(WlxCore* h, WlxTree* t) {
