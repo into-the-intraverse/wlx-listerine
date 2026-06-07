@@ -260,10 +260,8 @@ TEST_CASE("GrammarCache: pin/unpin reference count balance") {
 
     c.unpin("a");                // pin_count = 0, now evictable
     now += 6min;
-    int next_id = counter;       // next loaded grammar's id
     c.register_entry("e", L"e.dll", "");
     c.get_grammar("e");          // evict sweep: a now unpinned + stale -> evicted
-    (void)next_id;
     CHECK_FALSE(c.is_loaded("a"));
     CHECK(std::find(freed.begin(), freed.end(), fake_handle(0)) != freed.end());
 }

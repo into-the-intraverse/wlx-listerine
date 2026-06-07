@@ -233,7 +233,10 @@ void GrammarCache::evict_locked() {
         if (e.pin_count > 0) continue;          // pinned: never evict, keep scanning
         auto age = std::chrono::duration_cast<std::chrono::seconds>(
             now - e.last_used);
-        if (age < ttl_) continue;               // fresh unpinned: keep (newer are fresher)
+        // Fresh unpinned: the LRU is monotone in last_used, so every still-
+        // unvisited (newer) entry is fresh too -> nothing left to evict. (A
+        // skipped pinned entry can't change that; continue/break are equivalent.)
+        if (age < ttl_) continue;
 
         if (e.query) { ts_query_delete(e.query); e.query = nullptr; }
         if (e.handle) { releaser_(e.handle); e.handle = nullptr; }
