@@ -18,7 +18,9 @@ public:
         const TSQuery* query,
         const theme::HelixTheme& theme,
         std::string_view source,
-        uint32_t default_color = 0xD4D4D4);
+        uint32_t default_color = 0xD4D4D4,
+        uint32_t range_start = 0,
+        uint32_t range_end = 0);   // 0,0 (or end<=start) => whole document
 };
 
 }  // namespace wlx::core::highlighting

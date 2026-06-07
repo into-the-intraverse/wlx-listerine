@@ -173,7 +173,9 @@ std::vector<ColorSpan> QueryHighlighter::highlight(
     const TSQuery* query,
     const HelixTheme& theme,
     std::string_view source,
-    uint32_t default_color)
+    uint32_t default_color,
+    uint32_t range_start,
+    uint32_t range_end)
 {
     if (!tree || !query) return {};
 
@@ -204,6 +206,14 @@ std::vector<ColorSpan> QueryHighlighter::highlight(
     // Execute query
     TSQueryCursor* cursor = ts_query_cursor_new();
     ts_query_cursor_exec(cursor, query, ts_tree_root_node(tree));
+
+    // Viewport scoping: when a non-empty range is given, limit query iteration to
+    // captures intersecting [range_start, range_end). The parse is whole-file, so
+    // multi-line constructs that begin outside the range still resolve (the parse
+    // tree is complete; only query iteration is scoped). Default (end<=start)
+    // leaves the cursor full-document.
+    if (range_end > range_start)
+        ts_query_cursor_set_byte_range(cursor, range_start, range_end);
 
     // Collect raw spans
     std::vector<RawSpan> raw;

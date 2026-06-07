@@ -239,3 +239,60 @@ TEST_CASE("QueryHighlighter: theme modifier bits surface on ColorSpan"
 
     ts_tree_delete(tree);
 }
+
+// ---------------------------------------------------------------------------
+// Byte-range scoping tests
+// ---------------------------------------------------------------------------
+
+TEST_CASE("highlight with a byte range only returns spans inside the range"
+    * doctest::skip(!has_c_grammar())) {
+    GrammarRegistry reg(L"grammars");
+    auto theme = HelixTheme::make_default(false);
+
+    // Three lines, each 11 bytes (including '\n'):
+    //   [0..10]  "int a = 1;"  + '\n'  -> bytes 0..10, '\n' at 10
+    //   [11..21] "int b = 2;"  + '\n'  -> bytes 11..21, '\n' at 21
+    //   [22..32] "int c = 3;"  + '\n'  -> bytes 22..32
+    std::string src = "int a = 1;\nint b = 2;\nint c = 3;\n";
+    auto* tree = reg.parse("c", src.c_str());
+    auto* query = reg.get_query("c");
+    REQUIRE(tree != nullptr);
+    REQUIRE(query != nullptr);
+
+    auto full  = QueryHighlighter::highlight(tree, query, theme, src);
+    auto line2 = QueryHighlighter::highlight(tree, query, theme, src,
+                    /*default_color=*/0xD4D4D4,
+                    /*range_start=*/11, /*range_end=*/21);  // "int b = 2;"
+
+    REQUIRE(!full.empty());
+    for (const auto& s : line2) {
+        CHECK(s.start >= 11);
+        CHECK(s.start < 21);
+    }
+    CHECK(line2.size() <= full.size());
+
+    ts_tree_delete(tree);
+}
+
+TEST_CASE("highlight default range reproduces whole-document spans"
+    * doctest::skip(!has_c_grammar())) {
+    GrammarRegistry reg(L"grammars");
+    auto theme = HelixTheme::make_default(false);
+
+    std::string src = "int a = 1;\nint b = 2;\nint c = 3;\n";
+    auto* tree = reg.parse("c", src.c_str());
+    auto* query = reg.get_query("c");
+    REQUIRE(tree != nullptr);
+    REQUIRE(query != nullptr);
+
+    auto a = QueryHighlighter::highlight(tree, query, theme, src);
+    auto b = QueryHighlighter::highlight(tree, query, theme, src, 0xD4D4D4, 0, 0);
+    REQUIRE(a.size() == b.size());
+    for (size_t i = 0; i < a.size(); ++i) {
+        CHECK(a[i].start == b[i].start);
+        CHECK(a[i].length == b[i].length);
+        CHECK(a[i].color == b[i].color);
+    }
+
+    ts_tree_delete(tree);
+}
