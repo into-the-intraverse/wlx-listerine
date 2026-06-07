@@ -30,8 +30,10 @@ struct InlineLayoutResult {
 };
 
 // Build an IDWriteTextLayout from inline nodes, collecting interactive spans and
-// inline-code background rects. Free function so both the eager layout pass and
-// (later) a lazy materializer can call it. `format` must be non-null.
+// inline-code background rects. Free function so callers outside LayoutEngine can
+// build a layout directly. `format` must be non-null. `default_color` is currently
+// unused (the run's base color is applied by the caller on its TextRun); it is kept
+// to mirror create_text_layout's signature.
 InlineLayoutResult build_inline_layout(
     IDWriteFactory* dwrite,
     const std::vector<parser::InlineNode>& inlines,

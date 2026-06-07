@@ -5,7 +5,6 @@
 
 #include <dwrite.h>
 #include <wrl/client.h>
-#include <cstring>
 
 using namespace wlx::runtime::layout;
 using namespace wlx::runtime::parser;

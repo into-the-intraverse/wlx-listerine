@@ -4,8 +4,6 @@
 #define NOMINMAX
 #endif
 
-#include <algorithm>
-
 namespace wlx::runtime::layout {
 
 using namespace wlx::runtime::parser;
@@ -50,10 +48,8 @@ InlineLayoutResult build_inline_layout(
         }
     }
 
-    if (full_text.empty()) {
-        result.full_text = full_text;
-        return result;
-    }
+    if (full_text.empty())
+        return result;  // result.full_text is already empty-initialized
 
     // Create text layout from caller-supplied format
     Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
