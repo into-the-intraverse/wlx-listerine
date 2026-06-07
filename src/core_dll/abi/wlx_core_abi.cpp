@@ -40,13 +40,15 @@ wlx_core_colorize(WlxCore* h,
                   const char* source, uint32_t len,
                   const char* language,
                   int dark_mode,
+                  uint32_t range_start, uint32_t range_end,
                   WlxColorSpan** out_spans, uint32_t* out_count) {
     if (!h || !source || !language || !out_spans || !out_count) return -1;
     auto& reg = *reinterpret_cast<wlx::core::registry::CoreRegistry*>(h);
 
     // View the caller's buffer directly — colorize() is synchronous and reads
     // it only for the duration of this call, so no owning copy is needed.
-    auto result = reg.colorize(std::string_view(source, len), language, dark_mode != 0);
+    auto result = reg.colorize(std::string_view(source, len), language,
+                               dark_mode != 0, range_start, range_end);
 
     if (result.spans.empty()) {
         *out_spans = nullptr;

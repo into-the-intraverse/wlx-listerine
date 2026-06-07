@@ -51,7 +51,7 @@ TEST_CASE("colorize round-trips a tiny C source"
     WlxColorSpan* spans = nullptr;
     uint32_t count = 0;
     int rc = wlx_core_colorize(core, src, (uint32_t)strlen(src),
-                               "c", /*dark=*/1, &spans, &count);
+                               "c", /*dark=*/1, 0, 0, &spans, &count);
     CHECK(rc == 0);
     CHECK(count > 0);
     CHECK(spans != nullptr);
@@ -59,8 +59,8 @@ TEST_CASE("colorize round-trips a tiny C source"
     wlx_core_release(core);
 }
 
-TEST_CASE("ABI version is 3") {
-    CHECK(wlx_core_abi_version() == 3);
+TEST_CASE("ABI version is 4") {
+    CHECK(wlx_core_abi_version() == 4);
 }
 
 TEST_CASE("wlx_core_prewarm is a safe no-op on null args") {
@@ -79,7 +79,7 @@ TEST_CASE("wlx_core_prewarm warms a grammar so a later colorize succeeds"
     WlxColorSpan* spans = nullptr;
     uint32_t count = 0;
     CHECK(wlx_core_colorize(core, src, (uint32_t)strlen(src),
-                            "c", /*dark=*/1, &spans, &count) == 0);
+                            "c", /*dark=*/1, 0, 0, &spans, &count) == 0);
     CHECK(count > 0);
     wlx_core_free_spans(spans);
     wlx_core_release(core);

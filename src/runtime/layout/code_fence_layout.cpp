@@ -57,6 +57,7 @@ CodeFenceLayoutResult build_code_fence_layout(
             if (wlx_core_colorize(in.core, utf8_source.c_str(),
                                   static_cast<uint32_t>(utf8_source.size()),
                                   lang.c_str(), in.dark_mode ? 1 : 0,
+                                  0, 0,
                                   &spans, &count) == 0 && count > 0) {
                 cr.spans.reserve(count);
                 for (uint32_t i = 0; i < count; ++i) {

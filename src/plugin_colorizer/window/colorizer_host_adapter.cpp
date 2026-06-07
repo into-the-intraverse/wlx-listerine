@@ -383,6 +383,7 @@ static void load_document(ColorViewState* vs, const wchar_t* path) {
                               static_cast<uint32_t>(vs->cached_raw_utf8.size()),
                               language.c_str(),
                               vs->dark_mode ? 1 : 0,
+                              0, 0,
                               &spans, &count) == 0) {
             vs->cached_colors = abi_spans_to_result(spans, count);
         }
@@ -447,6 +448,7 @@ static void recolorize_with_force(ColorViewState* vs) {
                               static_cast<uint32_t>(vs->cached_raw_utf8.size()),
                               language.c_str(),
                               vs->dark_mode ? 1 : 0,
+                              0, 0,
                               &spans, &count) == 0) {
             vs->cached_colors = abi_spans_to_result(spans, count);
         }
@@ -1175,6 +1177,7 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
                                       static_cast<uint32_t>(vs->cached_raw_utf8.size()),
                                       language.c_str(),
                                       vs->dark_mode ? 1 : 0,
+                                      0, 0,
                                       &spans, &count) == 0) {
                     vs->cached_colors = abi_spans_to_result(spans, count);
                 }

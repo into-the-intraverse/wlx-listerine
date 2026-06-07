@@ -9,7 +9,7 @@
 #  define WLX_CORE_API __declspec(dllimport)
 #endif
 
-#define WLX_CORE_ABI_VERSION 3
+#define WLX_CORE_ABI_VERSION 4
 
 #ifdef __cplusplus
 extern "C" {
@@ -51,6 +51,7 @@ WLX_CORE_API int       wlx_core_colorize(WlxCore*,
                                          const char* source, uint32_t len,
                                          const char* language,
                                          int dark_mode,
+                                         uint32_t range_start, uint32_t range_end,
                                          WlxColorSpan** out_spans,
                                          uint32_t* out_count);
 WLX_CORE_API void      wlx_core_free_spans(WlxColorSpan*);
