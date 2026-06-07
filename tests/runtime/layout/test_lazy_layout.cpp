@@ -99,3 +99,23 @@ TEST_CASE("lazy layout keeps list/quote/table eager") {
         }
     }
 }
+
+TEST_CASE("apply_height_delta translates only later blocks and total_height") {
+    LayoutDocument doc;
+    LayoutBlock a; a.rect = D2D1::RectF(0, 0, 100, 20);   a.text_runs.push_back({}); a.text_runs[0].rect = a.rect;
+    LayoutBlock b; b.rect = D2D1::RectF(0, 20, 100, 40);  b.text_runs.push_back({}); b.text_runs[0].rect = b.rect;
+    LayoutBlock c; c.rect = D2D1::RectF(0, 40, 100, 60);  c.text_runs.push_back({}); c.text_runs[0].rect = c.rect;
+    doc.blocks = {a, b, c};
+    doc.total_height = 60;
+    doc.anchors.push_back({L"x", 40.0f, 2});   // anchor owned by block c (index 2)
+
+    // Block 0 grew by +10 (its own bottom already updated by the materializer).
+    doc.blocks[0].rect.bottom = 30;
+    apply_height_delta(doc, 0, 10.0f);
+
+    CHECK(doc.blocks[1].rect.top == doctest::Approx(30));   // 20 + 10
+    CHECK(doc.blocks[2].rect.top == doctest::Approx(50));   // 40 + 10
+    CHECK(doc.blocks[0].rect.top == doctest::Approx(0));    // unchanged
+    CHECK(doc.total_height == doctest::Approx(70));
+    CHECK(doc.anchors[0].y_offset == doctest::Approx(50));  // block c moved down 10
+}
