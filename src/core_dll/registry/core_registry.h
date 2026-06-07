@@ -33,6 +33,17 @@ public:
                                        bool dark_mode,
                                        uint32_t range_start = 0,
                                        uint32_t range_end   = 0);
+
+    // Cached-tree path: parse once, then highlight viewport byte-ranges against
+    // the cached tree without re-parsing. WlxTree is the global opaque handle
+    // defined in colorizer.h (named by abi.h's typedef). All three take the
+    // registry mutex for their whole body, like colorize().
+    WlxTree* parse_tree(std::string_view source, const std::string& language);
+    colorizer::ColorizeResult highlight_tree_range(WlxTree* t, bool dark_mode,
+                                                   uint32_t range_start,
+                                                   uint32_t range_end);
+    void free_tree(WlxTree* t);
+
     bool supports(const std::string& language);
     // Force the cold grammar load + query compile for `language` to happen now
     // (under the registry mutex) so a later colorize() of it is warm.

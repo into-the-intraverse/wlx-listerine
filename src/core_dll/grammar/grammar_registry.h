@@ -30,6 +30,11 @@ public:
     const TSQuery*    get_query(const std::string& language);
     TSTree*           parse(const std::string& language, std::string_view source);
 
+    // Pin/unpin a grammar so eviction never frees its TSLanguage while a cached
+    // tree references it (see GrammarCache::pin/unpin). Must be balanced.
+    void pin(const std::string& language)   { cache_.pin(language); }
+    void unpin(const std::string& language) { cache_.unpin(language); }
+
 private:
     void scan_directory(const std::wstring& grammar_dir);
 

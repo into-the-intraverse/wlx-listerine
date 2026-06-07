@@ -59,6 +59,35 @@ void Colorizer::prewarm(const std::string& language) {
         grammar_registry_->get_query(language);
 }
 
+WlxTree* Colorizer::parse_tree(std::string_view source, const std::string& language) {
+    if (!grammar_registry_->get_grammar(language)) return nullptr;  // unknown/failed load
+    std::string copy(source);
+    TSTree* tree = grammar_registry_->parse(language, copy);        // parse the OWNED copy
+    if (!tree) return nullptr;                                      // no pin on failure
+    grammar_registry_->pin(language);                              // keep TSLanguage alive
+    return new WlxTree{tree, language, std::move(copy)};
+}
+
+ColorizeResult Colorizer::highlight_tree_range(WlxTree* t, bool dark_mode,
+                                               uint32_t range_start, uint32_t range_end) {
+    ColorizeResult result;
+    if (!t || !t->tree) return result;
+    const TSQuery* query = grammar_registry_->get_query(t->language); // grammar pinned => loaded
+    if (!query) return result;
+    const auto& th = theme(dark_mode);
+    uint32_t default_color = dark_mode ? 0xD4D4D4 : 0x1F2328;        // match colorize()'s default
+    result.spans = QueryHighlighter::highlight(
+        t->tree, query, th, t->source_copy, default_color, range_start, range_end);
+    return result;
+}
+
+void Colorizer::free_tree(WlxTree* t) {
+    if (!t) return;
+    if (t->tree) ts_tree_delete(t->tree);
+    grammar_registry_->unpin(t->language);
+    delete t;
+}
+
 std::vector<std::string> Colorizer::available_languages() const {
     return grammar_registry_->available_languages();
 }

@@ -59,8 +59,96 @@ TEST_CASE("colorize round-trips a tiny C source"
     wlx_core_release(core);
 }
 
-TEST_CASE("ABI version is 4") {
-    CHECK(wlx_core_abi_version() == 4);
+TEST_CASE("ABI version is 5") {
+    CHECK(wlx_core_abi_version() == 5);
+}
+
+TEST_CASE("wlx_core_parse returns a non-null tree for valid C source"
+    * doctest::skip(!has_grammars())) {
+    auto* core = wlx_core_acquire();
+    const char* src = "int main(){return 0;}";
+    WlxTree* t = wlx_core_parse(core, src, (uint32_t)strlen(src), "c");
+    CHECK(t != nullptr);
+    wlx_core_free_tree(core, t);
+    wlx_core_release(core);
+}
+
+TEST_CASE("wlx_core_highlight_range full-range equals wlx_core_colorize byte-for-byte"
+    * doctest::skip(!has_grammars())) {
+    auto* core = wlx_core_acquire();
+    const char* src = "int main(){return 0;}";
+    uint32_t len = (uint32_t)strlen(src);
+    for (int dark = 0; dark <= 1; ++dark) {
+        WlxTree* t = wlx_core_parse(core, src, len, "c");
+        REQUIRE(t != nullptr);
+
+        WlxColorSpan* a = nullptr; uint32_t na = 0;
+        CHECK(wlx_core_highlight_range(core, t, dark, 0, 0, &a, &na) == 0);
+
+        WlxColorSpan* b = nullptr; uint32_t nb = 0;
+        CHECK(wlx_core_colorize(core, src, len, "c", dark, 0, 0, &b, &nb) == 0);
+
+        REQUIRE(na == nb);
+        for (uint32_t i = 0; i < na; ++i) {
+            CHECK(a[i].start     == b[i].start);
+            CHECK(a[i].length    == b[i].length);
+            CHECK(a[i].color     == b[i].color);
+            CHECK(a[i].bg_color  == b[i].bg_color);
+            CHECK(a[i].has_bg    == b[i].has_bg);
+            CHECK(a[i].modifiers == b[i].modifiers);
+        }
+
+        wlx_core_free_spans(a);
+        wlx_core_free_spans(b);
+        wlx_core_free_tree(core, t);
+    }
+    wlx_core_release(core);
+}
+
+TEST_CASE("wlx_core_highlight_range sub-range yields a subset of full spans"
+    * doctest::skip(!has_grammars())) {
+    auto* core = wlx_core_acquire();
+    const char* src = "int main(){return 0;}";
+    uint32_t len = (uint32_t)strlen(src);
+    WlxTree* t = wlx_core_parse(core, src, len, "c");
+    REQUIRE(t != nullptr);
+
+    WlxColorSpan* full = nullptr; uint32_t nfull = 0;
+    CHECK(wlx_core_highlight_range(core, t, 1, 0, 0, &full, &nfull) == 0);
+
+    const uint32_t S = 4, E = 11;  // a window over "main(){"
+    WlxColorSpan* sub = nullptr; uint32_t nsub = 0;
+    CHECK(wlx_core_highlight_range(core, t, 1, S, E, &sub, &nsub) == 0);
+
+    CHECK(nsub <= nfull);
+    for (uint32_t i = 0; i < nsub; ++i) {
+        CHECK(sub[i].start >= S);
+        CHECK(sub[i].start < E);
+    }
+
+    wlx_core_free_spans(full);
+    wlx_core_free_spans(sub);
+    wlx_core_free_tree(core, t);
+    wlx_core_release(core);
+}
+
+TEST_CASE("wlx_core_free_tree is a safe no-op on a null tree") {
+    WlxCore* core = wlx_core_acquire();
+    wlx_core_free_tree(core, nullptr);  // must not crash
+    wlx_core_free_tree(nullptr, nullptr);  // null core too
+    wlx_core_release(core);
+}
+
+TEST_CASE("wlx_core_parse / wlx_core_highlight_range reject bad args") {
+    WlxCore* core = wlx_core_acquire();
+    CHECK(wlx_core_parse(nullptr, "x", 1, "c") == nullptr);
+    CHECK(wlx_core_parse(core, nullptr, 0, "c") == nullptr);
+    CHECK(wlx_core_parse(core, "x", 1, nullptr) == nullptr);
+
+    WlxColorSpan* sp = nullptr; uint32_t n = 0;
+    CHECK(wlx_core_highlight_range(nullptr, nullptr, 1, 0, 0, &sp, &n) < 0);
+    CHECK(wlx_core_highlight_range(core, nullptr, 1, 0, 0, &sp, &n) < 0);
+    wlx_core_release(core);
 }
 
 TEST_CASE("wlx_core_prewarm is a safe no-op on null args") {

@@ -5,6 +5,7 @@
 #include "core_dll/theme/helix_theme.h"
 #include "wlx_core/abi.h"
 
+#include <tree_sitter/api.h>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -12,6 +13,17 @@
 #include <vector>
 
 namespace wlx::core::grammar { class GrammarRegistry; }
+
+// Opaque cached parse tree handed across the C ABI (see wlx_core/abi.h's
+// `typedef struct WlxTree WlxTree;`). Defined at global scope so it is the same
+// `::WlxTree` the ABI typedef names. Core-only: plugins never see the layout.
+// Owns `source_copy` because highlighting RE-READS the source text (capture_text
+// / predicate evaluation), so the tree must outlive any caller buffer.
+struct WlxTree {
+    TSTree* tree = nullptr;
+    std::string language;
+    std::string source_copy;
+};
 
 namespace wlx::core::colorizer {
 
@@ -58,6 +70,18 @@ public:
                             uint32_t range_end   = 0);
 
     bool supports(const std::string& language) const;
+
+    // Parse `source` once; returns an owned WlxTree (caller frees via free_tree).
+    // Pins the grammar so the tree's TSLanguage stays valid until free_tree.
+    // Returns nullptr on unknown language / parse failure (no pin leaked).
+    WlxTree* parse_tree(std::string_view source, const std::string& language);
+
+    // Highlight [range_start,range_end) (0,0 => whole doc) against a parsed tree.
+    ColorizeResult highlight_tree_range(WlxTree* t, bool dark_mode,
+                                        uint32_t range_start, uint32_t range_end);
+
+    // Delete the tree and unpin its grammar. Safe on nullptr.
+    void free_tree(WlxTree* t);
 
     // Force the cold grammar DLL load + query compile for `language` so a later
     // colorize() of it hits the warm cache. Cheap no-op if already loaded.

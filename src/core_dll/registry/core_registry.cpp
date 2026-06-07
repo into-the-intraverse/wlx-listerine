@@ -57,6 +57,25 @@ ColorizeResult CoreRegistry::colorize(std::string_view source,
     return colorizer_->colorize(source, language, dark_mode, range_start, range_end);
 }
 
+WlxTree* CoreRegistry::parse_tree(std::string_view source,
+                                  const std::string& language) {
+    std::lock_guard<std::mutex> lk(mu_);
+    return colorizer_ ? colorizer_->parse_tree(source, language) : nullptr;
+}
+
+ColorizeResult CoreRegistry::highlight_tree_range(WlxTree* t, bool dark_mode,
+                                                  uint32_t range_start,
+                                                  uint32_t range_end) {
+    std::lock_guard<std::mutex> lk(mu_);
+    if (!colorizer_) return {};
+    return colorizer_->highlight_tree_range(t, dark_mode, range_start, range_end);
+}
+
+void CoreRegistry::free_tree(WlxTree* t) {
+    std::lock_guard<std::mutex> lk(mu_);
+    if (colorizer_) colorizer_->free_tree(t);
+}
+
 bool CoreRegistry::supports(const std::string& language) {
     std::lock_guard<std::mutex> lk(mu_);
     return colorizer_ && colorizer_->supports(language);

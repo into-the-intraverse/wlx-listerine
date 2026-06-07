@@ -9,7 +9,7 @@
 #  define WLX_CORE_API __declspec(dllimport)
 #endif
 
-#define WLX_CORE_ABI_VERSION 4
+#define WLX_CORE_ABI_VERSION 5
 
 #ifdef __cplusplus
 extern "C" {
@@ -56,6 +56,22 @@ WLX_CORE_API int       wlx_core_colorize(WlxCore*,
                                          uint32_t* out_count);
 WLX_CORE_API void      wlx_core_free_spans(WlxColorSpan*);
 
+typedef struct WlxTree WlxTree;  // opaque; defined inside the core
+
+// Parse `source` once and cache the tree; pins the grammar so the tree's
+// TSLanguage stays valid until wlx_core_free_tree. NULL on bad args / unknown
+// language / parse failure.
+WLX_CORE_API WlxTree* wlx_core_parse(WlxCore*, const char* source, uint32_t len,
+                                     const char* language);
+// Highlight [range_start,range_end) against a parsed tree (range_end<=range_start
+// => whole doc). Spans are heap-owned (free with wlx_core_free_spans). Returns
+// 0 on success, negative on bad args.
+WLX_CORE_API int wlx_core_highlight_range(WlxCore*, WlxTree*, int dark_mode,
+                                          uint32_t range_start, uint32_t range_end,
+                                          WlxColorSpan** out_spans, uint32_t* out_count);
+// Delete the tree and unpin its grammar. Safe on NULL tree.
+WLX_CORE_API void wlx_core_free_tree(WlxCore*, WlxTree*);
+
 WLX_CORE_API int       wlx_core_theme_color(WlxCore*,
                                             const char* scope,
                                             int dark_mode,
@@ -95,6 +111,15 @@ namespace wlx_core {
         void operator()(WlxColorSpan* p) const noexcept { wlx_core_free_spans(p); }
     };
     using SpansPtr = std::unique_ptr<WlxColorSpan, SpanDeleter>;
+
+    // RAII wrapper for a cached parse tree. The deleter routes through the C ABI
+    // free function (not `delete`), so unique_ptr over the incomplete WlxTree is
+    // valid. NOTE: the deleter needs the core handle the tree was parsed with.
+    struct TreeDeleter {
+        WlxCore* core = nullptr;
+        void operator()(WlxTree* t) const noexcept { if (core) wlx_core_free_tree(core, t); }
+    };
+    using TreePtr = std::unique_ptr<WlxTree, TreeDeleter>;
 
     // Acquire the core handle, verifying the ABI version matches what this
     // plugin was compiled against. Returns nullptr on version mismatch
