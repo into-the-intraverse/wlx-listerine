@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 #include "runtime/layout/inline_layout.h"
+#include "runtime/layout/code_fence_layout.h"
 #include "runtime/parser/markdown_parser.h"
 #include "runtime/theme/theme_service.h"
 
@@ -17,8 +18,6 @@ static ComPtr<IDWriteFactory> dwf() {
                         reinterpret_cast<IUnknown**>(f.GetAddressOf()));
     return f;
 }
-
-#include "runtime/layout/code_fence_layout.h"
 
 TEST_CASE("build_code_fence_layout measures a fenced block") {
     auto factory = dwf();

@@ -412,7 +412,6 @@ void LayoutEngine::layout_code_fence(const BlockNode& node, float& y, float left
 
     CodeFenceInput in;
     in.code_text = code_text;
-    in.code_language.clear();
     for (wchar_t wc : node.code_language) in.code_language += static_cast<char>(wc);
     in.default_language = theme_.config().code_default_language;
     in.max_width = right - left - padding * 2;
