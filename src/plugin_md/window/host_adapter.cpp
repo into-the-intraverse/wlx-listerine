@@ -232,7 +232,7 @@ static void do_layout(ViewState* vs) {
             gutter_w = gutter_for(real);
             layout = std::make_shared<LayoutDocument>(
                 engine.layout(*vs->document, viewport_width, vs->wrap_text, gutter_w, lazy));
-            if (auto ctx = engine.take_md_ctx())   // eager when line_numbers on -> null, skipped
+            if (auto ctx = engine.take_md_ctx())   // gutter-resize pass is lazy too -> required
                 ctx->document = vs->document;
             wlx::runtime::layout::build_line_index(*layout);
         }
@@ -251,9 +251,10 @@ static void do_layout(ViewState* vs) {
 // translate all later blocks down by the delta. For eager (non-lazy) layouts
 // (materialize_block == null) this is a no-op. Call before each paint.
 //
-// v1 limitation: in lazy mode the line_tops index is approximate (one entry per
-// block until materialized), so goto-line lands approximately and is refined as
-// the target scrolls into view. Line numbers force eager layout (see do_layout).
+// In lazy mode the line_tops COUNT is exact (build_line_index counts hard breaks
+// from run.text), so gutter numbers are correct and stable; only off-screen line
+// POSITIONS are estimated and refine as blocks materialize — so goto-line to an
+// as-yet-unmaterialized target lands at an estimated Y and snaps exact on arrival.
 static void materialize_viewport(ViewState* vs) {
     if (!vs->layout || !vs->layout->materialize_block) return;  // eager doc: nothing to do
     auto& doc = *vs->layout;
@@ -278,7 +279,10 @@ static void materialize_viewport(ViewState* vs) {
 
     if (changed) {
         wlx::runtime::layout::build_line_index(doc);
-        for (auto& a : doc.anchors)               // re-derive exact anchor Y from corrected tops
+        // Re-derive anchor Y absolutely from corrected block tops. This supersedes
+        // apply_height_delta's incremental anchor shifts and also fixes an owning
+        // heading's own anchor (block_index == i), which apply_height_delta skips.
+        for (auto& a : doc.anchors)
             if (a.block_index >= 0 && a.block_index < static_cast<int>(doc.blocks.size()))
                 a.y_offset = doc.blocks[a.block_index].rect.top;
         update_scrollbar(vs);                     // total_height changed -> max_scroll_y, clamp
