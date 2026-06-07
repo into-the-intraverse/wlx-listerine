@@ -9,8 +9,10 @@ float estimate_inline_height(int char_count, float avg_advance,
                              float max_width, float line_height) {
     if (max_width <= 1.0f) return line_height;
     float est_width = static_cast<float>(std::max(0, char_count)) * avg_advance;
-    int lines = std::max(1, static_cast<int>(std::ceil(est_width / max_width)));
-    return static_cast<float>(lines) * line_height;
+    // Stay in float: casting a ceil() that exceeds INT_MAX to int is UB. A real
+    // paragraph never approaches that, but keeping it in float removes the hazard.
+    float lines = std::max(1.0f, std::ceil(est_width / max_width));
+    return lines * line_height;
 }
 
 float estimate_code_fence_height(int line_count, float code_line_height, float padding) {
