@@ -49,6 +49,7 @@
 #include "runtime/host/scroll_handler.h"
 #include "runtime/host/selection_helpers.h"
 #include "runtime/layout/line_index.h"
+#include "runtime/layout/md_materialize.h"
 #include "runtime/host/goto_line.h"
 #include "runtime/host/view_actions.h"
 #include "runtime/host/link_actions.h"
@@ -172,6 +173,16 @@ static void do_layout(ViewState* vs) {
     float viewport_width = vs->renderer ? vs->renderer->dip_width() : 1.0f;
     const bool line_numbers = g_theme.config().line_numbers;
 
+    // Lazy layout opt-in: build skeleton blocks (estimated rects, deferred
+    // IDWriteTextLayouts) and materialize the visible window on demand in
+    // WM_PAINT. This is only safe when line numbers are OFF — lazy mode makes
+    // line_tops approximate (one entry per block until materialized), which is
+    // fine for scroll math but would mis-render the per-line gutter. With line
+    // numbers ON we stay EAGER (exact numbering, slower full layout up front).
+    // Consequence in lazy mode: goto-line (Ctrl+G) lands approximately and is
+    // refined as the target scrolls into view and its block materializes.
+    const bool lazy = !line_numbers;
+
     // Layout cache: a full relayout (one IDWriteTextLayout per block, plus a
     // wlx_core_colorize per fenced code block) is skippable when the same file
     // is re-laid at the same width bucket/theme/dark/wrap/line-number state —
@@ -210,7 +221,9 @@ static void do_layout(ViewState* vs) {
     int est_lines = vs->source_line_count > 0 ? vs->source_line_count : 1;
     float gutter_w = gutter_for(est_lines);
     auto layout = std::make_shared<LayoutDocument>(
-        engine.layout(*vs->document, viewport_width, vs->wrap_text, gutter_w));
+        engine.layout(*vs->document, viewport_width, vs->wrap_text, gutter_w, lazy));
+    if (auto ctx = engine.take_md_ctx())   // lazy only; keeps recipe-pointed Document alive
+        ctx->document = vs->document;
     wlx::runtime::layout::build_line_index(*layout);
 
     if (line_numbers && !layout->line_tops.empty()) {
@@ -218,7 +231,9 @@ static void do_layout(ViewState* vs) {
         if (std::to_wstring(real).size() != std::to_wstring(std::max(1, est_lines)).size()) {
             gutter_w = gutter_for(real);
             layout = std::make_shared<LayoutDocument>(
-                engine.layout(*vs->document, viewport_width, vs->wrap_text, gutter_w));
+                engine.layout(*vs->document, viewport_width, vs->wrap_text, gutter_w, lazy));
+            if (auto ctx = engine.take_md_ctx())   // eager when line_numbers on -> null, skipped
+                ctx->document = vs->document;
             wlx::runtime::layout::build_line_index(*layout);
         }
     }
@@ -229,6 +244,45 @@ static void do_layout(ViewState* vs) {
 
     update_scrollbar(vs);
     vs->index_dirty = true;
+}
+
+// Build the real IDWriteTextLayout for blocks in (or just below) the viewport and
+// reflow: when a materialized block's measured height differs from its estimate,
+// translate all later blocks down by the delta. For eager (non-lazy) layouts
+// (materialize_block == null) this is a no-op. Call before each paint.
+//
+// v1 limitation: in lazy mode the line_tops index is approximate (one entry per
+// block until materialized), so goto-line lands approximately and is refined as
+// the target scrolls into view. Line numbers force eager layout (see do_layout).
+static void materialize_viewport(ViewState* vs) {
+    if (!vs->layout || !vs->layout->materialize_block) return;  // eager doc: nothing to do
+    auto& doc = *vs->layout;
+    float vp_top = vs->scroll_y;
+    float vp_h = vs->renderer ? vs->renderer->dip_height() : 0.0f;
+    float vp_bottom = vp_top + vp_h * 2.0f;  // one screenful of overscan below
+
+    bool changed = false;
+    for (int i = 0; i < static_cast<int>(doc.blocks.size()); ++i) {
+        auto& b = doc.blocks[i];
+        if (b.rect.bottom < vp_top) continue;        // above viewport
+        if (b.rect.top > vp_bottom) break;           // below (blocks are Y-sorted by index)
+        if (b.text_runs.empty() || b.text_runs[0].layout) continue;  // eager/already materialized
+        float old_bottom = b.rect.bottom;
+        doc.materialize_block(b, i);
+        float delta = b.rect.bottom - old_bottom;
+        if (delta != 0.0f) {
+            wlx::runtime::layout::apply_height_delta(doc, i, delta);
+            changed = true;
+        }
+    }
+
+    if (changed) {
+        wlx::runtime::layout::build_line_index(doc);
+        for (auto& a : doc.anchors)               // re-derive exact anchor Y from corrected tops
+            if (a.block_index >= 0 && a.block_index < static_cast<int>(doc.blocks.size()))
+                a.y_offset = doc.blocks[a.block_index].rect.top;
+        update_scrollbar(vs);                     // total_height changed -> max_scroll_y, clamp
+    }
 }
 
 static void load_document(ViewState* vs, const wchar_t* path) {
@@ -356,6 +410,7 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (vs && vs->renderer && vs->layout) {
             if (vs->renderer->needs_recreate())
                 vs->renderer->create_device_resources(hwnd);
+            materialize_viewport(vs);     // build visible block layouts + reflow (lazy only)
             vs->renderer->set_hovered_code_block(vs->hovered_code_block);
             vs->renderer->set_copied_code_block(vs->copied_code_block);
             auto sel_lo = std::min(vs->sel_anchor, vs->sel_active);
