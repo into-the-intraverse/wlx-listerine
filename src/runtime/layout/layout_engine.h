@@ -2,6 +2,7 @@
 
 #include "runtime/layout/code_bg_rect.h"
 #include "runtime/layout/color_range.h"
+#include "runtime/layout/inline_layout.h"
 #include "runtime/layout/interactive_span.h"
 #include "runtime/layout/layout_document.h"
 #include "runtime/parser/document.h"
@@ -29,6 +30,11 @@ public:
 private:
     void layout_blocks(const std::vector<parser::BlockNode>& blocks, float& y,
                        float left, float right, int list_depth);
+    // Lay out a single block by type. Extracted from layout_blocks so callers
+    // (e.g. layout_blockquote) can dispatch one child without wrapping it in a
+    // temporary vector (which would deep-copy the whole subtree).
+    void layout_block_dispatch(const parser::BlockNode& block, float& y,
+                               float left, float right, int list_depth);
 
     void layout_heading(const parser::BlockNode& node, float& y, float left, float right);
     void layout_paragraph(const parser::BlockNode& node, float& y, float left, float right);
@@ -41,15 +47,7 @@ private:
     void layout_table(const parser::BlockNode& node, float& y, float left, float right);
 
     // Create a text layout from inline nodes, collecting interactive spans
-    struct TextLayoutResult {
-        ComPtr<IDWriteTextLayout> layout;
-        std::wstring full_text;
-        std::vector<InteractiveSpan> spans;
-        std::vector<ColorRange> color_ranges;
-        std::vector<CodeBgRect> code_bg_rects;
-        float width = 0;
-        float height = 0;
-    };
+    using TextLayoutResult = InlineLayoutResult;
 
     TextLayoutResult create_text_layout(const std::vector<parser::InlineNode>& inlines,
                                         float max_width, uint32_t default_color,

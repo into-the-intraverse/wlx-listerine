@@ -10,6 +10,7 @@ add_executable(tests
     runtime/cache/test_cache_service.cpp
     runtime/layout/test_layout_engine.cpp
     runtime/layout/test_line_index.cpp
+    runtime/layout/test_inline_layout.cpp
     runtime/interaction/test_interaction_engine.cpp
     runtime/interaction/test_text_selection.cpp
     runtime/interaction/test_url_scanner.cpp

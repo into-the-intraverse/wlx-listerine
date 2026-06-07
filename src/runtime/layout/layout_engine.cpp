@@ -80,20 +80,21 @@ ComPtr<IDWriteTextFormat> LayoutEngine::get_code_format(float size) {
 // ---------- slugify ----------
 
 std::wstring LayoutEngine::slugify(const std::vector<InlineNode>& inlines) {
-    std::wstring text;
-    for (auto& n : inlines) {
-        if (n.type == InlineType::SoftBreak || n.type == InlineType::HardBreak)
-            text += L' ';
-        else
-            text += n.text;
-    }
-
+    // Filter characters straight into the slug — same per-character mapping the
+    // old two-pass version applied (break -> space -> '-'), without the
+    // intermediate concatenated `text` wstring.
     std::wstring slug;
-    for (wchar_t c : text) {
+    auto emit = [&](wchar_t c) {
         if (c == L' ' || c == L'\t')
             slug += L'-';
         else if (iswalnum(c) || c == L'-' || c == L'_')
             slug += static_cast<wchar_t>(towlower(c));
+    };
+    for (auto& n : inlines) {
+        if (n.type == InlineType::SoftBreak || n.type == InlineType::HardBreak)
+            emit(L' ');
+        else
+            for (wchar_t c : n.text) emit(c);
     }
 
     // Remove leading/trailing hyphens
@@ -108,123 +109,9 @@ std::wstring LayoutEngine::slugify(const std::vector<InlineNode>& inlines) {
 LayoutEngine::TextLayoutResult LayoutEngine::create_text_layout(
     const std::vector<InlineNode>& inlines, float max_width, uint32_t default_color,
     IDWriteTextFormat* format, bool force_bold) {
-
-    TextLayoutResult result;
-
-    // Concatenate all inline text
-    std::wstring full_text;
-    struct InlineRange {
-        size_t start;
-        size_t length;
-        const InlineNode* node;
-    };
-    std::vector<InlineRange> ranges;
-
-    for (auto& n : inlines) {
-        if (n.type == InlineType::SoftBreak) {
-            size_t start = full_text.size();
-            full_text += L' ';
-            ranges.push_back({start, 1, &n});
-        } else if (n.type == InlineType::HardBreak) {
-            size_t start = full_text.size();
-            full_text += L'\n';
-            ranges.push_back({start, 1, &n});
-        } else {
-            size_t start = full_text.size();
-            full_text += n.text;
-            if (!n.text.empty())
-                ranges.push_back({start, n.text.size(), &n});
-        }
-    }
-
-    if (full_text.empty()) {
-        result.full_text = full_text;
-        return result;
-    }
-
-    result.full_text = full_text;
-
-    // Create text layout from body format (or caller-supplied format)
     IDWriteTextFormat* fmt = format ? format : body_format_.Get();
-    ComPtr<IDWriteTextLayout> layout;
-    HRESULT hr = dwrite_->CreateTextLayout(
-        full_text.c_str(), static_cast<UINT32>(full_text.size()),
-        fmt, max_width, 100000.0f,
-        layout.GetAddressOf());
-
-    if (FAILED(hr) || !layout) return result;
-
-    // Apply per-range formatting
-    for (auto& r : ranges) {
-        DWRITE_TEXT_RANGE drange = {static_cast<UINT32>(r.start), static_cast<UINT32>(r.length)};
-
-        if (r.node->bold)
-            layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, drange);
-        if (r.node->italic)
-            layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, drange);
-        if (r.node->strikethrough)
-            layout->SetStrikethrough(TRUE, drange);
-        if (r.node->code) {
-            layout->SetFontFamilyName(fonts_.code_family.c_str(), drange);
-            layout->SetFontSize(fonts_.code_size, drange);
-        }
-        if (r.node->link.has_value()) {
-            layout->SetUnderline(TRUE, drange);
-            result.color_ranges.push_back({drange.startPosition, drange.length, colors_.link});
-        }
-    }
-
-    // Headings bold the whole run. Apply it BEFORE measuring and hit-testing so
-    // span/code-background rects land on the final (bold) glyph positions —
-    // otherwise bold widens the preceding text and the rects end up shifted left
-    // of the code.
-    if (force_bold) {
-        DWRITE_TEXT_RANGE all = {0, static_cast<UINT32>(full_text.size())};
-        layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, all);
-    }
-
-    // Measure
-    DWRITE_TEXT_METRICS metrics;
-    layout->GetMetrics(&metrics);
-    result.layout = layout;
-    result.width = metrics.width;
-    result.height = metrics.height;
-
-    // Collect interactive spans for links and background rects for inline code
-    for (auto& r : ranges) {
-        bool is_link = r.node->link.has_value();
-        bool is_code = r.node->code;
-        if (!is_link && !is_code) continue;
-
-        UINT32 hit_count = 0;
-        layout->HitTestTextRange(
-            static_cast<UINT32>(r.start), static_cast<UINT32>(r.length),
-            0, 0, nullptr, 0, &hit_count);
-
-        if (hit_count > 0) {
-            std::vector<DWRITE_HIT_TEST_METRICS> hits(hit_count);
-            layout->HitTestTextRange(
-                static_cast<UINT32>(r.start), static_cast<UINT32>(r.length),
-                0, 0, hits.data(), hit_count, &hit_count);
-
-            for (auto& h : hits) {
-                if (is_link) {
-                    InteractiveSpan span;
-                    span.target = *r.node->link;
-                    span.rect = D2D1::RectF(h.left, h.top, h.left + h.width, h.top + h.height);
-                    result.spans.push_back(std::move(span));
-                }
-                if (is_code) {
-                    float pad = 2.0f;
-                    CodeBgRect bg;
-                    bg.rect = D2D1::RectF(h.left - pad, h.top, h.left + h.width + pad, h.top + h.height);
-                    result.code_bg_rects.push_back(bg);
-                }
-            }
-        }
-    }
-
-    return result;
+    return build_inline_layout(dwrite_, inlines, max_width, default_color, fmt,
+                               force_bold, fonts_, colors_);
 }
 
 // ---------- layout entry point ----------
@@ -247,40 +134,40 @@ LayoutDocument LayoutEngine::layout(const Document& doc, float viewport_width, b
     return std::move(result_);
 }
 
+void LayoutEngine::layout_block_dispatch(const BlockNode& block, float& y,
+                                          float left, float right, int list_depth) {
+    switch (block.type) {
+    case BlockType::Heading:
+        layout_heading(block, y, left, right);
+        break;
+    case BlockType::Paragraph:
+        layout_paragraph(block, y, left, right);
+        break;
+    case BlockType::List:
+        layout_list(block, y, left, right, list_depth);
+        break;
+    case BlockType::BlockQuote:
+        layout_blockquote(block, y, left, right);
+        break;
+    case BlockType::HorizontalRule:
+        layout_hr(y, left, right);
+        break;
+    case BlockType::CodeFence:
+        layout_code_fence(block, y, left, right);
+        break;
+    case BlockType::Table:
+        layout_table(block, y, left, right);
+        break;
+    default:
+        // ListItem, TaskList, TableRow, TableCell handled by parent
+        break;
+    }
+}
+
 void LayoutEngine::layout_blocks(const std::vector<BlockNode>& blocks, float& y,
                                   float left, float right, int list_depth) {
-    int ordered_counter = 1;
-    bool in_list = false;
-    bool list_ordered = false;
-
-    for (auto& block : blocks) {
-        switch (block.type) {
-        case BlockType::Heading:
-            layout_heading(block, y, left, right);
-            break;
-        case BlockType::Paragraph:
-            layout_paragraph(block, y, left, right);
-            break;
-        case BlockType::List:
-            layout_list(block, y, left, right, list_depth);
-            break;
-        case BlockType::BlockQuote:
-            layout_blockquote(block, y, left, right);
-            break;
-        case BlockType::HorizontalRule:
-            layout_hr(y, left, right);
-            break;
-        case BlockType::CodeFence:
-            layout_code_fence(block, y, left, right);
-            break;
-        case BlockType::Table:
-            layout_table(block, y, left, right);
-            break;
-        default:
-            // ListItem, TaskList, TableRow, TableCell handled by parent
-            break;
-        }
-    }
+    for (auto& block : blocks)
+        layout_block_dispatch(block, y, left, right, list_depth);
 }
 
 // ---------- heading ----------
@@ -308,7 +195,7 @@ void LayoutEngine::layout_heading(const BlockNode& node, float& y, float left, f
     lb.rect = D2D1::RectF(left, y, right, y + tlr.height);
 
     TextRun run;
-    run.text = tlr.full_text;
+    run.text = std::move(tlr.full_text);
     run.rect = lb.rect;
     run.layout = tlr.layout;
     run.color = colors_.heading;
@@ -353,7 +240,7 @@ void LayoutEngine::layout_paragraph(const BlockNode& node, float& y, float left,
     lb.rect = D2D1::RectF(left, y, right, y + tlr.height);
 
     TextRun run;
-    run.text = tlr.full_text;
+    run.text = std::move(tlr.full_text);
     run.rect = lb.rect;
     run.layout = tlr.layout;
     run.color = colors_.text;
@@ -433,7 +320,7 @@ void LayoutEngine::layout_list_item(const BlockNode& node, float& y, float left,
 
     if (tlr.layout) {
         TextRun run;
-        run.text = tlr.full_text;
+        run.text = std::move(tlr.full_text);
         run.rect = D2D1::RectF(indent, y, right, y + tlr.height);
         run.layout = tlr.layout;
         run.color = colors_.text;
@@ -481,7 +368,7 @@ void LayoutEngine::layout_blockquote(const BlockNode& node, float& y, float left
             layout_blockquote(child, y, quote_left, right);
             break;
         default:
-            layout_blocks({child}, y, quote_left, right, 0);
+            layout_block_dispatch(child, y, quote_left, right, 0);
             break;
         }
     }
@@ -551,6 +438,7 @@ void LayoutEngine::layout_code_fence(const BlockNode& node, float& y, float left
         if (!lang.empty() && wlx_core_supports(core_, lang.c_str()) == 1) {
             // Convert wstring to UTF-8
             std::string utf8_source;
+            utf8_source.reserve(code_text.size() * 3);  // upper bound: <=3 bytes/wchar here
             for (wchar_t wc : code_text) {
                 if (wc < 0x80) {
                     utf8_source += static_cast<char>(wc);
@@ -585,6 +473,7 @@ void LayoutEngine::layout_code_fence(const BlockNode& node, float& y, float left
 
             // Build wchar offset lookup table (wchar index -> cumulative byte offset)
             std::vector<uint32_t> wchar_to_byte;
+            wchar_to_byte.reserve(code_text.size() + 1);  // one per wchar + sentinel
             uint32_t byte_pos = 0;
             for (size_t i = 0; i < code_text.size(); i++) {
                 wchar_to_byte.push_back(byte_pos);
@@ -595,27 +484,20 @@ void LayoutEngine::layout_code_fence(const BlockNode& node, float& y, float left
             }
             wchar_to_byte.push_back(byte_pos);  // sentinel for end
 
-            // For each color span, find the wchar range
+            // For each color span, find the wchar range. wchar_to_byte is
+            // strictly increasing, so "first index whose byte offset >= target"
+            // is exactly std::lower_bound — O(log n) instead of the old O(n)
+            // scans (which were O(spans * chars) overall on big fences). The
+            // sentinel (== total bytes) guarantees a hit for any in-range span.
             for (auto& span : cr.spans) {
                 uint32_t span_end = span.start + span.length;
 
-                // Find wchar start
-                uint32_t wstart = 0;
-                for (uint32_t i = 0; i < wchar_to_byte.size(); i++) {
-                    if (wchar_to_byte[i] >= span.start) {
-                        wstart = i;
-                        break;
-                    }
-                }
-
-                // Find wchar end
-                uint32_t wend = wstart;
-                for (uint32_t i = wstart; i < wchar_to_byte.size(); i++) {
-                    if (wchar_to_byte[i] >= span_end) {
-                        wend = i;
-                        break;
-                    }
-                }
+                const auto begin = wchar_to_byte.begin();
+                const auto end = wchar_to_byte.end();
+                uint32_t wstart = static_cast<uint32_t>(
+                    std::lower_bound(begin, end, span.start) - begin);
+                uint32_t wend = static_cast<uint32_t>(
+                    std::lower_bound(begin + wstart, end, span_end) - begin);
 
                 if (wend > wstart) {
                     color_ranges.push_back({wstart, wend - wstart, span.color, 0, false, span.modifiers});
@@ -716,7 +598,7 @@ void LayoutEngine::layout_table(const BlockNode& node, float& y, float left, flo
 
             if (tlr.layout) {
                 TextRun run;
-                run.text = tlr.full_text;
+                run.text = std::move(tlr.full_text);
                 run.rect = D2D1::RectF(cell_x, cell_y,
                                        cell_x + (col_width - spacing_.code_padding * 2),
                                        cell_y + tlr.height);
