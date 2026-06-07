@@ -4,6 +4,7 @@
 #include "core_dll/grammar/grammar_cache.h"
 #include <chrono>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <tree_sitter/api.h>
 
@@ -27,7 +28,7 @@ public:
 
     const TSLanguage* get_grammar(const std::string& language);
     const TSQuery*    get_query(const std::string& language);
-    TSTree*           parse(const std::string& language, const std::string& source);
+    TSTree*           parse(const std::string& language, std::string_view source);
 
 private:
     void scan_directory(const std::wstring& grammar_dir);

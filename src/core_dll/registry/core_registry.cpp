@@ -47,7 +47,7 @@ CoreRegistry::CoreRegistry()
         cfg_.cap, cfg_.ttl_minutes);
 }
 
-ColorizeResult CoreRegistry::colorize(const std::string& source,
+ColorizeResult CoreRegistry::colorize(std::string_view source,
                                       const std::string& language,
                                       bool dark_mode) {
     std::lock_guard<std::mutex> lk(mu_);

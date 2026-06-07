@@ -37,13 +37,13 @@ struct RawSpan {
 // allocation — this runs once per captured identifier under predicated
 // patterns like the c grammar's `#match? @constant`).
 static std::string_view capture_text(const TSQueryMatch& match, uint32_t capture_index,
-                                     const std::string& source) {
+                                     std::string_view source) {
     for (uint16_t i = 0; i < match.capture_count; i++) {
         if (match.captures[i].index == capture_index) {
             uint32_t start = ts_node_start_byte(match.captures[i].node);
             uint32_t end = ts_node_end_byte(match.captures[i].node);
             if (start <= end && end <= source.size()) {
-                return std::string_view(source).substr(start, end - start);
+                return source.substr(start, end - start);
             }
             return {};
         }
@@ -53,7 +53,7 @@ static std::string_view capture_text(const TSQueryMatch& match, uint32_t capture
 
 // Returns true if all predicates for this pattern pass for the given match.
 static bool evaluate_predicates(const TSQuery* query, const TSQueryMatch& match,
-                                const std::string& source) {
+                                std::string_view source) {
     uint32_t step_count = 0;
     const TSQueryPredicateStep* steps =
         ts_query_predicates_for_pattern(query, match.pattern_index, &step_count);
@@ -77,7 +77,9 @@ static bool evaluate_predicates(const TSQuery* query, const TSQueryMatch& match,
         // Get predicate name
         uint32_t name_len = 0;
         const char* name_ptr = ts_query_string_value_for_id(query, steps[i].value_id, &name_len);
-        std::string pred_name(name_ptr, name_len);
+        // View into TSQuery-owned storage (valid for this call); only compared
+        // against string literals below, so no owning copy is needed.
+        std::string_view pred_name(name_ptr, name_len);
         i++; // advance past name
 
         // Collect arguments until Done
@@ -170,7 +172,7 @@ std::vector<ColorSpan> QueryHighlighter::highlight(
     const TSTree* tree,
     const TSQuery* query,
     const HelixTheme& theme,
-    const std::string& source,
+    std::string_view source,
     uint32_t default_color)
 {
     if (!tree || !query) return {};
@@ -205,6 +207,7 @@ std::vector<ColorSpan> QueryHighlighter::highlight(
 
     // Collect raw spans
     std::vector<RawSpan> raw;
+    raw.reserve(256);  // capacity hint: skip the early geometric-growth churn
     TSQueryMatch match;
     uint32_t capture_index;
     while (ts_query_cursor_next_capture(cursor, &match, &capture_index)) {

@@ -63,13 +63,15 @@ const TSQuery* GrammarRegistry::get_query(const std::string& language) {
 }
 
 TSTree* GrammarRegistry::parse(const std::string& language,
-                               const std::string& source) {
+                               std::string_view source) {
     const TSLanguage* lang = cache_.get_grammar(language);
     if (!lang) return nullptr;
     TSParser* parser = ts_parser_new();
     ts_parser_set_language(parser, lang);
+    // ts_parser_parse_string is length-bounded, so source need not be
+    // NUL-terminated — pass .data() (a string_view has no .c_str()).
     TSTree* tree = ts_parser_parse_string(parser, nullptr,
-                                          source.c_str(),
+                                          source.data(),
                                           static_cast<uint32_t>(source.size()));
     ts_parser_delete(parser);
     return tree;

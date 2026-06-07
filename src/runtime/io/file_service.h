@@ -17,8 +17,8 @@ public:
     std::optional<FileIdentity> identity(const wchar_t* path);
 
 private:
-    std::vector<uint8_t> read_bytes(const wchar_t* path, FileIdentity& out_identity);
-    std::string to_utf8(const std::vector<uint8_t>& raw);
+    std::string read_bytes(const wchar_t* path, FileIdentity& out_identity);
+    std::string to_utf8(std::string raw);
     std::wstring to_wstring(const std::string& utf8);
     void normalize_line_endings(std::string& text);
 };

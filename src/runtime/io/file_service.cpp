@@ -5,7 +5,7 @@
 namespace wlx::runtime::io {
 
 
-std::vector<uint8_t> FileService::read_bytes(const wchar_t* path, FileIdentity& out_identity) {
+std::string FileService::read_bytes(const wchar_t* path, FileIdentity& out_identity) {
     out_identity.path = path;
     out_identity.size = 0;
     out_identity.mtime = 0;
@@ -39,7 +39,10 @@ std::vector<uint8_t> FileService::read_bytes(const wchar_t* path, FileIdentity& 
         return {};
     }
 
-    std::vector<uint8_t> buffer(file_size);
+    // Read straight into the std::string we'll keep as raw_utf8 — no separate
+    // byte vector + decode copy on the common (UTF-8 / no-BOM) path.
+    std::string buffer;
+    buffer.resize(file_size);
     DWORD bytes_read = 0;
     BOOL ok = ReadFile(hFile, buffer.data(), file_size, &bytes_read, nullptr);
     CloseHandle(hFile);
@@ -50,13 +53,18 @@ std::vector<uint8_t> FileService::read_bytes(const wchar_t* path, FileIdentity& 
     return buffer;
 }
 
-std::string FileService::to_utf8(const std::vector<uint8_t>& raw) {
-    if (raw.size() >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) {
-        // UTF-8 BOM: skip 3 bytes
-        return std::string(reinterpret_cast<const char*>(raw.data() + 3), raw.size() - 3);
+std::string FileService::to_utf8(std::string raw) {
+    // raw holds bytes in a std::string, so its elements are (possibly signed)
+    // char — compare BOM bytes through unsigned char to avoid sign extension.
+    auto byte = [&](size_t i) { return static_cast<unsigned char>(raw[i]); };
+
+    if (raw.size() >= 3 && byte(0) == 0xEF && byte(1) == 0xBB && byte(2) == 0xBF) {
+        // UTF-8 BOM: strip the 3 marker bytes in place (no reallocation).
+        raw.erase(0, 3);
+        return raw;
     }
 
-    if (raw.size() >= 2 && raw[0] == 0xFF && raw[1] == 0xFE) {
+    if (raw.size() >= 2 && byte(0) == 0xFF && byte(1) == 0xFE) {
         // UTF-16 LE BOM
         const wchar_t* wstr = reinterpret_cast<const wchar_t*>(raw.data() + 2);
         int wlen = static_cast<int>((raw.size() - 2) / sizeof(wchar_t));
@@ -70,14 +78,14 @@ std::string FileService::to_utf8(const std::vector<uint8_t>& raw) {
         return result;
     }
 
-    if (raw.size() >= 2 && raw[0] == 0xFE && raw[1] == 0xFF) {
+    if (raw.size() >= 2 && byte(0) == 0xFE && byte(1) == 0xFF) {
         // UTF-16 BE BOM: byte-swap pairs then convert
         size_t payload = raw.size() - 2;
         size_t wlen = payload / sizeof(wchar_t);
         if (wlen == 0) return {};
 
         std::vector<wchar_t> swapped(wlen);
-        const uint8_t* src = raw.data() + 2;
+        const uint8_t* src = reinterpret_cast<const uint8_t*>(raw.data()) + 2;
         for (size_t i = 0; i < wlen; ++i) {
             swapped[i] = static_cast<wchar_t>((src[i * 2] << 8) | src[i * 2 + 1]);
         }
@@ -92,8 +100,8 @@ std::string FileService::to_utf8(const std::vector<uint8_t>& raw) {
         return result;
     }
 
-    // No BOM: assume UTF-8
-    return std::string(reinterpret_cast<const char*>(raw.data()), raw.size());
+    // No BOM: already UTF-8 — hand back the buffer we read into, no copy.
+    return raw;
 }
 
 std::wstring FileService::to_wstring(const std::string& utf8) {
@@ -110,24 +118,24 @@ std::wstring FileService::to_wstring(const std::string& utf8) {
 }
 
 void FileService::normalize_line_endings(std::string& text) {
-    // Replace \r\n with \n
-    std::string result;
-    result.reserve(text.size());
+    // Fast path: LF-only files (the common case) have no '\r' — a single scan,
+    // zero allocation, nothing to rewrite.
+    if (text.find('\r') == std::string::npos)
+        return;
 
-    for (size_t i = 0; i < text.size(); ++i) {
-        if (text[i] == '\r') {
-            if (i + 1 < text.size() && text[i + 1] == '\n') {
-                result += '\n';
-                ++i; // skip the \n after \r
-            } else {
-                result += '\n'; // lone \r becomes \n
-            }
+    // Compact in place: "\r\n" -> "\n", lone "\r" -> "\n". The write cursor (w)
+    // never overtakes the read cursor (r), so a forward scalar copy is safe.
+    size_t w = 0;
+    for (size_t r = 0; r < text.size(); ++r) {
+        if (text[r] == '\r') {
+            text[w++] = '\n';
+            if (r + 1 < text.size() && text[r + 1] == '\n')
+                ++r; // skip the '\n' after '\r'
         } else {
-            result += text[i];
+            text[w++] = text[r];
         }
     }
-
-    text = std::move(result);
+    text.resize(w);
 }
 
 std::optional<FileContent> FileService::read(const wchar_t* path) {
@@ -163,12 +171,12 @@ std::optional<FileContent> FileService::read(const wchar_t* path) {
         return content;
     }
 
-    std::string utf8 = to_utf8(bytes);
+    std::string utf8 = to_utf8(std::move(bytes));
     normalize_line_endings(utf8);
 
     FileContent content;
-    content.raw_utf8 = utf8;
-    content.text = to_wstring(utf8);
+    content.text = to_wstring(utf8);     // reads utf8
+    content.raw_utf8 = std::move(utf8);  // move LAST, after to_wstring consumed it
     content.identity = std::move(ident);
     return content;
 }

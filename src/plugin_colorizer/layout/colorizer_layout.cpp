@@ -89,7 +89,10 @@ struct MaterializeCtx {
 // (== line_height for the no-wrap grid; can exceed it when word-wrap is on).
 static ComPtr<IDWriteTextLayout> create_line_layout(
     const std::wstring& expanded, const MaterializeCtx& ctx, float& out_height) {
-    const std::wstring& layout_text = expanded.empty() ? std::wstring(L" ") : expanded;
+    // Both ternary operands must be the same lvalue type, else the result is a
+    // prvalue and this "const ref" silently copies `expanded` on every line.
+    static const std::wstring kSpacePlaceholder = L" ";
+    const std::wstring& layout_text = expanded.empty() ? kSpacePlaceholder : expanded;
     ComPtr<IDWriteTextLayout> text_layout;
     if (ctx.dwrite) {
         ctx.dwrite->CreateTextLayout(
@@ -291,6 +294,8 @@ wlx::runtime::layout::LayoutDocument layout_source(
         int utf8_byte_start = 0; // byte offset in raw_utf8 where this line begins
     };
     std::vector<LineInfo> lines;
+    lines.reserve(static_cast<size_t>(
+        std::count(raw_utf8.begin(), raw_utf8.end(), '\n')) + 1);  // exact line count
     {
         int byte_pos = 0;
         int wchar_pos = 0;
@@ -526,7 +531,12 @@ wlx::runtime::layout::LayoutDocument layout_source(
         lb.has_background = false; // no per-line bg; background is painted by host
 
         TextRun run;
-        run.text         = expanded.empty() ? std::wstring() : expanded;
+        // Lazy path: `expanded` is dead after this assignment, so move it. Eager
+        // path re-reads `expanded` below (create_line_layout + decorations), so
+        // it must keep a copy. (A moved-from wstring is empty — same as the old
+        // empty-case branch.)
+        if (lazy) run.text = std::move(expanded);
+        else      run.text = expanded;
         run.rect         = lb.rect;
         run.color        = palette.text;
         run.is_code      = true;
@@ -541,7 +551,11 @@ wlx::runtime::layout::LayoutDocument layout_source(
         // (possibly multi-row) measured height.
         float block_height = line_height;
         if (lazy) {
-            mctx->orig_lines.push_back(orig_line);
+            // Lazy path: orig_line (== lines[li].text) is not read again this
+            // iteration, so move it into the materialize context instead of
+            // copying every source line a second time. NOTE: move lines[li].text
+            // directly — std::move(orig_line) is a const& and would still copy.
+            mctx->orig_lines.push_back(std::move(lines[li].text));
         } else {
             float h = line_height;
             lb.text_runs[0].layout = create_line_layout(expanded, *mctx, h);

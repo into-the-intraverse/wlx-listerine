@@ -6,6 +6,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <string_view>
 
 extern "C" WLX_CORE_API int wlx_core_abi_version(void) {
     return WLX_CORE_ABI_VERSION;
@@ -43,8 +44,9 @@ wlx_core_colorize(WlxCore* h,
     if (!h || !source || !language || !out_spans || !out_count) return -1;
     auto& reg = *reinterpret_cast<wlx::core::registry::CoreRegistry*>(h);
 
-    std::string src(source, len);
-    auto result = reg.colorize(src, language, dark_mode != 0);
+    // View the caller's buffer directly — colorize() is synchronous and reads
+    // it only for the duration of this call, so no owning copy is needed.
+    auto result = reg.colorize(std::string_view(source, len), language, dark_mode != 0);
 
     if (result.spans.empty()) {
         *out_spans = nullptr;

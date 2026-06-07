@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace wlx::core::grammar { class GrammarRegistry; }
@@ -39,7 +40,7 @@ public:
               uint32_t grammar_ttl_minutes = 5);
     ~Colorizer();
 
-    ColorizeResult colorize(const std::string& source,
+    ColorizeResult colorize(std::string_view source,
                             const std::string& language,
                             bool dark_mode);
 
@@ -47,7 +48,7 @@ public:
     // breakdown into *timings when non-null. Used by the screenshot tool's
     // --bench path to attribute the colorize cost (cold grammar load + query
     // compile vs. parse vs. highlight) and to measure the warm path.
-    ColorizeResult colorize(const std::string& source,
+    ColorizeResult colorize(std::string_view source,
                             const std::string& language,
                             bool dark_mode,
                             ColorizeTimings* timings);

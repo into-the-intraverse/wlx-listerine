@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <string_view>
 
 namespace wlx::runtime::parser {
 
@@ -50,10 +51,14 @@ std::wstring MarkdownParser::utf8_to_wstring(const char* text, size_t len) {
 }
 
 LinkTarget MarkdownParser::classify_link(const char* href, size_t len) {
-    std::string url(href, len);
-    std::wstring wurl = utf8_to_wstring(href, len);
+    // Classify over a non-owning view of the md4c href bytes; only the wide
+    // string the matching branch actually returns gets materialized (the old
+    // code built both a std::string and a std::wstring up front, discarding one).
+    std::string_view u(href, len);
 
-    if (!url.empty() && url[0] == '#') {
+    // Use u[0], NOT u.front(): md4c can emit a zero-length href (e.g. "[x]()"),
+    // and front() on an empty view is undefined behavior.
+    if (!u.empty() && u[0] == '#') {
         // Internal anchor: #section
         return LinkTarget{
             LinkKind::InternalAnchor,
@@ -63,17 +68,17 @@ LinkTarget MarkdownParser::classify_link(const char* href, size_t len) {
     }
 
     // Check for absolute URLs
-    if (url.rfind("http://", 0) == 0 || url.rfind("https://", 0) == 0) {
+    if (u.starts_with("http://") || u.starts_with("https://")) {
         return LinkTarget{
             LinkKind::ExternalUrl,
-            wurl,
+            utf8_to_wstring(href, len),
             L""
         };
     }
 
     // Relative doc - may contain anchor fragment
-    auto hash_pos = url.find('#');
-    if (hash_pos != std::string::npos) {
+    auto hash_pos = u.find('#');
+    if (hash_pos != std::string_view::npos) {
         return LinkTarget{
             LinkKind::RelativeDoc,
             utf8_to_wstring(href, hash_pos),
@@ -84,11 +89,17 @@ LinkTarget MarkdownParser::classify_link(const char* href, size_t len) {
     // Plain relative doc
     return LinkTarget{
         LinkKind::RelativeDoc,
-        wurl,
+        utf8_to_wstring(href, len),
         L""
     };
 }
 
+// Memory-safety invariant for the raw BlockNode* in block_stack_:
+// a node is pushed only as the back of the vector it lives in, and we only ever
+// grow the *top* node's children (or doc_.blocks while the stack is empty). So
+// no push_back here can reallocate a vector that an ancestor pointer points
+// into — every block_stack_ entry stays valid. Appending to a non-top entry,
+// or storing a sibling pointer across a sibling push, would break this.
 void MarkdownParser::push_block(BlockType type) {
     BlockNode node;
     node.type = type;
@@ -320,8 +331,9 @@ void MarkdownParser::leave_span(MD_SPANTYPE type, void* /*detail*/) {
 // Decode a common HTML entity to its character(s).
 // Returns empty wstring if the entity is not recognized.
 static std::wstring decode_entity(const char* text, size_t size) {
-    // text includes the leading '&' and trailing ';'
-    std::string entity(text, size);
+    // text includes the leading '&' and trailing ';'. A view suffices — every
+    // use below is an == against a literal; the numeric path reads text/size.
+    std::string_view entity(text, size);
 
     if (entity == "&amp;")    return L"&";
     if (entity == "&lt;")     return L"<";
@@ -451,7 +463,7 @@ void MarkdownParser::on_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size
         InlineNode node;
         node.type = InlineType::Text;
         if (!decoded.empty()) {
-            node.text = decoded;
+            node.text = std::move(decoded);
         } else {
             // Pass through unrecognized entities as-is
             node.text = utf8_to_wstring(text, size);

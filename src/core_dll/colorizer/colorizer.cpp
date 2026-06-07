@@ -73,13 +73,13 @@ const HelixTheme& Colorizer::theme(bool dark_mode) const {
     return slot;
 }
 
-ColorizeResult Colorizer::colorize(const std::string& source,
+ColorizeResult Colorizer::colorize(std::string_view source,
                                    const std::string& language,
                                    bool dark_mode) {
     return colorize(source, language, dark_mode, nullptr);
 }
 
-ColorizeResult Colorizer::colorize(const std::string& source,
+ColorizeResult Colorizer::colorize(std::string_view source,
                                    const std::string& language,
                                    bool dark_mode,
                                    ColorizeTimings* timings) {

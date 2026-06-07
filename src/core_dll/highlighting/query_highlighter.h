@@ -5,6 +5,7 @@
 #include <tree_sitter/api.h>
 #include "core_dll/colorizer/colorizer.h"
 #include "core_dll/theme/helix_theme.h"
+#include <string_view>
 #include <vector>
 
 namespace wlx::core::highlighting {
@@ -16,7 +17,7 @@ public:
         const TSTree* tree,
         const TSQuery* query,
         const theme::HelixTheme& theme,
-        const std::string& source,
+        std::string_view source,
         uint32_t default_color = 0xD4D4D4);
 };
 

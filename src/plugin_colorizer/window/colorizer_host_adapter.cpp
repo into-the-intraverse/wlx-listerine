@@ -360,8 +360,11 @@ static void load_document(ColorViewState* vs, const wchar_t* path) {
         return;
     }
 
-    vs->cached_text = content->text;
-    vs->cached_raw_utf8 = content->raw_utf8;
+    // `content` is a function-local optional not read past here (the colorize +
+    // do_layout calls below read the destination members), so move the two
+    // full-file payloads in instead of deep-copying them.
+    vs->cached_text = std::move(content->text);
+    vs->cached_raw_utf8 = std::move(content->raw_utf8);
 
     std::string language = vs->force_grammar_id;
     if (language.empty()) {

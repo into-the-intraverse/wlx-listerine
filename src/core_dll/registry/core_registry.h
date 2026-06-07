@@ -6,6 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace wlx::core::registry {
@@ -27,7 +28,7 @@ class CoreRegistry {
 public:
     static CoreRegistry& instance();
 
-    colorizer::ColorizeResult colorize(const std::string& source,
+    colorizer::ColorizeResult colorize(std::string_view source,
                                        const std::string& language,
                                        bool dark_mode);
     bool supports(const std::string& language);

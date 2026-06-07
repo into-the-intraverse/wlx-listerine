@@ -8,6 +8,7 @@ using parser::BlockType;
 
 void build_line_index(LayoutDocument& doc) {
     doc.line_tops.clear();
+    doc.line_tops.reserve(doc.blocks.size());  // >= 1 top per block
     constexpr float kEps = 0.5f;
     float last = -1.0e9f;
 
