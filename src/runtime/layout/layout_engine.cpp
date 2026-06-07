@@ -115,11 +115,28 @@ LayoutEngine::TextLayoutResult LayoutEngine::create_text_layout(
 // ---------- layout entry point ----------
 
 LayoutDocument LayoutEngine::layout(const Document& doc, float viewport_width, bool wrap_code,
-                                    float gutter_width) {
+                                    float gutter_width, bool lazy) {
     result_ = LayoutDocument{};
     result_.viewport_width = viewport_width;
     result_.gutter_width = gutter_width;
     wrap_code_ = wrap_code;
+    lazy_ = lazy;
+
+    if (lazy_) {
+        md_ctx_ = std::make_shared<MdMaterializeCtx>();
+        md_ctx_->dwrite = dwrite_;
+        md_ctx_->fonts = fonts_;
+        md_ctx_->colors = colors_;
+        md_ctx_->body_format = body_format_;
+        md_ctx_->code_format = code_format_;
+        md_ctx_->core = core_;
+        md_ctx_->dark_mode = dark_mode_;
+        md_ctx_->default_language = theme_.config().code_default_language;
+        md_ctx_->recipes.reserve(doc.blocks.size());
+        // NOTE: md_ctx_->document is set by the host via take_md_ctx() after this
+        // returns — the engine does not own a shared_ptr<Document>.
+        code_unit_lh_ = 0.0f;  // reset per layout
+    }
 
     float content_padding = 16.0f;
     float y = content_padding;
@@ -127,6 +144,13 @@ LayoutDocument LayoutEngine::layout(const Document& doc, float viewport_width, b
     float right = viewport_width - content_padding;
 
     layout_blocks(doc.blocks, y, left, right, 0);
+
+    if (lazy_) {
+        auto ctx = md_ctx_;
+        result_.materialize_block = [ctx](LayoutBlock& lb, int idx) {
+            md_materialize(*ctx, lb, idx);
+        };
+    }
 
     result_.total_height = y + content_padding;
     return std::move(result_);
@@ -164,8 +188,128 @@ void LayoutEngine::layout_block_dispatch(const BlockNode& block, float& y,
 
 void LayoutEngine::layout_blocks(const std::vector<BlockNode>& blocks, float& y,
                                   float left, float right, int list_depth) {
-    for (auto& block : blocks)
+    for (auto& block : blocks) {
+        if (lazy_ && emit_lazy_block(block, y, left, right))
+            continue;  // emitted a lazy skeleton + recipe
         layout_block_dispatch(block, y, left, right, list_depth);
+        // Eager top-level blocks (list/quote/table/HR) may push >1 block; keep
+        // recipes index-aligned with result_.blocks (None for eager blocks).
+        if (lazy_ && md_ctx_ && md_ctx_->recipes.size() < result_.blocks.size())
+            md_ctx_->recipes.resize(result_.blocks.size());
+    }
+}
+
+// ---------- lazy estimate pass ----------
+
+float LayoutEngine::code_unit_line_height() {
+    if (code_unit_lh_ > 0.0f) return code_unit_lh_;
+    code_unit_lh_ = fonts_.code_size * 1.3f;  // fallback
+    ComPtr<IDWriteTextLayout> probe;
+    dwrite_->CreateTextLayout(L"X", 1, code_format_.Get(), 1000.0f, 1000.0f, probe.GetAddressOf());
+    if (probe) {
+        DWRITE_TEXT_METRICS m;
+        probe->GetMetrics(&m);
+        if (m.height > 0) code_unit_lh_ = m.height;
+    }
+    return code_unit_lh_;
+}
+
+bool LayoutEngine::emit_lazy_block(const BlockNode& block, float& y, float left, float right) {
+    const float lh = fonts_.body_size * spacing_.line_height_factor;
+    const float avg_body = fonts_.body_size * 0.5f;
+    auto concat = [](const std::vector<InlineNode>& ins) {
+        std::wstring s;
+        for (auto& n : ins) {
+            if (n.type == InlineType::SoftBreak) s += L' ';
+            else if (n.type == InlineType::HardBreak) s += L'\n';
+            else s += n.text;
+        }
+        return s;
+    };
+    auto push_recipe = [&](BlockRecipe&& rcp) {
+        md_ctx_->recipes.resize(result_.blocks.size() + 1);
+        md_ctx_->recipes[result_.blocks.size()] = std::move(rcp);
+    };
+
+    if (block.type == BlockType::Paragraph) {
+        std::wstring text = concat(block.inlines);
+        float max_width = right - left;
+        float est_h = estimate_inline_height(static_cast<int>(text.size()), avg_body, max_width, lh);
+        LayoutBlock lb;
+        lb.type = BlockType::Paragraph;
+        lb.rect = D2D1::RectF(left, y, right, y + est_h);
+        TextRun run; run.text = std::move(text); run.rect = lb.rect; run.color = colors_.text;
+        lb.text_runs.push_back(std::move(run));
+        BlockRecipe rcp;
+        rcp.kind = BlockRecipe::Kind::Inline;
+        rcp.inlines = &block.inlines; rcp.max_width = max_width;
+        rcp.default_color = colors_.text; rcp.force_bold = false;
+        rcp.left = left; rcp.right = right;
+        push_recipe(std::move(rcp));
+        y += est_h + spacing_.paragraph_spacing;
+        result_.blocks.push_back(std::move(lb));
+        return true;
+    }
+
+    if (block.type == BlockType::Heading) {
+        y += spacing_.heading_spacing_above;
+        int level = std::clamp(block.heading_level, 1, 6);
+        float font_size = kHeadingSizes[level - 1];
+        auto fmt = get_body_format(font_size);
+        float head_lh = font_size * spacing_.line_height_factor;
+        std::wstring text = concat(block.inlines);
+        float max_width = right - left;
+        float est_h = estimate_inline_height(static_cast<int>(text.size()),
+                                             font_size * 0.55f, max_width, head_lh);
+        LayoutBlock lb;
+        lb.type = BlockType::Heading; lb.heading_level = level;
+        lb.rect = D2D1::RectF(left, y, right, y + est_h);
+        if (level <= 2) { lb.has_bottom_rule = true; lb.bottom_rule_color = colors_.rule; }
+        TextRun run; run.text = std::move(text); run.rect = lb.rect; run.color = colors_.heading;
+        lb.text_runs.push_back(std::move(run));
+        std::wstring slug = slugify(block.inlines);
+        if (!slug.empty())
+            result_.anchors.push_back({slug, y, static_cast<int>(result_.blocks.size())});
+        BlockRecipe rcp;
+        rcp.kind = BlockRecipe::Kind::Inline;
+        rcp.inlines = &block.inlines; rcp.max_width = max_width;
+        rcp.default_color = colors_.heading; rcp.force_bold = true;
+        rcp.format = fmt; rcp.left = left; rcp.right = right;
+        push_recipe(std::move(rcp));
+        y += est_h + spacing_.heading_spacing_below;
+        result_.blocks.push_back(std::move(lb));
+        return true;
+    }
+
+    if (block.type == BlockType::CodeFence) {
+        float padding = spacing_.code_padding;
+        std::wstring code_text;
+        for (auto& n : block.inlines) code_text += n.text;
+        if (!code_text.empty() && code_text.back() == L'\n') code_text.pop_back();
+        int line_count = 1 + static_cast<int>(std::count(code_text.begin(), code_text.end(), L'\n'));
+        float code_lh = code_unit_line_height();
+        float est_h = estimate_code_fence_height(line_count, code_lh, padding);
+        LayoutBlock lb;
+        lb.type = BlockType::CodeFence;
+        lb.rect = D2D1::RectF(left, y, right, y + est_h);
+        lb.has_background = true; lb.background_color = colors_.code_bg;
+        TextRun run; run.text = code_text;
+        run.rect = D2D1::RectF(left + padding, y + padding, right - padding, y + est_h - padding);
+        run.color = colors_.text; run.is_code = true;
+        lb.text_runs.push_back(std::move(run));
+        BlockRecipe rcp;
+        rcp.kind = BlockRecipe::Kind::CodeFence;
+        rcp.code_text = std::move(code_text);
+        for (wchar_t wc : block.code_language) rcp.code_language += static_cast<char>(wc);
+        rcp.wrap_code = wrap_code_;
+        rcp.code_left = left; rcp.code_right = right; rcp.code_padding = padding;
+        push_recipe(std::move(rcp));
+        y += est_h + spacing_.paragraph_spacing;
+        result_.blocks.push_back(std::move(lb));
+        return true;
+    }
+
+    return false;  // List / BlockQuote / Table / HR -> eager
 }
 
 // ---------- heading ----------

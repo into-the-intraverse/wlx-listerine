@@ -5,6 +5,7 @@
 #include "runtime/layout/inline_layout.h"
 #include "runtime/layout/interactive_span.h"
 #include "runtime/layout/layout_document.h"
+#include "runtime/layout/md_materialize.h"
 #include "runtime/parser/document.h"
 #include "runtime/theme/theme_service.h"
 #include "wlx_core/abi.h"
@@ -12,6 +13,7 @@
 #include <dwrite.h>
 #include <wrl/client.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -25,7 +27,12 @@ public:
                  WlxCore* core = nullptr);
 
     LayoutDocument layout(const parser::Document& doc, float viewport_width, bool wrap_code = false,
-                          float gutter_width = 0.0f);
+                          float gutter_width = 0.0f, bool lazy = false);
+
+    // After a lazy layout(), the host calls this to take ownership of the
+    // materialize context and set ctx->document (keeping recipe `inlines`
+    // pointers alive). Null after an eager layout.
+    std::shared_ptr<MdMaterializeCtx> take_md_ctx() { return std::move(md_ctx_); }
 
 private:
     void layout_blocks(const std::vector<parser::BlockNode>& blocks, float& y,
@@ -45,6 +52,12 @@ private:
     void layout_hr(float& y, float left, float right);
     void layout_code_fence(const parser::BlockNode& node, float& y, float left, float right);
     void layout_table(const parser::BlockNode& node, float& y, float left, float right);
+
+    // Lazy estimate pass: emit a skeleton block + recipe for a flat top-level
+    // Paragraph/Heading/CodeFence (returns true). Returns false for everything
+    // else so the caller falls back to the eager dispatch.
+    bool emit_lazy_block(const parser::BlockNode& block, float& y, float left, float right);
+    float code_unit_line_height();
 
     // Create a text layout from inline nodes, collecting interactive spans
     using TextLayoutResult = InlineLayoutResult;
@@ -75,6 +88,11 @@ private:
     ComPtr<IDWriteTextFormat> body_format_;
     ComPtr<IDWriteTextFormat> code_format_;
     bool wrap_code_ = false;
+
+    // Lazy layout state
+    std::shared_ptr<MdMaterializeCtx> md_ctx_;
+    bool lazy_ = false;
+    float code_unit_lh_ = 0.0f;
 };
 
 }  // namespace wlx::runtime::layout
