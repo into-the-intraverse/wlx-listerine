@@ -490,10 +490,17 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
                         "bytes %u..%u)\n",
                         ms(_thigh0, _thigh1), vlo, vhi);
                     std::fprintf(stderr, "  paint            %8.2f ms\n",
-                        ms(_tlayout_ct, _tpaint_ct));
+                        ms(_thigh1, _tpaint_ct));   // from end of highlight, not layout
+                    // Sum the measured phases. NOT ms(_t0, _tpaint_ct): that wall-
+                    // clock also includes the one-time core-singleton init / grammar
+                    // scan triggered by acquire_compatible() in this path (a tool
+                    // artifact — the real plugin shares one already-warm core).
+                    double hot_ct = ms(_t0, _tread) + ms(_tparse0, _tparse1)
+                                  + ms(_tparse1, _tlayout_ct) + ms(_thigh0, _thigh1)
+                                  + ms(_thigh1, _tpaint_ct);
                     std::fprintf(stderr,
                         "  hot total        %8.2f ms  (read+parse+layout+highlight+paint)\n",
-                        ms(_t0, _tpaint_ct));
+                        hot_ct);
                 }
 
                 // ----- Save (cached-tree path) -----
