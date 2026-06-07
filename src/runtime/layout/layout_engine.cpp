@@ -203,7 +203,7 @@ void LayoutEngine::layout_blocks(const std::vector<BlockNode>& blocks, float& y,
 
 float LayoutEngine::code_unit_line_height() {
     if (code_unit_lh_ > 0.0f) return code_unit_lh_;
-    code_unit_lh_ = fonts_.code_size * 1.3f;  // fallback
+    code_unit_lh_ = fonts_.code_size * 1.3f;  // fallback estimate if the probe fails
     ComPtr<IDWriteTextLayout> probe;
     dwrite_->CreateTextLayout(L"X", 1, code_format_.Get(), 1000.0f, 1000.0f, probe.GetAddressOf());
     if (probe) {
@@ -216,6 +216,8 @@ float LayoutEngine::code_unit_line_height() {
 
 bool LayoutEngine::emit_lazy_block(const BlockNode& block, float& y, float left, float right) {
     const float lh = fonts_.body_size * spacing_.line_height_factor;
+    // ~0.5 em average glyph advance for body text — a rough estimate only; the
+    // real wrapped height replaces it when the block is materialized.
     const float avg_body = fonts_.body_size * 0.5f;
     auto concat = [](const std::vector<InlineNode>& ins) {
         std::wstring s;
@@ -232,6 +234,7 @@ bool LayoutEngine::emit_lazy_block(const BlockNode& block, float& y, float left,
     };
 
     if (block.type == BlockType::Paragraph) {
+        // Mirrors layout_paragraph()'s spacing/structure (estimate only).
         std::wstring text = concat(block.inlines);
         float max_width = right - left;
         float est_h = estimate_inline_height(static_cast<int>(text.size()), avg_body, max_width, lh);
@@ -252,15 +255,21 @@ bool LayoutEngine::emit_lazy_block(const BlockNode& block, float& y, float left,
     }
 
     if (block.type == BlockType::Heading) {
-        y += spacing_.heading_spacing_above;
+        // Mirrors layout_heading()'s spacing/structure (estimate only).
         int level = std::clamp(block.heading_level, 1, 6);
         float font_size = kHeadingSizes[level - 1];
         auto fmt = get_body_format(font_size);
+        // Match eager layout_heading: bail on a null format BEFORE advancing y, so
+        // the eager fallback (which advances y then bails) doesn't double-count
+        // heading_spacing_above. (Format creation effectively never fails here.)
+        if (!fmt) return false;
+        y += spacing_.heading_spacing_above;
         float head_lh = font_size * spacing_.line_height_factor;
         std::wstring text = concat(block.inlines);
         float max_width = right - left;
         float est_h = estimate_inline_height(static_cast<int>(text.size()),
-                                             font_size * 0.55f, max_width, head_lh);
+                                             font_size * 0.55f,  // ~0.55 em avg advance (estimate)
+                                             max_width, head_lh);
         LayoutBlock lb;
         lb.type = BlockType::Heading; lb.heading_level = level;
         lb.rect = D2D1::RectF(left, y, right, y + est_h);
@@ -282,6 +291,7 @@ bool LayoutEngine::emit_lazy_block(const BlockNode& block, float& y, float left,
     }
 
     if (block.type == BlockType::CodeFence) {
+        // Mirrors layout_code_fence()'s spacing/structure (estimate only).
         float padding = spacing_.code_padding;
         std::wstring code_text;
         for (auto& n : block.inlines) code_text += n.text;
