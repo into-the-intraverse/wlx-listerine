@@ -662,6 +662,11 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
             vs->renderer->discard_device_resources();
             vs->renderer->create_device_resources(hwnd);
             relayout(vs);
+            // relayout rebuilds a colorless skeleton (tree path uses empty
+            // cached_colors); the stale colored interval would otherwise make
+            // colorize_viewport skip re-highlighting. Reset it so the next paint
+            // recolors the viewport against the (still-valid) cached tree.
+            vs->colored_lo = vs->colored_hi = 0;
             if (vs->hud) vs->hud->on_parent_resize();
             InvalidateRect(hwnd, nullptr, FALSE);
         }
