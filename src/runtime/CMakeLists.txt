@@ -17,6 +17,7 @@ add_library(wlx-core STATIC
     interaction/url_scanner.cpp
     search/search_index.cpp
     search/search_hud_painter.cpp
+    host/async_loader.cpp
     host/clipboard.cpp
     host/context_menu.cpp
     host/dark_mode.cpp
