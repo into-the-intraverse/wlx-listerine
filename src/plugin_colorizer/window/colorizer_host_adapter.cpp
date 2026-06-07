@@ -166,9 +166,8 @@ struct ColorViewState {
     // Set by the right-click "Force Language" submenu; reset on file reload.
     // Note: when non-empty, the value is taken as-is — apply_cpp_variant is
     // bypassed (an explicit user pick should not be re-routed through the
-    // cpp_grammar config). Three call sites read this field:
-    // load_document, recolorize_with_force, and the lc_newparams dark-mode
-    // branch — keep them in sync if you add another colorize call.
+    // cpp_grammar config). Read via resolve_language, which the load funnels
+    // (begin_async_load / begin_async_recolor) call to pick the grammar.
     std::string force_grammar_id;
 
     SearchIndex search_index;
@@ -222,7 +221,6 @@ static bool g_theme_loaded = false;
 using wlx::runtime::host::d2d_factory;
 using wlx::runtime::host::dwrite_factory;
 using wlx::runtime::host::ensure_factories;
-static FileService g_file_service;
 static WlxCore*   g_colorizer_handle = nullptr;
 static ColorizerDisplayConfig g_display_cfg;
 static std::unordered_map<HWND, ColorViewState*> g_views;
@@ -645,11 +643,6 @@ static void begin_async_recolor(ColorViewState* vs) {
     InvalidateRect(vs->hwnd, nullptr, FALSE);
 }
 
-// Thin alias kept for the remaining disk caller (ReloadDocument link action,
-// should one route here). Routes to the async disk funnel.
-static void load_document(ColorViewState* vs, const wchar_t* path) {
-    begin_async_load(vs, path);
-}
 
 static void relayout(ColorViewState* vs) {
     if (vs->cached_text.empty() && vs->file_path.empty()) return;
