@@ -153,7 +153,9 @@ TEST_CASE("materialize_viewport builds the in-range blocks and reports change") 
     ThemeService theme;
     LayoutEngine eng(factory.Get(), theme, false);
     auto lazy = eng.layout(*doc, 800.0f, /*wrap_code=*/false, /*gutter=*/0.0f, /*lazy=*/true);
-    if (auto ctx = eng.take_md_ctx()) ctx->document = doc;  // keep inline ptrs alive
+    auto ctx = eng.take_md_ctx();
+    REQUIRE(ctx);                 // a lazy layout must yield a materialize ctx
+    ctx->document = doc;          // keep inline ptrs alive
     REQUIRE(lazy.blocks.size() >= 2);
 
     // A huge viewport puts every block in range -> all materialize.

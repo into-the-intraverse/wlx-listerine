@@ -107,7 +107,7 @@ bool materialize_viewport(LayoutDocument& doc, float scroll_y, float viewport_h)
         auto& b = doc.blocks[i];
         if (b.rect.bottom < vp_top) continue;        // above viewport
         if (b.rect.top > vp_bottom) break;           // below (blocks are Y-sorted by index)
-        if (b.text_runs.empty() || b.text_runs[0].layout) continue;  // eager/already materialized
+        if (b.text_runs.empty() || b.text_runs[0].layout) continue;  // no runs to build, or already materialized
         float old_bottom = b.rect.bottom;
         doc.materialize_block(b, i);
         float delta = b.rect.bottom - old_bottom;

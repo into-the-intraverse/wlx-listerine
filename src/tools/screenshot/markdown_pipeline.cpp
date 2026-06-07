@@ -307,6 +307,8 @@ std::wstring run_markdown_pipeline(const Options& opts) {
         std::fprintf(stderr, "  target     %6.2f ms\n", t_target - t_layout);
         if (opts.lazy)
             std::fprintf(stderr, "  materialize%6.2f ms\n", t_materialize - t_target);
+        // "paint" spans t_materialize..t_paint, so any --search indexing time is
+        // included here (it runs between materialize and paint).
         std::fprintf(stderr, "  paint      %6.2f ms\n", t_paint - t_materialize);
         std::fprintf(stderr, "  save png   %6.2f ms\n", t_save - t_paint);
         std::fprintf(stderr, "  \xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\n");
