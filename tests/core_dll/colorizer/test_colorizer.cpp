@@ -63,3 +63,15 @@ TEST_CASE("Colorizer end-to-end with Python grammar"
     auto result = c.colorize("def foo(x):\n    return x + 1\n", "python", false);
     CHECK_FALSE(result.spans.empty());
 }
+
+TEST_CASE("Colorizer::colorize range-limits the highlight"
+    * doctest::skip(!std::filesystem::exists("grammars/c/tree-sitter-c.dll"))) {
+    Colorizer c(L"grammars", L"config/themes");
+    REQUIRE(c.supports("c"));
+
+    std::string src = "int a = 1;\nint b = 2;\n";
+    auto full   = c.colorize(src, "c", true);
+    auto ranged = c.colorize(src, "c", true, /*range_start=*/0u, /*range_end=*/10u);
+    for (auto& s : ranged.spans) CHECK(s.start < 10);
+    CHECK(ranged.spans.size() <= full.spans.size());
+}

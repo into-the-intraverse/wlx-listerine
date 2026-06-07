@@ -30,7 +30,9 @@ public:
 
     colorizer::ColorizeResult colorize(std::string_view source,
                                        const std::string& language,
-                                       bool dark_mode);
+                                       bool dark_mode,
+                                       uint32_t range_start = 0,
+                                       uint32_t range_end   = 0);
     bool supports(const std::string& language);
     // Force the cold grammar load + query compile for `language` to happen now
     // (under the registry mutex) so a later colorize() of it is warm.

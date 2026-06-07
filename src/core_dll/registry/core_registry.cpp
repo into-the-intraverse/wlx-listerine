@@ -49,10 +49,12 @@ CoreRegistry::CoreRegistry()
 
 ColorizeResult CoreRegistry::colorize(std::string_view source,
                                       const std::string& language,
-                                      bool dark_mode) {
+                                      bool dark_mode,
+                                      uint32_t range_start,
+                                      uint32_t range_end) {
     std::lock_guard<std::mutex> lk(mu_);
     if (!colorizer_) return {};
-    return colorizer_->colorize(source, language, dark_mode);
+    return colorizer_->colorize(source, language, dark_mode, range_start, range_end);
 }
 
 bool CoreRegistry::supports(const std::string& language) {

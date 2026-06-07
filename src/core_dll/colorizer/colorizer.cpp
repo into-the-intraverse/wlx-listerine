@@ -75,14 +75,18 @@ const HelixTheme& Colorizer::theme(bool dark_mode) const {
 
 ColorizeResult Colorizer::colorize(std::string_view source,
                                    const std::string& language,
-                                   bool dark_mode) {
-    return colorize(source, language, dark_mode, nullptr);
+                                   bool dark_mode,
+                                   uint32_t range_start,
+                                   uint32_t range_end) {
+    return colorize(source, language, dark_mode, nullptr, range_start, range_end);
 }
 
 ColorizeResult Colorizer::colorize(std::string_view source,
                                    const std::string& language,
                                    bool dark_mode,
-                                   ColorizeTimings* timings) {
+                                   ColorizeTimings* timings,
+                                   uint32_t range_start,
+                                   uint32_t range_end) {
     ColorizeResult result;
 
     using clock = std::chrono::steady_clock;
@@ -111,7 +115,8 @@ ColorizeResult Colorizer::colorize(std::string_view source,
 
     const auto& t = theme(dark_mode);
     uint32_t default_color = dark_mode ? 0xD4D4D4 : 0x1F2328;
-    result.spans = QueryHighlighter::highlight(tree, query, t, source, default_color);
+    result.spans = QueryHighlighter::highlight(tree, query, t, source, default_color,
+                                               range_start, range_end);
     auto t4 = clock::now();
 
     ts_tree_delete(tree);

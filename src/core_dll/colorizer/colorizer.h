@@ -42,7 +42,9 @@ public:
 
     ColorizeResult colorize(std::string_view source,
                             const std::string& language,
-                            bool dark_mode);
+                            bool dark_mode,
+                            uint32_t range_start = 0,
+                            uint32_t range_end   = 0);
 
     // Instrumented variant: same result, but writes a per-phase timing
     // breakdown into *timings when non-null. Used by the screenshot tool's
@@ -51,7 +53,9 @@ public:
     ColorizeResult colorize(std::string_view source,
                             const std::string& language,
                             bool dark_mode,
-                            ColorizeTimings* timings);
+                            ColorizeTimings* timings,
+                            uint32_t range_start = 0,
+                            uint32_t range_end   = 0);
 
     bool supports(const std::string& language) const;
 
