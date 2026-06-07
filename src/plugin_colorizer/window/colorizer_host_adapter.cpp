@@ -127,6 +127,27 @@ struct ColorViewState {
     std::string cached_raw_utf8;
     ColorizeResult cached_colors;
 
+    // ---- viewport-scoped highlight (parse once, color the visible range) ----
+    // Parsed once at open via wlx_core_parse; pins its grammar against eviction.
+    // Freed automatically on ColorViewState destruction (ListCloseWindow) and on
+    // reassignment in load_document/reparse (reload / relang). NOTE: ViewStates
+    // are LEAKED on DLL_PROCESS_DETACH (g_views.clear() drops the map entries but
+    // never deletes the ColorViewState*), so this TreePtr never destructs under
+    // the loader lock — wlx_core_free_tree (which takes the core mutex) is never
+    // called at detach. Confirmed: see DllMain DLL_PROCESS_DETACH below.
+    wlx_core::TreePtr tree;
+    // Per-block (== per-source-line) UTF-8 byte start, parallel to layout->blocks.
+    // From layout_source's out-param; maps a viewport byte range -> the blocks it
+    // touches for apply_spans_to_range.
+    std::vector<int> line_byte_starts;
+    // Language the tree was parsed with (tracing only).
+    std::string tree_language;
+    // Contiguous already-colored byte interval [colored_lo, colored_hi). 0,0 =
+    // nothing colored yet. colorize_viewport unions newly-colored windows into
+    // this (or resets it on a disjoint jump) to avoid per-paint re-highlight churn.
+    uint32_t colored_lo = 0;
+    uint32_t colored_hi = 0;
+
     // Selection
     TextPosition sel_anchor;
     TextPosition sel_active;
@@ -323,15 +344,159 @@ static void do_layout(ColorViewState* vs, const std::wstring& text, const std::s
     cfg.word_wrap = vs->wrap_text;   // ShowFlags wins over TOML default
     cfg.line_height_factor = g_theme.spacing().line_height_factor;
 
+    vs->line_byte_starts.clear();
     auto layout = std::make_shared<LayoutDocument>(
         layout_source(dwrite_factory(), text, raw_utf8,
-                      colors, g_theme, vs->dark_mode, viewport_width, cfg));
-    // layout_source already builds the line index + gutter.
+                      colors, g_theme, vs->dark_mode, viewport_width, cfg,
+                      /*timings=*/nullptr, &vs->line_byte_starts));
+    // layout_source already builds the line index + gutter, and fills
+    // vs->line_byte_starts (one entry per block) for viewport recoloring.
 
     vs->layout = layout;
     vs->interaction = std::make_unique<InteractionEngine>(*vs->layout);
     update_scrollbar(vs);
     vs->index_dirty = true;
+}
+
+// Resolve the grammar id for this view: an explicit force-language override wins
+// (taken as-is, NOT re-routed through apply_cpp_variant — see force_grammar_id
+// doc), else extension -> filename -> cpp_variant. Empty = unsupported/plain.
+static std::string resolve_language(ColorViewState* vs) {
+    std::string language = vs->force_grammar_id;
+    if (language.empty()) {
+        language = ext_to_language(vs->file_path);
+        if (language.empty())
+            language = filename_to_language(vs->file_path);
+        language = apply_cpp_variant(language, g_display_cfg.cpp_grammar, g_colorizer_handle);
+    }
+    return language;
+}
+
+// Highlight the visible byte range against the cached tree and merge the spans
+// into the layout's per-line blocks. Called from WM_PAINT (before paint) and once
+// after load. No-op when there is no cached tree (the whole-doc fallback already
+// colored everything) or no layout. Cheap on scroll: re-highlights only the
+// newly-exposed range against the cached tree (no re-parse), and skips entirely
+// when the viewport is already within the colored interval.
+static void colorize_viewport(ColorViewState* vs) {
+    if (!vs || !vs->tree || !vs->layout) return;
+    auto& doc = *vs->layout;
+    if (doc.blocks.empty() || vs->line_byte_starts.empty()) return;
+
+    const float viewport_h = vs->renderer ? vs->renderer->dip_height() : 100.0f;
+    const float top = vs->scroll_y;
+    const float bottom = vs->scroll_y + viewport_h;
+    // One screenful of overscan on each side so a small scroll doesn't re-trigger.
+    const float over_top = top - viewport_h;
+    const float over_bottom = bottom + viewport_h;
+
+    const int block_count = static_cast<int>(doc.blocks.size());
+    const int n = std::min(block_count, static_cast<int>(vs->line_byte_starts.size()));
+    if (n == 0) return;
+
+    // First/last visible (with overscan) block via block rects (Y-sorted).
+    int first = -1, last = -1;
+    for (int i = 0; i < n; ++i) {
+        const auto& r = doc.blocks[static_cast<size_t>(i)].rect;
+        if (r.bottom < over_top) continue;
+        if (r.top > over_bottom) break;
+        if (first < 0) first = i;
+        last = i;
+    }
+    if (first < 0) return;
+
+    const int raw_size = static_cast<int>(vs->cached_raw_utf8.size());
+    uint32_t vlo = static_cast<uint32_t>(vs->line_byte_starts[first]);
+    uint32_t vhi = (last + 1 < static_cast<int>(vs->line_byte_starts.size()))
+                       ? static_cast<uint32_t>(vs->line_byte_starts[last + 1])
+                       : static_cast<uint32_t>(raw_size);
+
+    // Already colored? (window inside the contiguous colored interval). Skip.
+    if (vs->colored_hi > vs->colored_lo &&
+        vlo >= vs->colored_lo && vhi <= vs->colored_hi)
+        return;
+
+    WlxColorSpan* spans = nullptr;
+    uint32_t count = 0;
+    if (wlx_core_highlight_range(g_colorizer_handle, vs->tree.get(),
+                                 vs->dark_mode ? 1 : 0, vlo, vhi,
+                                 &spans, &count) != 0)
+        return;  // highlight failed — leave existing colors as-is
+    ColorizeResult result = abi_spans_to_result(spans, count);
+
+    apply_spans_to_range(doc, vs->cached_raw_utf8, vs->line_byte_starts,
+                         result, vlo, vhi, g_display_cfg.tab_width);
+
+    // Update the colored interval: union when contiguous/overlapping with the
+    // existing one, else (a disjoint jump) reset to the new window. Previously
+    // colored blocks keep their color_ranges, which is harmless.
+    if (vs->colored_hi <= vs->colored_lo) {
+        vs->colored_lo = vlo;
+        vs->colored_hi = vhi;
+    } else if (vlo <= vs->colored_hi && vhi >= vs->colored_lo) {
+        vs->colored_lo = std::min(vs->colored_lo, vlo);
+        vs->colored_hi = std::max(vs->colored_hi, vhi);
+    } else {
+        vs->colored_lo = vlo;
+        vs->colored_hi = vhi;
+    }
+}
+
+// Parse the cached source once with `language` and color the first viewport, OR
+// fall back to a whole-doc colorize (cached_colors + do_layout) when the language
+// is unsupported, parsing fails, or word-wrap is on (viewport byte->line mapping
+// is unreliable with wrap). The fallback is WLX_TRACE'd (no silent cap). Resets
+// any prior tree (freeing it, unpinning the old grammar) and the colored interval.
+// Caller must have populated vs->cached_text / vs->cached_raw_utf8.
+static void reparse_and_colorize(ColorViewState* vs, const std::string& language) {
+    // Reset prior state first: a new TreePtr frees the old tree (unpins grammar).
+    vs->tree.reset();
+    vs->colored_lo = vs->colored_hi = 0;
+    vs->cached_colors = {};
+
+    const bool supported = !language.empty() && g_colorizer_handle &&
+                           wlx_core_supports(g_colorizer_handle, language.c_str()) == 1;
+
+    // Word-wrap stays eager whole-doc (Invariant B3.4): real measured heights,
+    // and byte->line mapping is unreliable with wrap.
+    if (supported && !vs->wrap_text) {
+        WlxTree* raw = wlx_core_parse(
+            g_colorizer_handle, vs->cached_raw_utf8.c_str(),
+            static_cast<uint32_t>(vs->cached_raw_utf8.size()), language.c_str());
+        if (raw) {
+            vs->tree = wlx_core::TreePtr(raw, wlx_core::TreeDeleter{g_colorizer_handle});
+            vs->tree_language = language;
+            // Skeleton layout (empty colors); colorize the first viewport below.
+            do_layout(vs, vs->cached_text, vs->cached_raw_utf8, /*colors=*/{});
+            colorize_viewport(vs);
+            return;
+        }
+        WLX_TRACE(L"viewport-colorize fallback: wlx_core_parse failed for '%hs', "
+                  L"using whole-doc colorize", language.c_str());
+    } else if (supported && vs->wrap_text) {
+        WLX_TRACE(L"viewport-colorize fallback: word-wrap on, using whole-doc "
+                  L"colorize for '%hs'", language.c_str());
+    } else if (!language.empty()) {
+        WLX_TRACE(L"viewport-colorize fallback: language '%hs' unsupported, "
+                  L"using whole-doc colorize", language.c_str());
+    }
+
+    // Whole-doc fallback (renders exactly as before this change). tree stays null,
+    // so colorize_viewport is a no-op in WM_PAINT.
+    if (supported) {
+        WlxColorSpan* spans = nullptr;
+        uint32_t count = 0;
+        if (wlx_core_colorize(g_colorizer_handle,
+                              vs->cached_raw_utf8.c_str(),
+                              static_cast<uint32_t>(vs->cached_raw_utf8.size()),
+                              language.c_str(),
+                              vs->dark_mode ? 1 : 0,
+                              0, 0,
+                              &spans, &count) == 0) {
+            vs->cached_colors = abi_spans_to_result(spans, count);
+        }
+    }
+    do_layout(vs, vs->cached_text, vs->cached_raw_utf8, vs->cached_colors);
 }
 
 static void load_document(ColorViewState* vs, const wchar_t* path) {
@@ -356,6 +521,8 @@ static void load_document(ColorViewState* vs, const wchar_t* path) {
         vs->cached_text.clear();
         vs->cached_raw_utf8.clear();
         vs->cached_colors = {};
+        vs->tree.reset();           // unpin old grammar on a failed reload
+        vs->colored_lo = vs->colored_hi = 0;
         update_scrollbar(vs);
         return;
     }
@@ -366,30 +533,10 @@ static void load_document(ColorViewState* vs, const wchar_t* path) {
     vs->cached_text = std::move(content->text);
     vs->cached_raw_utf8 = std::move(content->raw_utf8);
 
-    std::string language = vs->force_grammar_id;
-    if (language.empty()) {
-        language = ext_to_language(vs->file_path);
-        if (language.empty())
-            language = filename_to_language(vs->file_path);
-        language = apply_cpp_variant(language, g_display_cfg.cpp_grammar, g_colorizer_handle);
-    }
-    vs->cached_colors = {};
-    if (!language.empty() && g_colorizer_handle &&
-        wlx_core_supports(g_colorizer_handle, language.c_str()) == 1) {
-        WlxColorSpan* spans = nullptr;
-        uint32_t count = 0;
-        if (wlx_core_colorize(g_colorizer_handle,
-                              vs->cached_raw_utf8.c_str(),
-                              static_cast<uint32_t>(vs->cached_raw_utf8.size()),
-                              language.c_str(),
-                              vs->dark_mode ? 1 : 0,
-                              0, 0,
-                              &spans, &count) == 0) {
-            vs->cached_colors = abi_spans_to_result(spans, count);
-        }
-    }
-
-    do_layout(vs, vs->cached_text, vs->cached_raw_utf8, vs->cached_colors);
+    // Parse once + color the first viewport (or whole-doc fallback). On a reload
+    // (ListLoadNextW) this resets vs->tree, freeing the prior file's tree and
+    // unpinning its grammar.
+    reparse_and_colorize(vs, resolve_language(vs));
     InvalidateRect(vs->hwnd, nullptr, FALSE);
 }
 
@@ -429,31 +576,10 @@ static void resize_widths_nowrap(ColorViewState* vs) {
 // guard treats "no file loaded" as a no-op.)
 static void recolorize_with_force(ColorViewState* vs) {
     if (!vs || vs->cached_raw_utf8.empty()) return;
-
-    std::string language = vs->force_grammar_id;
-    if (language.empty()) {
-        language = ext_to_language(vs->file_path);
-        if (language.empty())
-            language = filename_to_language(vs->file_path);
-        language = apply_cpp_variant(language, g_display_cfg.cpp_grammar, g_colorizer_handle);
-    }
-
-    vs->cached_colors = {};
-    if (!language.empty() && g_colorizer_handle &&
-        wlx_core_supports(g_colorizer_handle, language.c_str()) == 1) {
-        WlxColorSpan* spans = nullptr;
-        uint32_t count = 0;
-        if (wlx_core_colorize(g_colorizer_handle,
-                              vs->cached_raw_utf8.c_str(),
-                              static_cast<uint32_t>(vs->cached_raw_utf8.size()),
-                              language.c_str(),
-                              vs->dark_mode ? 1 : 0,
-                              0, 0,
-                              &spans, &count) == 0) {
-            vs->cached_colors = abi_spans_to_result(spans, count);
-        }
-    }
-    do_layout(vs, vs->cached_text, vs->cached_raw_utf8, vs->cached_colors);
+    // Re-parse the cached source under the (possibly changed) language and color
+    // the current viewport. reparse_and_colorize resets vs->tree (freeing the old
+    // tree, unpinning the old grammar) and the colored interval.
+    reparse_and_colorize(vs, resolve_language(vs));
     InvalidateRect(vs->hwnd, nullptr, FALSE);
 }
 
@@ -499,6 +625,11 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         if (vs && vs->renderer && vs->layout) {
             if (vs->renderer->needs_recreate())
                 vs->renderer->create_device_resources(hwnd);
+            // Viewport-scoped highlight: color any newly-visible byte range
+            // against the cached tree before painting (no-op without a tree).
+            // Scroll/goto/anchor paths InvalidateRect -> WM_PAINT -> here, so no
+            // other call site is needed.
+            colorize_viewport(vs);
             auto sel_lo = std::min(vs->sel_anchor, vs->sel_active);
             auto sel_hi = std::max(vs->sel_anchor, vs->sel_active);
             vs->renderer->paint(*vs->layout, vs->scroll_y, sel_lo, sel_hi,
@@ -1157,31 +1288,6 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
             vs->renderer->set_dark_mode(new_dark);
             if (vs->hud) vs->hud->set_dark_mode(new_dark);
             apply_dark_mode(vs->hwnd, new_dark);
-            // Re-colorize with new palette (no file re-read). Honor any
-            // force-language override the user set via the right-click
-            // submenu — without this, switching theme would silently drop
-            // back to extension-based detection and lose the override.
-            std::string language = vs->force_grammar_id;
-            if (language.empty()) {
-                language = ext_to_language(vs->file_path);
-                if (language.empty()) language = filename_to_language(vs->file_path);
-                language = apply_cpp_variant(language, g_display_cfg.cpp_grammar, g_colorizer_handle);
-            }
-            vs->cached_colors = {};
-            if (!language.empty() && g_colorizer_handle &&
-                wlx_core_supports(g_colorizer_handle, language.c_str()) == 1) {
-                WlxColorSpan* spans = nullptr;
-                uint32_t count = 0;
-                if (wlx_core_colorize(g_colorizer_handle,
-                                      vs->cached_raw_utf8.c_str(),
-                                      static_cast<uint32_t>(vs->cached_raw_utf8.size()),
-                                      language.c_str(),
-                                      vs->dark_mode ? 1 : 0,
-                                      0, 0,
-                                      &spans, &count) == 0) {
-                    vs->cached_colors = abi_spans_to_result(spans, count);
-                }
-            }
             changed = true;
         }
         if (new_wrap != vs->wrap_text) {
@@ -1189,7 +1295,16 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
             changed = true;
         }
         if (changed) {
-            do_layout(vs, vs->cached_text, vs->cached_raw_utf8, vs->cached_colors);
+            // Re-parse + re-color (no file re-read) so the new palette / wrap mode
+            // takes effect. reparse_and_colorize honors any force-language override
+            // (resolve_language) and re-builds the layout; on a wrap toggle it
+            // switches between the incremental (no-wrap) and whole-doc (wrap) path.
+            // Guards on empty source (treated as no-op) to match the prior code's
+            // "no file loaded" behaviour.
+            if (!vs->cached_raw_utf8.empty())
+                reparse_and_colorize(vs, resolve_language(vs));
+            else
+                do_layout(vs, vs->cached_text, vs->cached_raw_utf8, vs->cached_colors);
             InvalidateRect(vs->hwnd, nullptr, FALSE);
         }
         return LISTPLUGIN_OK;

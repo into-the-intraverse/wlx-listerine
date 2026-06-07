@@ -62,6 +62,184 @@ static std::wstring expand_tabs(const std::wstring& line, int tab_width,
     return result;
 }
 
+// Decode one line's UTF-8 byte slice [line_byte_start, line_content_end_byte)
+// into the original (pre-tab-expansion) wstring, stripping a trailing '\r'.
+// Mirrors the per-line decode in layout_source's line-splitting loop so the
+// incremental (apply_spans_to_range) path produces byte-identical line text.
+static std::wstring decode_line(const std::string& raw_utf8,
+                                int line_byte_start, int line_content_end_byte) {
+    int effective_len = line_content_end_byte - line_byte_start;
+    if (effective_len > 0 &&
+        raw_utf8[static_cast<size_t>(line_byte_start + effective_len - 1)] == '\r')
+        effective_len--;
+    std::wstring text;
+    if (effective_len > 0) {
+        const char* u8 = raw_utf8.c_str() + line_byte_start;
+        int wlen = MultiByteToWideChar(CP_UTF8, 0, u8, effective_len, nullptr, 0);
+        if (wlen > 0) {
+            text.resize(static_cast<size_t>(wlen));
+            MultiByteToWideChar(CP_UTF8, 0, u8, effective_len, text.data(), wlen);
+        }
+    }
+    return text;
+}
+
+// A color span already clamped to one line, with offsets relative to the
+// (pre-tab-expansion) line text in wchar units. Produced by clamp_span_to_line.
+struct PerLineSpan {
+    int wchar_start = 0;
+    int wchar_len = 0;
+    uint32_t color = 0;
+    uint32_t bg_color = 0;
+    bool has_bg = false;
+    uint8_t modifiers = 0;
+};
+
+// Clamp one color span (UTF-8 byte offsets in raw_utf8) to the byte range of a
+// single line and convert it to per-line wchar offsets. Appends a PerLineSpan to
+// `out` when the span overlaps the line's content. `orig_line` is the decoded
+// (pre-expansion) line text; used only to bound wlen.
+static void clamp_span_to_line(const std::string& raw_utf8,
+                               int line_byte_start, int line_content_end_byte,
+                               const std::wstring& orig_line,
+                               uint32_t seg_start, uint32_t seg_end,
+                               const wlx::core::colorizer::ColorSpan& sp,
+                               std::vector<PerLineSpan>& out) {
+    if (seg_start >= seg_end) return;
+    int rel_start_bytes = static_cast<int>(seg_start) - line_byte_start;
+    int rel_end_bytes   = static_cast<int>(seg_end)   - line_byte_start;
+
+    const char* line_u8 = raw_utf8.c_str() + line_byte_start;
+    int wstart = (rel_start_bytes > 0)
+                 ? utf8_bytes_to_wchar_count(line_u8, rel_start_bytes)
+                 : 0;
+    int wend   = utf8_bytes_to_wchar_count(line_u8, rel_end_bytes);
+    int wlen   = wend - wstart;
+    (void)line_content_end_byte;
+
+    if (wlen > 0 && wstart >= 0 && wstart < static_cast<int>(orig_line.size())) {
+        wlen = std::min(wlen, static_cast<int>(orig_line.size()) - wstart);
+        PerLineSpan pls;
+        pls.wchar_start = wstart;
+        pls.wchar_len   = wlen;
+        pls.color       = sp.color;
+        pls.bg_color    = sp.bg_color;
+        pls.has_bg      = sp.has_bg;
+        pls.modifiers   = sp.modifiers;
+        out.push_back(pls);
+    }
+}
+
+// Walk `spans` (UTF-8 byte offsets in raw_utf8) and assign each to the line(s)
+// it covers, appending PerLineSpans to out_line_spans[line]. Only lines whose
+// index is in [line_first, line_last] receive spans (the rest stay empty); pass
+// [0, line_count-1] for the whole document. `line_byte_starts[i]` is the byte
+// start of line i; `raw_utf8_size` is the total source length for the last
+// line's content-end. Shared by layout_source (whole-doc) and apply_spans_to_range
+// (a byte window) so both produce identical per-line mappings.
+static void distribute_spans_to_lines(
+    const std::string& raw_utf8,
+    const std::vector<int>& line_byte_starts,
+    int raw_utf8_size,
+    const wlx::core::colorizer::ColorizeResult& spans,
+    int line_first, int line_last,
+    std::vector<std::vector<PerLineSpan>>& out_line_spans) {
+    const int line_count = static_cast<int>(line_byte_starts.size());
+    if (line_count == 0) return;
+
+    // Decode each in-window line at most once (clamp_span_to_line only needs the
+    // line's wchar length to bound wlen). Avoids re-decoding per span hit.
+    std::vector<std::wstring> decoded(static_cast<size_t>(line_count));
+    std::vector<char> decoded_done(static_cast<size_t>(line_count), 0);
+    auto line_text = [&](int li, int line_byte_start, int content_end) -> const std::wstring& {
+        if (!decoded_done[static_cast<size_t>(li)]) {
+            decoded[static_cast<size_t>(li)] =
+                decode_line(raw_utf8, line_byte_start, content_end);
+            decoded_done[static_cast<size_t>(li)] = 1;
+        }
+        return decoded[static_cast<size_t>(li)];
+    };
+
+    for (const wlx::core::colorizer::ColorSpan& sp : spans.spans) {
+        if (sp.length == 0) continue;
+        uint32_t sp_end = sp.start + sp.length;
+
+        // Binary search: last line whose byte start <= sp.start.
+        int lo = 0, hi = line_count - 1;
+        int line_idx = 0;
+        while (lo <= hi) {
+            int mid = (lo + hi) / 2;
+            if (static_cast<uint32_t>(line_byte_starts[mid]) <= sp.start) {
+                line_idx = mid;
+                lo = mid + 1;
+            } else {
+                hi = mid - 1;
+            }
+        }
+
+        uint32_t remaining_start = sp.start;
+        const uint32_t remaining_end = sp_end;
+
+        for (int li = line_idx; li < line_count && remaining_start < remaining_end; ++li) {
+            int line_byte_start = line_byte_starts[li];
+            int next_line_byte_start = (li + 1 < line_count)
+                                        ? line_byte_starts[li + 1]
+                                        : raw_utf8_size + 1;
+            int line_content_end_byte = next_line_byte_start - 1; // the '\n'
+            if (line_content_end_byte < line_byte_start)
+                line_content_end_byte = line_byte_start;
+
+            // Only emit for lines inside the requested window. We still advance
+            // remaining_start across out-of-window lines so a span that begins
+            // before line_first contributes its in-window tail correctly.
+            if (li >= line_first && li <= line_last) {
+                uint32_t seg_start = std::max(remaining_start,
+                                              static_cast<uint32_t>(line_byte_start));
+                uint32_t seg_end   = std::min(remaining_end,
+                                              static_cast<uint32_t>(line_content_end_byte));
+                const std::wstring& orig_line =
+                    line_text(li, line_byte_start, line_content_end_byte);
+                clamp_span_to_line(raw_utf8, line_byte_start, line_content_end_byte,
+                                   orig_line, seg_start, seg_end, sp,
+                                   out_line_spans[li]);
+            }
+
+            remaining_start = static_cast<uint32_t>(next_line_byte_start);
+        }
+    }
+}
+
+// Map a line's PerLineSpans (source-wchar offsets) onto tab-expanded wchar
+// offsets and emit ColorRanges. `source_to_expanded` is the tab-expansion map
+// from expand_tabs; `expanded` is the tab-expanded line (for end clamping).
+static std::vector<ColorRange> build_color_ranges(
+    const std::vector<PerLineSpan>& line_spans,
+    const std::vector<int>& source_to_expanded,
+    const std::wstring& expanded) {
+    std::vector<ColorRange> ranges;
+    for (const PerLineSpan& pls : line_spans) {
+        int exp_start = (pls.wchar_start < static_cast<int>(source_to_expanded.size()))
+                        ? source_to_expanded[pls.wchar_start]
+                        : static_cast<int>(expanded.size());
+        int end_src = pls.wchar_start + pls.wchar_len;
+        int exp_end = (end_src < static_cast<int>(source_to_expanded.size()))
+                      ? source_to_expanded[end_src]
+                      : static_cast<int>(expanded.size());
+        int exp_len = exp_end - exp_start;
+        if (exp_len > 0) {
+            ColorRange cr;
+            cr.start     = static_cast<uint32_t>(exp_start);
+            cr.length    = static_cast<uint32_t>(exp_len);
+            cr.color     = pls.color;
+            cr.bg_color  = pls.bg_color;
+            cr.has_bg    = pls.has_bg;
+            cr.modifiers = pls.modifiers;
+            ranges.push_back(cr);
+        }
+    }
+    return ranges;
+}
+
 // ---- lazy materialization ---------------------------------------------------
 
 // Per-document context shared by every block for on-demand (viewport) layout.
@@ -258,7 +436,8 @@ wlx::runtime::layout::LayoutDocument layout_source(
     bool dark_mode,
     float viewport_width,
     const ColorizerDisplayConfig& display,
-    LayoutTimings* timings) {
+    LayoutTimings* timings,
+    std::vector<int>* out_line_byte_starts) {
     LayoutDocument doc;
     doc.viewport_width = viewport_width;
 
@@ -381,90 +560,20 @@ wlx::runtime::layout::LayoutDocument layout_source(
     auto _t_split = _clk::now();
 
     // ---- index color spans by starting line ----
-    // ColorSpan start/length are UTF-8 byte offsets in raw_utf8.
-    // We need to map them to per-line wchar offsets in the tab-expanded text.
+    // ColorSpan start/length are UTF-8 byte offsets in raw_utf8. distribute_spans_to_lines
+    // (shared with the incremental apply_spans_to_range path) maps each span to its
+    // line(s) as per-line wchar offsets in the original (pre-expansion) text.
+    // Empty `colors` (the skeleton/viewport-incremental case) yields no per-line
+    // spans, so every block gets empty color_ranges — colored later on demand.
+    std::vector<int> line_byte_starts;
+    line_byte_starts.reserve(lines.size());
+    for (const auto& li : lines) line_byte_starts.push_back(li.utf8_byte_start);
+    if (out_line_byte_starts) *out_line_byte_starts = line_byte_starts;
 
-    // Pre-compute cumulative UTF-8 byte start of each line (already stored in LineInfo).
-    // Spans are sorted by start; we assign each span to its starting line.
-    struct PerLineSpan {
-        int line_idx = 0;
-        int wchar_start = 0;  // in original (pre-expansion) line text
-        int wchar_len = 0;
-        uint32_t color = 0;
-        uint32_t bg_color = 0;
-        bool has_bg = false;
-        uint8_t modifiers = 0;
-    };
     std::vector<std::vector<PerLineSpan>> line_spans(lines.size());
-
-    for (const wlx::core::colorizer::ColorSpan& sp : colors.spans) {
-        if (sp.length == 0) continue;
-        uint32_t sp_end = sp.start + sp.length;
-
-        // Binary search for the line that contains sp.start
-        // lines are in order; find the last line whose utf8_byte_start <= sp.start
-        int lo = 0, hi = static_cast<int>(lines.size()) - 1;
-        int line_idx = 0;
-        while (lo <= hi) {
-            int mid = (lo + hi) / 2;
-            if (static_cast<uint32_t>(lines[mid].utf8_byte_start) <= sp.start) {
-                line_idx = mid;
-                lo = mid + 1;
-            } else {
-                hi = mid - 1;
-            }
-        }
-
-        // Walk through lines until we exhaust the span
-        uint32_t remaining_start = sp.start;
-        uint32_t remaining_end = sp_end;
-
-        for (int li = line_idx; li < static_cast<int>(lines.size()) && remaining_start < remaining_end; ++li) {
-            int line_byte_start = lines[li].utf8_byte_start;
-            // byte end of this line's text = next line's byte start (or eof)
-            int next_line_byte_start = (li + 1 < static_cast<int>(lines.size()))
-                                        ? lines[li + 1].utf8_byte_start
-                                        : static_cast<int>(raw_utf8.size()) + 1;
-            // Effective end of line content in bytes (excludes the '\n' separator)
-            // The line's text is [line_byte_start, next_line_byte_start - 1) (the -1 is '\n')
-            int line_content_end_byte = next_line_byte_start - 1; // points to the '\n'
-            if (line_content_end_byte < line_byte_start)
-                line_content_end_byte = line_byte_start;
-
-            // Clamp the span to this line's content
-            uint32_t seg_start = std::max(remaining_start, static_cast<uint32_t>(line_byte_start));
-            uint32_t seg_end   = std::min(remaining_end, static_cast<uint32_t>(line_content_end_byte));
-
-            if (seg_start < seg_end) {
-                // Convert byte offsets relative to line start -> wchar offsets
-                int rel_start_bytes = static_cast<int>(seg_start) - line_byte_start;
-                int rel_end_bytes   = static_cast<int>(seg_end)   - line_byte_start;
-
-                const char* line_u8 = raw_utf8.c_str() + line_byte_start;
-                int wstart = (rel_start_bytes > 0)
-                             ? utf8_bytes_to_wchar_count(line_u8, rel_start_bytes)
-                             : 0;
-                int wend   = utf8_bytes_to_wchar_count(line_u8, rel_end_bytes);
-                int wlen   = wend - wstart;
-
-                if (wlen > 0 && wstart >= 0 &&
-                    wstart < static_cast<int>(lines[li].text.size())) {
-                    wlen = std::min(wlen, static_cast<int>(lines[li].text.size()) - wstart);
-                    PerLineSpan pls;
-                    pls.line_idx    = li;
-                    pls.wchar_start = wstart;
-                    pls.wchar_len   = wlen;
-                    pls.color       = sp.color;
-                    pls.bg_color    = sp.bg_color;
-                    pls.has_bg      = sp.has_bg;
-                    pls.modifiers   = sp.modifiers;
-                    line_spans[li].push_back(pls);
-                }
-            }
-
-            remaining_start = static_cast<uint32_t>(next_line_byte_start);
-        }
-    }
+    distribute_spans_to_lines(raw_utf8, line_byte_starts,
+                              static_cast<int>(raw_utf8.size()), colors,
+                              0, static_cast<int>(lines.size()) - 1, line_spans);
 
     auto _t_spanindex = _clk::now();
 
@@ -502,27 +611,8 @@ wlx::runtime::layout::LayoutDocument layout_source(
         std::wstring expanded = expand_tabs(orig_line, display.tab_width, &source_to_expanded);
 
         // Map per-line spans from source wchar offsets -> expanded wchar offsets
-        std::vector<ColorRange> color_ranges;
-        for (const PerLineSpan& pls : line_spans[li]) {
-            int exp_start = (pls.wchar_start < static_cast<int>(source_to_expanded.size()))
-                            ? source_to_expanded[pls.wchar_start]
-                            : static_cast<int>(expanded.size());
-            int end_src = pls.wchar_start + pls.wchar_len;
-            int exp_end = (end_src < static_cast<int>(source_to_expanded.size()))
-                          ? source_to_expanded[end_src]
-                          : static_cast<int>(expanded.size());
-            int exp_len = exp_end - exp_start;
-            if (exp_len > 0) {
-                ColorRange cr;
-                cr.start     = static_cast<uint32_t>(exp_start);
-                cr.length    = static_cast<uint32_t>(exp_len);
-                cr.color     = pls.color;
-                cr.bg_color  = pls.bg_color;
-                cr.has_bg    = pls.has_bg;
-                cr.modifiers = pls.modifiers;
-                color_ranges.push_back(cr);
-            }
-        }
+        std::vector<ColorRange> color_ranges =
+            build_color_ranges(line_spans[li], source_to_expanded, expanded);
 
         LayoutBlock lb;
         lb.type = BlockType::Paragraph; // closest generic type; renderer handles color ranges
@@ -618,6 +708,81 @@ wlx::runtime::layout::LayoutDocument layout_source(
     }
 
     return doc;
+}
+
+// ---- incremental (viewport-scoped) recoloring -------------------------------
+
+void apply_spans_to_range(
+    LayoutDocument& doc,
+    const std::string& raw_utf8,
+    const std::vector<int>& line_byte_starts,
+    const wlx::core::colorizer::ColorizeResult& spans,
+    uint32_t byte_lo, uint32_t byte_hi,
+    int tab_width) {
+    const int block_count = static_cast<int>(doc.blocks.size());
+    const int line_count = static_cast<int>(line_byte_starts.size());
+    if (block_count == 0 || line_count == 0) return;
+    // Defensive: line_byte_starts is parallel to blocks (1 line == 1 block).
+    const int n = std::min(block_count, line_count);
+    const int raw_size = static_cast<int>(raw_utf8.size());
+
+    // Map the byte window [byte_lo, byte_hi) to the inclusive block range it
+    // touches. Block i covers bytes [line_byte_starts[i], next_start). A block
+    // is in-window if its byte interval overlaps the window.
+    int line_first = -1, line_last = -1;
+    for (int i = 0; i < n; ++i) {
+        uint32_t b_start = static_cast<uint32_t>(line_byte_starts[i]);
+        uint32_t b_end = (i + 1 < line_count)
+                             ? static_cast<uint32_t>(line_byte_starts[i + 1])
+                             : static_cast<uint32_t>(raw_size) + 1;
+        // Overlap test: [b_start, b_end) ∩ [byte_lo, byte_hi) non-empty.
+        if (b_start < byte_hi && b_end > byte_lo) {
+            if (line_first < 0) line_first = i;
+            line_last = i;
+        }
+    }
+    if (line_first < 0) return;  // window touches no block
+
+    // Distribute only the spans overlapping the window onto those lines.
+    std::vector<std::vector<PerLineSpan>> line_spans(static_cast<size_t>(line_count));
+    distribute_spans_to_lines(raw_utf8, line_byte_starts, raw_size, spans,
+                              line_first, line_last, line_spans);
+
+    for (int i = line_first; i <= line_last; ++i) {
+        LayoutBlock& lb = doc.blocks[static_cast<size_t>(i)];
+        if (lb.text_runs.empty()) continue;
+        TextRun& run = lb.text_runs[0];
+
+        // Re-derive this line's tab-expansion map from the source (the same
+        // input the whole-doc build used) so byte->expanded offsets match.
+        int line_byte_start = line_byte_starts[i];
+        int content_end = (i + 1 < line_count) ? (line_byte_starts[i + 1] - 1)
+                                               : raw_size;
+        if (content_end < line_byte_start) content_end = line_byte_start;
+        std::wstring orig_line = decode_line(raw_utf8, line_byte_start, content_end);
+        std::vector<int> source_to_expanded;
+        std::wstring expanded = expand_tabs(orig_line, tab_width, &source_to_expanded);
+
+        // REPLACE this block's syntax color_ranges (idempotent re-color). Blocks
+        // in-window with no covering span get an empty vector (clean re-color).
+        run.color_ranges =
+            build_color_ranges(line_spans[static_cast<size_t>(i)],
+                               source_to_expanded, expanded);
+
+        // If the block was already materialized, its run.color_ranges had URL
+        // ranges appended and its decorations (markers/guides/spans) are set.
+        // Replacing color_ranges wiped the URL ranges; drop the per-line layout
+        // and decoration state so the next paint re-materializes cleanly (rebuilds
+        // the layout + re-appends URL ranges + markers). Unmaterialized blocks
+        // (layout == null) get URLs on their first materialize as usual.
+        if (run.layout) {
+            run.layout.Reset();
+            lb.spans.clear();
+            lb.ws_markers.clear();
+            lb.indent_guides.clear();
+            lb.has_trailing_ws = false;
+        }
+    }
 }
 
 }  // namespace wlx::plugin_colorizer::layout
