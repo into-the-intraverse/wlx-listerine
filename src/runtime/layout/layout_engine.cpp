@@ -1,5 +1,5 @@
 #include "runtime/layout/layout_engine.h"
-#include "core_dll/colorizer/colorizer.h"  // ColorSpan / ColorizeResult definitions
+#include "runtime/layout/code_fence_layout.h"
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -8,8 +8,6 @@
 #include <algorithm>
 #include <cwctype>
 #include <cmath>
-
-using namespace wlx::core::colorizer;
 
 namespace wlx::runtime::layout {
 
@@ -412,121 +410,32 @@ void LayoutEngine::layout_code_fence(const BlockNode& node, float& y, float left
     if (!code_text.empty() && code_text.back() == L'\n')
         code_text.pop_back();
 
-    float max_width = right - left - padding * 2;
-    ComPtr<IDWriteTextLayout> text_layout;
-    dwrite_->CreateTextLayout(code_text.c_str(), static_cast<UINT32>(code_text.size()),
-                              code_format_.Get(), max_width, 100000.0f,
-                              text_layout.GetAddressOf());
-    if (!text_layout) return;
+    CodeFenceInput in;
+    in.code_text = code_text;
+    in.code_language.clear();
+    for (wchar_t wc : node.code_language) in.code_language += static_cast<char>(wc);
+    in.default_language = theme_.config().code_default_language;
+    in.max_width = right - left - padding * 2;
+    in.wrap_code = wrap_code_;
+    in.dark_mode = dark_mode_;
+    in.core = core_;
+    auto res = build_code_fence_layout(dwrite_, code_format_.Get(), in, colors_);
+    if (!res.layout) return;
 
-    // Override wrapping per layout call (code_format_ default is NO_WRAP)
-    if (wrap_code_)
-        text_layout->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
-
-    // --- Syntax highlighting ---
-    std::vector<ColorRange> color_ranges;
-    if (core_) {
-        std::string lang;
-        if (!node.code_language.empty()) {
-            // Convert wstring to narrow string (language tags are ASCII)
-            for (wchar_t wc : node.code_language)
-                lang += static_cast<char>(wc);
-        } else {
-            lang = theme_.config().code_default_language;
-        }
-
-        if (!lang.empty() && wlx_core_supports(core_, lang.c_str()) == 1) {
-            // Convert wstring to UTF-8
-            std::string utf8_source;
-            utf8_source.reserve(code_text.size() * 3);  // upper bound: <=3 bytes/wchar here
-            for (wchar_t wc : code_text) {
-                if (wc < 0x80) {
-                    utf8_source += static_cast<char>(wc);
-                } else if (wc < 0x800) {
-                    utf8_source += static_cast<char>(0xC0 | (wc >> 6));
-                    utf8_source += static_cast<char>(0x80 | (wc & 0x3F));
-                } else {
-                    utf8_source += static_cast<char>(0xE0 | (wc >> 12));
-                    utf8_source += static_cast<char>(0x80 | ((wc >> 6) & 0x3F));
-                    utf8_source += static_cast<char>(0x80 | (wc & 0x3F));
-                }
-            }
-
-            ColorizeResult cr;
-            WlxColorSpan* spans = nullptr;
-            uint32_t count = 0;
-            if (wlx_core_colorize(core_, utf8_source.c_str(),
-                                  static_cast<uint32_t>(utf8_source.size()),
-                                  lang.c_str(), dark_mode_ ? 1 : 0,
-                                  &spans, &count) == 0 && count > 0) {
-                cr.spans.reserve(count);
-                for (uint32_t i = 0; i < count; ++i) {
-                    const auto& s = spans[i];
-                    ColorSpan cs;
-                    cs.start = s.start; cs.length = s.length;
-                    cs.color = s.color; cs.bg_color = s.bg_color;
-                    cs.has_bg = s.has_bg != 0; cs.modifiers = s.modifiers;
-                    cr.spans.push_back(cs);
-                }
-                wlx_core_free_spans(spans);
-            }
-
-            // Build wchar offset lookup table (wchar index -> cumulative byte offset)
-            std::vector<uint32_t> wchar_to_byte;
-            wchar_to_byte.reserve(code_text.size() + 1);  // one per wchar + sentinel
-            uint32_t byte_pos = 0;
-            for (size_t i = 0; i < code_text.size(); i++) {
-                wchar_to_byte.push_back(byte_pos);
-                wchar_t wc = code_text[i];
-                if (wc < 0x80) byte_pos += 1;
-                else if (wc < 0x800) byte_pos += 2;
-                else byte_pos += 3;
-            }
-            wchar_to_byte.push_back(byte_pos);  // sentinel for end
-
-            // For each color span, find the wchar range. wchar_to_byte is
-            // strictly increasing, so "first index whose byte offset >= target"
-            // is exactly std::lower_bound — O(log n) instead of the old O(n)
-            // scans (which were O(spans * chars) overall on big fences). The
-            // sentinel (== total bytes) guarantees a hit for any in-range span.
-            for (auto& span : cr.spans) {
-                uint32_t span_end = span.start + span.length;
-
-                const auto begin = wchar_to_byte.begin();
-                const auto end = wchar_to_byte.end();
-                uint32_t wstart = static_cast<uint32_t>(
-                    std::lower_bound(begin, end, span.start) - begin);
-                uint32_t wend = static_cast<uint32_t>(
-                    std::lower_bound(begin + wstart, end, span_end) - begin);
-
-                if (wend > wstart) {
-                    color_ranges.push_back({wstart, wend - wstart, span.color, 0, false, span.modifiers});
-                }
-            }
-        }
-    }
-
-    DWRITE_TEXT_METRICS metrics;
-    text_layout->GetMetrics(&metrics);
-
-    float block_height = metrics.height + padding * 2;
-
+    float block_height = res.height + padding * 2;
     LayoutBlock lb;
     lb.type = BlockType::CodeFence;
     lb.rect = D2D1::RectF(left, y, right, y + block_height);
     lb.has_background = true;
     lb.background_color = colors_.code_bg;
-
     TextRun run;
     run.text = code_text;
-    run.rect = D2D1::RectF(left + padding, y + padding,
-                            right - padding, y + padding + metrics.height);
-    run.layout = text_layout;
+    run.rect = D2D1::RectF(left + padding, y + padding, right - padding, y + padding + res.height);
+    run.layout = res.layout;
     run.color = colors_.text;
     run.is_code = true;
-    run.color_ranges = std::move(color_ranges);
+    run.color_ranges = std::move(res.color_ranges);
     lb.text_runs.push_back(std::move(run));
-
     y += block_height + spacing_.paragraph_spacing;
     result_.blocks.push_back(std::move(lb));
 }

@@ -5,6 +5,7 @@ add_library(wlx-core STATIC
     io/file_service.cpp
     parser/markdown_parser.cpp
     layout/inline_layout.cpp
+    layout/code_fence_layout.cpp
     layout/layout_engine.cpp
     layout/line_index.cpp
     render/render_engine.cpp

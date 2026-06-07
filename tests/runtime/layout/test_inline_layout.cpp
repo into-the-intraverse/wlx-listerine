@@ -18,6 +18,31 @@ static ComPtr<IDWriteFactory> dwf() {
     return f;
 }
 
+#include "runtime/layout/code_fence_layout.h"
+
+TEST_CASE("build_code_fence_layout measures a fenced block") {
+    auto factory = dwf();
+    REQUIRE(factory);
+    ThemeService theme;
+    ComPtr<IDWriteTextFormat> code;
+    factory->CreateTextFormat(theme.fonts().code_family.c_str(), nullptr,
+        DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+        theme.fonts().code_size, L"", code.GetAddressOf());
+    code->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+
+    CodeFenceInput in;
+    in.code_text = L"int x = 1;\nint y = 2;";
+    in.code_language = "";
+    in.max_width = 760.0f;
+    in.wrap_code = false;
+    in.dark_mode = false;
+    in.core = nullptr;        // no colorizer -> plain layout, still measures
+    in.default_language = "";
+    auto r = build_code_fence_layout(factory.Get(), code.Get(), in, theme.palette(false));
+    CHECK(r.layout != nullptr);
+    CHECK(r.height > 0.0f);
+}
+
 TEST_CASE("build_inline_layout produces a measured layout for a paragraph") {
     auto factory = dwf();
     REQUIRE(factory);
