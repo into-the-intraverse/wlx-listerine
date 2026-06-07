@@ -356,6 +356,11 @@ static void do_layout(ColorViewState* vs, const std::wstring& text, const std::s
     vs->interaction = std::make_unique<InteractionEngine>(*vs->layout);
     update_scrollbar(vs);
     vs->index_dirty = true;
+    // A fresh layout has new blocks not yet viewport-colored; invalidate the
+    // colored byte interval so colorize_viewport re-highlights against the cached
+    // tree on the next paint. (Covers every rebuild path: load, relang, DPI,
+    // wrap resize — not just the one that remembers to reset it.)
+    vs->colored_lo = vs->colored_hi = 0;
 }
 
 // Resolve the grammar id for this view: an explicit force-language override wins
@@ -661,12 +666,7 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         if (vs && vs->renderer) {
             vs->renderer->discard_device_resources();
             vs->renderer->create_device_resources(hwnd);
-            relayout(vs);
-            // relayout rebuilds a colorless skeleton (tree path uses empty
-            // cached_colors); the stale colored interval would otherwise make
-            // colorize_viewport skip re-highlighting. Reset it so the next paint
-            // recolors the viewport against the (still-valid) cached tree.
-            vs->colored_lo = vs->colored_hi = 0;
+            relayout(vs);   // do_layout invalidates the colored interval -> next paint recolors
             if (vs->hud) vs->hud->on_parent_resize();
             InvalidateRect(hwnd, nullptr, FALSE);
         }

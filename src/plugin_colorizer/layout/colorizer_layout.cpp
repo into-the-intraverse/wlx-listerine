@@ -100,7 +100,7 @@ struct PerLineSpan {
 // `out` when the span overlaps the line's content. `orig_line` is the decoded
 // (pre-expansion) line text; used only to bound wlen.
 static void clamp_span_to_line(const std::string& raw_utf8,
-                               int line_byte_start, int line_content_end_byte,
+                               int line_byte_start,
                                const std::wstring& orig_line,
                                uint32_t seg_start, uint32_t seg_end,
                                const wlx::core::colorizer::ColorSpan& sp,
@@ -115,7 +115,6 @@ static void clamp_span_to_line(const std::string& raw_utf8,
                  : 0;
     int wend   = utf8_bytes_to_wchar_count(line_u8, rel_end_bytes);
     int wlen   = wend - wstart;
-    (void)line_content_end_byte;
 
     if (wlen > 0 && wstart >= 0 && wstart < static_cast<int>(orig_line.size())) {
         wlen = std::min(wlen, static_cast<int>(orig_line.size()) - wstart);
@@ -199,7 +198,7 @@ static void distribute_spans_to_lines(
                                               static_cast<uint32_t>(line_content_end_byte));
                 const std::wstring& orig_line =
                     line_text(li, line_byte_start, line_content_end_byte);
-                clamp_span_to_line(raw_utf8, line_byte_start, line_content_end_byte,
+                clamp_span_to_line(raw_utf8, line_byte_start,
                                    orig_line, seg_start, seg_end, sp,
                                    out_line_spans[li]);
             }
