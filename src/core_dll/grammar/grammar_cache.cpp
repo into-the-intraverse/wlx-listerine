@@ -188,6 +188,17 @@ std::string GrammarCache::raw_query_source(const std::string& language) const {
     return (it == entries_.end()) ? std::string{} : source_for(it->second);
 }
 
+void GrammarCache::pin(const std::string& language) {
+    auto it = entries_.find(language);   // not operator[]: never create an entry
+    if (it != entries_.end()) it->second.pin_count++;
+}
+
+void GrammarCache::unpin(const std::string& language) {
+    auto it = entries_.find(language);
+    if (it != entries_.end() && it->second.pin_count > 0)
+        it->second.pin_count--;
+}
+
 bool GrammarCache::is_loaded(const std::string& language) const {
     auto it = entries_.find(language);
     return it != entries_.end() && it->second.handle != nullptr;
@@ -203,17 +214,26 @@ std::vector<std::string> GrammarCache::available_languages() const {
 
 void GrammarCache::evict_locked() {
     auto now = clock_();
-    while (loaded_count_ > cap_ && !lru_.empty()) {
-        const std::string& lang = lru_.back();
-        auto it = entries_.find(lang);
-        if (it == entries_.end()) {
-            lru_.pop_back();
+    // Walk oldest (back) -> newest (front). Skip pinned entries (a live tree
+    // references their TSLanguage, so freeing the DLL would dangle it). For
+    // unpinned entries: if fresh (age < ttl_) stop, since everything newer is
+    // fresher; otherwise evict. `lru_pos` stored in OTHER entries stays valid
+    // across a middle erase (std::list::erase only invalidates the erased node);
+    // the evicted entry's now-dangling lru_pos is nulled together with its
+    // handle, preserving the "lru_pos valid iff handle != nullptr" invariant.
+    auto it = lru_.end();
+    while (loaded_count_ > cap_ && it != lru_.begin()) {
+        --it;                                   // now points at a real element
+        auto eit = entries_.find(*it);
+        if (eit == entries_.end()) {            // stale lru_ node, no entry
+            it = lru_.erase(it);
             continue;
         }
-        auto& e = it->second;
+        Entry& e = eit->second;
+        if (e.pin_count > 0) continue;          // pinned: never evict, keep scanning
         auto age = std::chrono::duration_cast<std::chrono::seconds>(
             now - e.last_used);
-        if (age < ttl_) break;  // youngest of tail is fresh - stop.
+        if (age < ttl_) continue;               // fresh unpinned: keep (newer are fresher)
 
         if (e.query) { ts_query_delete(e.query); e.query = nullptr; }
         if (e.handle) { releaser_(e.handle); e.handle = nullptr; }
@@ -221,7 +241,7 @@ void GrammarCache::evict_locked() {
         e.load_attempted = false;
         e.query_compiled = false;
         loaded_count_--;
-        lru_.pop_back();
+        it = lru_.erase(it);                    // returns the element AFTER `it`
     }
 }
 

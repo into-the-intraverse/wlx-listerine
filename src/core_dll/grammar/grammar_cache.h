@@ -75,9 +75,19 @@ public:
     // query_source. Returns nullptr if no source or compile failed.
     const TSQuery* get_query(const std::string& language);
 
+    // Pin a loaded grammar so eviction never frees it while a cached tree
+    // references its TSLanguage. Balanced by unpin(). No-op for unknown langs.
+    void pin(const std::string& language);
+    // Release one pin. No-op for unknown langs / pin_count already 0.
+    void unpin(const std::string& language);
+
     // Test-only inspection.
     bool   is_loaded(const std::string& language) const;
     size_t loaded_count() const { return loaded_count_; }
+    uint32_t pin_count_of(const std::string& language) const {
+        auto it = entries_.find(language);
+        return it == entries_.end() ? 0u : it->second.pin_count;
+    }
     bool   is_known(const std::string& language) const {
         return entries_.find(language) != entries_.end();
     }
@@ -104,6 +114,8 @@ private:
         TSQuery*     query = nullptr;
         bool         load_attempted = false;
         bool         query_compiled = false;
+        uint32_t     pin_count = 0;        // live cached trees referencing this
+                                           // grammar's TSLanguage; >0 blocks eviction
         SteadyTp     last_used{};
         std::list<std::string>::iterator lru_pos{};
         // Invariant: lru_pos is valid iff handle != nullptr. After eviction
