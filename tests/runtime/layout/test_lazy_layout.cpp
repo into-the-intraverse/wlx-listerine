@@ -154,7 +154,8 @@ TEST_CASE("materialize_viewport builds the in-range blocks and reports change") 
     LayoutEngine eng(factory.Get(), theme, false);
     auto lazy = eng.layout(*doc, 800.0f, /*wrap_code=*/false, /*gutter=*/0.0f, /*lazy=*/true);
     auto ctx = eng.take_md_ctx();
-    REQUIRE(ctx);                 // a lazy layout must yield a materialize ctx
+    REQUIRE(static_cast<bool>(ctx));  // a lazy layout must yield a materialize ctx
+                                      // (cast: doctest can't stringify shared_ptr on MSVC)
     ctx->document = doc;          // keep inline ptrs alive
     REQUIRE(lazy.blocks.size() >= 2);
 

@@ -178,11 +178,15 @@ std::wstring run_markdown_pipeline(const Options& opts) {
     // Layout
     LayoutEngine layout_engine(dwrite_factory.Get(), theme, opts.dark, core);
     float viewport_width = static_cast<float>(opts.width);
-    auto layout = opts.lazy
+    // --full renders the whole document, so viewport-lazy materialization gives
+    // nothing there — and it would size the bitmap from an estimated total_height
+    // before materialize corrects it. Force eager for --full.
+    const bool lazy = opts.lazy && !opts.full;
+    auto layout = lazy
         ? layout_engine.layout(*doc, viewport_width, /*wrap_code=*/false,
                                /*gutter_width=*/0.0f, /*lazy=*/true)
         : layout_engine.layout(*doc, viewport_width);
-    if (opts.lazy) {
+    if (lazy) {
         // Lifetime guard: the materialize_block closure captured the ctx; the ctx
         // must own the Document so its recipe inline pointers stay valid until the
         // layout (and the ctx) is destroyed. Skipping this is a use-after-free.
@@ -221,7 +225,7 @@ std::wstring run_markdown_pipeline(const Options& opts) {
     // reflow, mispositioning everything below a mis-estimated block this frame.
     // Use the same scroll_y / viewport height paint will use (DIPs == pixels at
     // the bitmap target's default 96 DPI).
-    if (opts.lazy)
+    if (lazy)
         wlx::runtime::layout::materialize_viewport(layout, scroll_y, renderer.dip_height());
 
     double t_materialize = now_ms();
@@ -305,7 +309,7 @@ std::wstring run_markdown_pipeline(const Options& opts) {
         std::fprintf(stderr, "  parse      %6.2f ms\n", t_parse - t_read);
         std::fprintf(stderr, "  layout     %6.2f ms\n", t_layout - t_parse);
         std::fprintf(stderr, "  target     %6.2f ms\n", t_target - t_layout);
-        if (opts.lazy)
+        if (lazy)
             std::fprintf(stderr, "  materialize%6.2f ms\n", t_materialize - t_target);
         // "paint" spans t_materialize..t_paint, so any --search indexing time is
         // included here (it runs between materialize and paint).
@@ -321,7 +325,7 @@ std::wstring run_markdown_pipeline(const Options& opts) {
                    + (t_layout - t_parse) + (t_materialize - t_target)
                    + (t_paint - t_materialize);
         std::fprintf(stderr, "  hot path   %6.2f ms  (read+parse+layout+%spaint)\n",
-                     hot, opts.lazy ? "materialize+" : "");
+                     hot, lazy ? "materialize+" : "");
         std::fprintf(stderr, "\n");
 
         std::fprintf(stderr, "Document:\n");
