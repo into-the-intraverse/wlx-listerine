@@ -24,6 +24,7 @@ add_executable(tests
     runtime/host/test_grammar_menu.cpp
     runtime/search/test_search_counter_format.cpp
     runtime/search/test_search_hud_painter.cpp
+    runtime/layout/test_lazy_layout.cpp
 )
 
 target_link_libraries(tests PRIVATE

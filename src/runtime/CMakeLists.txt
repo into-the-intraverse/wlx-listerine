@@ -8,6 +8,7 @@ add_library(wlx-core STATIC
     layout/code_fence_layout.cpp
     layout/layout_engine.cpp
     layout/line_index.cpp
+    layout/md_materialize.cpp
     render/render_engine.cpp
     interaction/interaction_engine.cpp
     theme/theme_service.cpp
