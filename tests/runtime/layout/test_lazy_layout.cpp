@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 #include "runtime/layout/layout_engine.h"
+#include "runtime/layout/line_index.h"
 #include "runtime/layout/md_materialize.h"
 #include "runtime/parser/markdown_parser.h"
 #include "runtime/theme/theme_service.h"
@@ -118,4 +119,26 @@ TEST_CASE("apply_height_delta translates only later blocks and total_height") {
     CHECK(doc.blocks[0].rect.top == doctest::Approx(0));    // unchanged
     CHECK(doc.total_height == doctest::Approx(70));
     CHECK(doc.anchors[0].y_offset == doctest::Approx(50));  // block c moved down 10
+}
+
+TEST_CASE("lazy line index has the same logical-line count as eager (before materialize)") {
+    auto factory = dwf2();
+    REQUIRE(factory);
+    MarkdownParser p;
+    const char* md = "Para one\n\n```\nint a;\nint b;\nint c;\n```\n\nPara two";
+    auto doc = std::make_shared<Document>(p.parse(md, std::strlen(md)));
+    ThemeService theme;
+
+    LayoutEngine eng_e(factory.Get(), theme, false);
+    auto eager = eng_e.layout(*doc, 800.0f);
+    build_line_index(eager);
+
+    LayoutEngine eng_l(factory.Get(), theme, false);
+    auto lazy = eng_l.layout(*doc, 800.0f, false, 0.0f, /*lazy=*/true);
+    build_line_index(lazy);   // BEFORE materializing any block
+
+    // Numbering must match eager even though no lazy block is materialized yet
+    // (count comes from run.text hard-breaks, not from the layout).
+    CHECK(lazy.line_tops.size() == eager.line_tops.size());
+    CHECK(lazy.line_tops.size() >= 5);  // para + 3 code lines + para
 }

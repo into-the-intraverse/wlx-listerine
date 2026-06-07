@@ -175,13 +175,13 @@ static void do_layout(ViewState* vs) {
 
     // Lazy layout opt-in: build skeleton blocks (estimated rects, deferred
     // IDWriteTextLayouts) and materialize the visible window on demand in
-    // WM_PAINT. This is only safe when line numbers are OFF — lazy mode makes
-    // line_tops approximate (one entry per block until materialized), which is
-    // fine for scroll math but would mis-render the per-line gutter. With line
-    // numbers ON we stay EAGER (exact numbering, slower full layout up front).
-    // Consequence in lazy mode: goto-line (Ctrl+G) lands approximately and is
-    // refined as the target scrolls into view and its block materializes.
-    const bool lazy = !line_numbers;
+    // WM_PAINT. Line numbers work in lazy mode: build_line_index counts hard
+    // breaks from run.text (always populated eagerly) so the logical-line COUNT
+    // (gutter numbers) is always exact. Off-screen line POSITIONS are estimated
+    // and refine to hit-tested values once the block materializes. Consequence:
+    // goto-line (Ctrl+G) to an unmaterialized target lands at an estimated Y
+    // and snaps exact on arrival as the block scrolls into view.
+    const bool lazy = true;  // line numbers now work in lazy mode (see build_line_index)
 
     // Layout cache: a full relayout (one IDWriteTextLayout per block, plus a
     // wlx_core_colorize per fenced code block) is skippable when the same file
