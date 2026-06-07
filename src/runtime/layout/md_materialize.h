@@ -79,4 +79,12 @@ void shift_block_y(LayoutBlock& lb, float dy);
 // anchors owned by later blocks, and total_height. Does NOT rebuild line_tops.
 void apply_height_delta(LayoutDocument& doc, int from_idx, float delta);
 
+// Materialize the lazy blocks intersecting [scroll_y, scroll_y + 2*viewport_h],
+// reflow later blocks by Y-translation when measured heights differ from their
+// estimates, then rebuild the line index and re-derive anchor Ys from the
+// corrected block tops. No-op (returns false) if the document is fully eager
+// (materialize_block == null). Returns true if any block was (re)materialized,
+// so a host caller can refresh its scrollbar from doc.total_height.
+bool materialize_viewport(LayoutDocument& doc, float scroll_y, float viewport_h);
+
 }  // namespace wlx::runtime::layout

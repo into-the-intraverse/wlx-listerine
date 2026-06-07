@@ -2,6 +2,7 @@
 
 #include "runtime/layout/code_fence_layout.h"
 #include "runtime/layout/inline_layout.h"
+#include "runtime/layout/line_index.h"
 
 #include <d2d1.h>
 
@@ -94,6 +95,38 @@ void apply_height_delta(LayoutDocument& doc, int from_idx, float delta) {
     for (auto& a : doc.anchors)
         if (a.block_index > from_idx) a.y_offset += delta;
     doc.total_height += delta;
+}
+
+bool materialize_viewport(LayoutDocument& doc, float scroll_y, float viewport_h) {
+    if (!doc.materialize_block) return false;  // eager doc: nothing to do
+    float vp_top = scroll_y;
+    float vp_bottom = vp_top + viewport_h * 2.0f;  // one screenful of overscan below
+
+    bool changed = false;
+    for (int i = 0; i < static_cast<int>(doc.blocks.size()); ++i) {
+        auto& b = doc.blocks[i];
+        if (b.rect.bottom < vp_top) continue;        // above viewport
+        if (b.rect.top > vp_bottom) break;           // below (blocks are Y-sorted by index)
+        if (b.text_runs.empty() || b.text_runs[0].layout) continue;  // eager/already materialized
+        float old_bottom = b.rect.bottom;
+        doc.materialize_block(b, i);
+        float delta = b.rect.bottom - old_bottom;
+        if (delta != 0.0f) {
+            apply_height_delta(doc, i, delta);
+            changed = true;
+        }
+    }
+
+    if (changed) {
+        build_line_index(doc);
+        // Re-derive anchor Y absolutely from corrected block tops. This supersedes
+        // apply_height_delta's incremental anchor shifts and also fixes an owning
+        // heading's own anchor (block_index == i), which apply_height_delta skips.
+        for (auto& a : doc.anchors)
+            if (a.block_index >= 0 && a.block_index < static_cast<int>(doc.blocks.size()))
+                a.y_offset = doc.blocks[a.block_index].rect.top;
+    }
+    return changed;
 }
 
 }  // namespace wlx::runtime::layout

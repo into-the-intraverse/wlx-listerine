@@ -256,37 +256,10 @@ static void do_layout(ViewState* vs) {
 // POSITIONS are estimated and refine as blocks materialize — so goto-line to an
 // as-yet-unmaterialized target lands at an estimated Y and snaps exact on arrival.
 static void materialize_viewport(ViewState* vs) {
-    if (!vs->layout || !vs->layout->materialize_block) return;  // eager doc: nothing to do
-    auto& doc = *vs->layout;
-    float vp_top = vs->scroll_y;
-    float vp_h = vs->renderer ? vs->renderer->dip_height() : 0.0f;
-    float vp_bottom = vp_top + vp_h * 2.0f;  // one screenful of overscan below
-
-    bool changed = false;
-    for (int i = 0; i < static_cast<int>(doc.blocks.size()); ++i) {
-        auto& b = doc.blocks[i];
-        if (b.rect.bottom < vp_top) continue;        // above viewport
-        if (b.rect.top > vp_bottom) break;           // below (blocks are Y-sorted by index)
-        if (b.text_runs.empty() || b.text_runs[0].layout) continue;  // eager/already materialized
-        float old_bottom = b.rect.bottom;
-        doc.materialize_block(b, i);
-        float delta = b.rect.bottom - old_bottom;
-        if (delta != 0.0f) {
-            wlx::runtime::layout::apply_height_delta(doc, i, delta);
-            changed = true;
-        }
-    }
-
-    if (changed) {
-        wlx::runtime::layout::build_line_index(doc);
-        // Re-derive anchor Y absolutely from corrected block tops. This supersedes
-        // apply_height_delta's incremental anchor shifts and also fixes an owning
-        // heading's own anchor (block_index == i), which apply_height_delta skips.
-        for (auto& a : doc.anchors)
-            if (a.block_index >= 0 && a.block_index < static_cast<int>(doc.blocks.size()))
-                a.y_offset = doc.blocks[a.block_index].rect.top;
+    if (!vs->layout || !vs->renderer) return;
+    float vp_h = vs->renderer->dip_height();
+    if (wlx::runtime::layout::materialize_viewport(*vs->layout, vs->scroll_y, vp_h))
         update_scrollbar(vs);                     // total_height changed -> max_scroll_y, clamp
-    }
 }
 
 static void load_document(ViewState* vs, const wchar_t* path) {

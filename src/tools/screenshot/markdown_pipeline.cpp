@@ -21,11 +21,14 @@
 #include "runtime/io/file_service.h"
 #include "runtime/parser/markdown_parser.h"
 #include "runtime/layout/layout_engine.h"
+#include "runtime/layout/md_materialize.h"
 #include "runtime/render/render_engine.h"
 #include "runtime/theme/theme_service.h"
 #include "wlx_core/abi.h"
 #include "runtime/search/search_index.h"
 #include "runtime/search/search_hud_painter.h"
+
+#include <memory>
 
 using namespace wlx::runtime::io;
 using namespace wlx::runtime::layout;
@@ -164,14 +167,28 @@ std::wstring run_markdown_pipeline(const Options& opts) {
     double t_read = now_ms();
 
     MarkdownParser parser;
-    auto doc = parser.parse(content->raw_utf8.c_str(), content->raw_utf8.size());
+    // shared_ptr so the lazy path can hand ownership to the layout's materialize
+    // ctx (its recipes hold const InlineNode* into this Document, which must
+    // outlive the layout). Harmless for the eager path.
+    auto doc = std::make_shared<Document>(
+        parser.parse(content->raw_utf8.c_str(), content->raw_utf8.size()));
 
     double t_parse = now_ms();
 
     // Layout
     LayoutEngine layout_engine(dwrite_factory.Get(), theme, opts.dark, core);
     float viewport_width = static_cast<float>(opts.width);
-    auto layout = layout_engine.layout(doc, viewport_width);
+    auto layout = opts.lazy
+        ? layout_engine.layout(*doc, viewport_width, /*wrap_code=*/false,
+                               /*gutter_width=*/0.0f, /*lazy=*/true)
+        : layout_engine.layout(*doc, viewport_width);
+    if (opts.lazy) {
+        // Lifetime guard: the materialize_block closure captured the ctx; the ctx
+        // must own the Document so its recipe inline pointers stay valid until the
+        // layout (and the ctx) is destroyed. Skipping this is a use-after-free.
+        if (auto ctx = layout_engine.take_md_ctx())
+            ctx->document = doc;
+    }
 
     double t_layout = now_ms();
 
@@ -197,6 +214,17 @@ std::wstring run_markdown_pipeline(const Options& opts) {
     }
 
     double t_target = now_ms();
+
+    // Lazy only: build + reflow the blocks intersecting the painted viewport
+    // before painting (and before search indexing). Eager docs are a no-op.
+    // Without this, paint would materialize visible blocks mid-frame WITHOUT
+    // reflow, mispositioning everything below a mis-estimated block this frame.
+    // Use the same scroll_y / viewport height paint will use (DIPs == pixels at
+    // the bitmap target's default 96 DPI).
+    if (opts.lazy)
+        wlx::runtime::layout::materialize_viewport(layout, scroll_y, renderer.dip_height());
+
+    double t_materialize = now_ms();
 
     // Optional: run a search before painting so the document and the
     // match highlights are baked into a single paint pass.
@@ -277,26 +305,30 @@ std::wstring run_markdown_pipeline(const Options& opts) {
         std::fprintf(stderr, "  parse      %6.2f ms\n", t_parse - t_read);
         std::fprintf(stderr, "  layout     %6.2f ms\n", t_layout - t_parse);
         std::fprintf(stderr, "  target     %6.2f ms\n", t_target - t_layout);
-        std::fprintf(stderr, "  paint      %6.2f ms\n", t_paint - t_target);
+        if (opts.lazy)
+            std::fprintf(stderr, "  materialize%6.2f ms\n", t_materialize - t_target);
+        std::fprintf(stderr, "  paint      %6.2f ms\n", t_paint - t_materialize);
         std::fprintf(stderr, "  save png   %6.2f ms\n", t_save - t_paint);
         std::fprintf(stderr, "  \xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\n");
         std::fprintf(stderr, "  TOTAL      %6.2f ms\n", t_save - t0);
         std::fprintf(stderr, "\n");
 
         // In the real plugin, factories are created once and reused.
-        // The "hot path" is read + parse + layout + paint.
+        // The "hot path" is read + parse + layout + (materialize) + paint.
         double hot = (t_read - t_theme) + (t_parse - t_read)
-                   + (t_layout - t_parse) + (t_paint - t_target);
-        std::fprintf(stderr, "  hot path   %6.2f ms  (read+parse+layout+paint)\n", hot);
+                   + (t_layout - t_parse) + (t_materialize - t_target)
+                   + (t_paint - t_materialize);
+        std::fprintf(stderr, "  hot path   %6.2f ms  (read+parse+layout+%spaint)\n",
+                     hot, opts.lazy ? "materialize+" : "");
         std::fprintf(stderr, "\n");
 
         std::fprintf(stderr, "Document:\n");
-        std::fprintf(stderr, "  AST blocks     %zu\n", doc.blocks.size());
+        std::fprintf(stderr, "  AST blocks     %zu\n", doc->blocks.size());
         std::fprintf(stderr, "  layout blocks  %zu\n", layout.blocks.size());
         std::fprintf(stderr, "  total height   %.0f px\n", layout.total_height);
         std::fprintf(stderr, "\n");
 
-        size_t doc_mem = estimate_document_memory(doc);
+        size_t doc_mem = estimate_document_memory(*doc);
         size_t lay_mem = estimate_layout_memory(layout);
         std::fprintf(stderr, "Memory (estimates):\n");
         std::fprintf(stderr, "  document AST   %6zu bytes\n", doc_mem);

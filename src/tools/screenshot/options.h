@@ -14,6 +14,7 @@ struct Options {
     bool  full   = false;
     bool  dark   = false;
     bool  bench  = false;
+    bool  lazy   = false;  // route the markdown pipeline through the lazy layout + viewport materialize
 
     std::wstring search;     // empty == no search
     int          search_step = 0;

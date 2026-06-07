@@ -26,6 +26,7 @@ static void print_usage() {
         "  --config <path>  TOML config path (default: config/wlx-listerine-md.toml)\n"
         "  --dark           Force dark mode\n"
         "  --bench          Print timing and memory stats\n"
+        "  --lazy           Use lazy layout + viewport materialize (markdown only)\n"
         "  --search <term>  Run a search for <term> after layout\n"
         "  --search-step N  Advance the search cursor by N steps (default 0)\n"
         "  --colorizer           Force colorizer mode (else inferred from extension)\n"
@@ -54,6 +55,7 @@ static bool parse_args(int argc, char* argv[], Options& opts) {
         else if (std::strcmp(argv[i], "--full")        == 0) opts.full = true;
         else if (std::strcmp(argv[i], "--dark")        == 0) opts.dark = true;
         else if (std::strcmp(argv[i], "--bench")       == 0) opts.bench = true;
+        else if (std::strcmp(argv[i], "--lazy")        == 0) opts.lazy = true;
         else if (std::strcmp(argv[i], "--search")      == 0 && i + 1 < argc) opts.search = to_wstring(argv[++i]);
         else if (std::strcmp(argv[i], "--search-step") == 0 && i + 1 < argc) opts.search_step = std::atoi(argv[++i]);
         else if (std::strcmp(argv[i], "--colorizer")     == 0) opts.colorizer = true;

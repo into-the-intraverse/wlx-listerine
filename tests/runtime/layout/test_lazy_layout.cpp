@@ -8,6 +8,7 @@
 #include <dwrite.h>
 #include <wrl/client.h>
 
+#include <cmath>
 #include <cstring>
 #include <memory>
 
@@ -141,4 +142,41 @@ TEST_CASE("lazy line index has the same logical-line count as eager (before mate
     // (count comes from run.text hard-breaks, not from the layout).
     CHECK(lazy.line_tops.size() == eager.line_tops.size());
     CHECK(lazy.line_tops.size() >= 5);  // para + 3 code lines + para
+}
+
+TEST_CASE("materialize_viewport builds the in-range blocks and reports change") {
+    auto factory = dwf2();
+    REQUIRE(factory);
+    MarkdownParser p;
+    const char* md = "# Heading\n\nFirst paragraph.\n\nSecond paragraph.\n\nThird paragraph.";
+    auto doc = std::make_shared<Document>(p.parse(md, std::strlen(md)));
+    ThemeService theme;
+    LayoutEngine eng(factory.Get(), theme, false);
+    auto lazy = eng.layout(*doc, 800.0f, /*wrap_code=*/false, /*gutter=*/0.0f, /*lazy=*/true);
+    if (auto ctx = eng.take_md_ctx()) ctx->document = doc;  // keep inline ptrs alive
+    REQUIRE(lazy.blocks.size() >= 2);
+
+    // A huge viewport puts every block in range -> all materialize.
+    bool changed = materialize_viewport(lazy, /*scroll_y=*/0.0f, /*viewport_h=*/100000.0f);
+    CHECK(changed);
+    for (auto& b : lazy.blocks)
+        if (!b.text_runs.empty())
+            CHECK(b.text_runs[0].layout != nullptr);
+    CHECK(std::isfinite(lazy.total_height));
+    CHECK(lazy.total_height > 0.0f);
+
+    // Idempotent: a second call has nothing to (re)materialize.
+    CHECK_FALSE(materialize_viewport(lazy, 0.0f, 100000.0f));
+}
+
+TEST_CASE("materialize_viewport is a no-op on an eager document") {
+    auto factory = dwf2();
+    REQUIRE(factory);
+    MarkdownParser p;
+    auto doc = std::make_shared<Document>(p.parse("Hello world", 11));
+    ThemeService theme;
+    LayoutEngine eng(factory.Get(), theme, false);
+    auto eager = eng.layout(*doc, 800.0f);   // eager -> materialize_block == null
+    CHECK(eager.materialize_block == nullptr);
+    CHECK_FALSE(materialize_viewport(eager, 0.0f, 1000.0f));
 }
