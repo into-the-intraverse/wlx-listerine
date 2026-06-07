@@ -27,6 +27,7 @@ struct Options {
     std::wstring cpp_grammar;     // "standard" | "unreal" | empty
     bool         dump_tokens      = false;
     std::wstring display_config;  // optional TOML override path
+    bool         cached_tree     = false;  // colorizer: parse once + viewport highlight_range
 };
 
 }  // namespace wlx::tools::screenshot

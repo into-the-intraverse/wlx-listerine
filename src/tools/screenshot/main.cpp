@@ -33,7 +33,8 @@ static void print_usage() {
         "  --lang <id>           Override grammar language (else inferred from extension)\n"
         "  --cpp-grammar <kind>  \"standard\" or \"unreal\" — selects cpp grammar variant\n"
         "  --dump-tokens         Write resolved-style token JSON instead of painting\n"
-        "  --display-config <p>  TOML overrides for ColorizerDisplayConfig\n");
+        "  --display-config <p>  TOML overrides for ColorizerDisplayConfig\n"
+        "  --cached-tree         Colorizer: parse once + highlight_range (viewport path)\n");
 }
 
 static std::wstring to_wstring(const char* s) {
@@ -63,6 +64,7 @@ static bool parse_args(int argc, char* argv[], Options& opts) {
         else if (std::strcmp(argv[i], "--cpp-grammar")   == 0 && i + 1 < argc) opts.cpp_grammar = to_wstring(argv[++i]);
         else if (std::strcmp(argv[i], "--dump-tokens")   == 0) opts.dump_tokens = true;
         else if (std::strcmp(argv[i], "--display-config")== 0 && i + 1 < argc) opts.display_config = to_wstring(argv[++i]);
+        else if (std::strcmp(argv[i], "--cached-tree")   == 0) opts.cached_tree = true;
         else { std::fprintf(stderr, "Unknown option: %s\n", argv[i]); return false; }
     }
     if (opts.width <= 0 || opts.height <= 0) {

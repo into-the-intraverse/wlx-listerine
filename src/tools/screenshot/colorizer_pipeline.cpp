@@ -21,6 +21,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "runtime/io/file_service.h"
 #include "runtime/render/render_engine.h"
@@ -28,6 +29,7 @@
 #include "runtime/util/string_util.h"
 #include "core_dll/colorizer/colorizer.h"
 #include "plugin_colorizer/layout/colorizer_layout.h"
+#include "wlx_core/abi.h"
 #include "plugin_colorizer/language/routing.h"
 #include "tools/screenshot/token_json_writer.h"
 
@@ -41,6 +43,7 @@ using wlx::plugin_colorizer::layout::ColorizerDisplayConfig;
 using wlx::plugin_colorizer::layout::LayoutTimings;
 using wlx::plugin_colorizer::layout::CppGrammar;
 using wlx::plugin_colorizer::layout::layout_source;
+using wlx::plugin_colorizer::layout::apply_spans_to_range;
 using wlx::plugin_colorizer::language::apply_cpp_variant;
 using wlx::runtime::io::FileService;
 using wlx::runtime::render::RenderEngine;
@@ -128,6 +131,28 @@ std::string fnv1a_hex(const std::string& bytes) {
     std::snprintf(buf, sizeof(buf), "%016llx",
                   static_cast<unsigned long long>(h));
     return std::string(buf);
+}
+
+// Convert an ABI WlxColorSpan array into a ColorizeResult. Frees the spans via
+// wlx_core_free_spans. Returns an empty result if spans is null or count is zero.
+static ColorizeResult abi_spans_to_result(WlxColorSpan* spans, uint32_t count) {
+    using wlx::core::colorizer::ColorSpan;
+    ColorizeResult out;
+    if (!spans || count == 0) {
+        if (spans) wlx_core_free_spans(spans);
+        return out;
+    }
+    out.spans.reserve(count);
+    for (uint32_t i = 0; i < count; ++i) {
+        const auto& s = spans[i];
+        ColorSpan cs;
+        cs.start    = s.start;  cs.length   = s.length;
+        cs.color    = s.color;  cs.bg_color = s.bg_color;
+        cs.has_bg   = s.has_bg != 0; cs.modifiers = s.modifiers;
+        out.spans.push_back(cs);
+    }
+    wlx_core_free_spans(spans);
+    return out;
 }
 
 std::string compute_config_hash(const std::string& theme_name,
@@ -260,16 +285,16 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
         return {};
     }
 
-    // ----- Colorize -----
-    ColorizeTimings ctimings;
-    ColorizeResult colors = colorizer.colorize(content->raw_utf8, lang, opts.dark, &ctimings);
-    auto _tcolor = std::chrono::steady_clock::now();
-
     // ----- Build display config (used by both paint and dump-tokens paths) -----
     // Load TOML overrides first, then force cpp_grammar from --cpp-grammar
     // (the flag wins over any value the TOML might set).
     ColorizerDisplayConfig display = load_display_config(opts.display_config);
     display.cpp_grammar = variant;
+
+    // ----- Colorize (eager whole-doc) -----
+    ColorizeTimings ctimings;
+    ColorizeResult colors = colorizer.colorize(content->raw_utf8, lang, opts.dark, &ctimings);
+    auto _tcolor = std::chrono::steady_clock::now();
 
     // ----- --dump-tokens branch -----
     if (opts.dump_tokens) {
@@ -319,7 +344,184 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
         return out;
     }
 
-    // ----- Layout -----
+    // ----- --cached-tree path (parse once + viewport highlight_range) -----
+    // Mirrors the host's reparse_and_colorize + colorize_viewport flow.
+    // Falls back to the eager whole-doc path when:
+    //   - core handle unavailable (ABI mismatch)
+    //   - language unsupported in the core
+    //   - word_wrap is on (byte->line mapping unreliable)
+    //   - wlx_core_parse returns null
+    if (opts.cached_tree && !display.word_wrap) {
+        WlxCore* core = wlx_core::acquire_compatible();
+        bool use_cached = core != nullptr &&
+                          wlx_core_supports(core, lang.c_str()) == 1;
+        if (!use_cached) {
+            std::fprintf(stderr,
+                "[--cached-tree] fallback: %s — using whole-doc colorize\n",
+                !core ? "core unavailable" : "language unsupported in core");
+        } else {
+            // Parse
+            auto _tparse0 = std::chrono::steady_clock::now();
+            WlxTree* raw_tree = wlx_core_parse(
+                core, content->raw_utf8.c_str(),
+                static_cast<uint32_t>(content->raw_utf8.size()),
+                lang.c_str());
+            auto _tparse1 = std::chrono::steady_clock::now();
+
+            if (!raw_tree) {
+                std::fprintf(stderr,
+                    "[--cached-tree] fallback: wlx_core_parse failed — using whole-doc colorize\n");
+                // fall through to eager path below
+            } else {
+                wlx_core::TreePtr tree(raw_tree, wlx_core::TreeDeleter{core});
+
+                // Skeleton layout: empty colors, capture line_byte_starts
+                std::vector<int> line_byte_starts;
+                LayoutTimings ltimings_ct;
+                auto layout_ct = layout_source(dwrite_factory.Get(),
+                                               content->text,
+                                               content->raw_utf8,
+                                               /*colors=*/{},
+                                               theme,
+                                               opts.dark,
+                                               static_cast<float>(opts.width),
+                                               display,
+                                               &ltimings_ct,
+                                               &line_byte_starts);
+                auto _tlayout_ct = std::chrono::steady_clock::now();
+
+                // Compute visible byte range for the rendered viewport.
+                // For --full: highlight the entire document.
+                // For viewport mode: use the same overscan math as colorize_viewport.
+                const int bmp_height_ct = opts.full
+                    ? std::max(1, static_cast<int>(std::ceil(layout_ct.total_height)))
+                    : opts.height;
+                const float scroll_y_ct = opts.full ? 0.0f : opts.scroll;
+
+                uint32_t vlo = 0;
+                uint32_t vhi = static_cast<uint32_t>(content->raw_utf8.size());
+
+                if (!opts.full && !layout_ct.blocks.empty() && !line_byte_starts.empty()) {
+                    const float viewport_h = static_cast<float>(bmp_height_ct);
+                    const float top        = scroll_y_ct;
+                    const float bottom     = scroll_y_ct + viewport_h;
+                    const float over_top   = top    - viewport_h;
+                    const float over_bot   = bottom + viewport_h;
+
+                    const int block_count  = static_cast<int>(layout_ct.blocks.size());
+                    const int n = std::min(block_count,
+                                           static_cast<int>(line_byte_starts.size()));
+                    int first = -1, last = -1;
+                    for (int i = 0; i < n; ++i) {
+                        const auto& r = layout_ct.blocks[static_cast<size_t>(i)].rect;
+                        if (r.bottom < over_top) continue;
+                        if (r.top    > over_bot)  break;
+                        if (first < 0) first = i;
+                        last = i;
+                    }
+                    if (first >= 0) {
+                        vlo = static_cast<uint32_t>(line_byte_starts[first]);
+                        vhi = (last + 1 < static_cast<int>(line_byte_starts.size()))
+                            ? static_cast<uint32_t>(line_byte_starts[last + 1])
+                            : static_cast<uint32_t>(content->raw_utf8.size());
+                    }
+                }
+
+                // Highlight the visible byte range against the cached tree
+                WlxColorSpan* ct_spans = nullptr;
+                uint32_t ct_count = 0;
+                auto _thigh0 = std::chrono::steady_clock::now();
+                int hres = wlx_core_highlight_range(
+                    core, tree.get(), opts.dark ? 1 : 0,
+                    vlo, vhi, &ct_spans, &ct_count);
+                auto _thigh1 = std::chrono::steady_clock::now();
+
+                if (hres != 0) {
+                    std::fprintf(stderr,
+                        "[--cached-tree] wlx_core_highlight_range failed (%d) — "
+                        "rendering without colors\n", hres);
+                } else {
+                    ColorizeResult ct_result = abi_spans_to_result(ct_spans, ct_count);
+                    apply_spans_to_range(layout_ct, content->raw_utf8, line_byte_starts,
+                                         ct_result, vlo, vhi, display.tab_width);
+                }
+
+                // ----- Render (cached-tree path) -----
+                RenderEngine renderer_ct(d2d_factory.Get(), dwrite_factory.Get(), theme, opts.dark);
+                hr = renderer_ct.create_bitmap_resources(wic_factory.Get(),
+                                                         opts.width, bmp_height_ct);
+                if (FAILED(hr)) {
+                    std::fprintf(stderr, "Bitmap target failed: 0x%08lx\n", hr);
+                    return {};
+                }
+                renderer_ct.paint(layout_ct, scroll_y_ct);
+                if (renderer_ct.needs_recreate()) {
+                    std::fprintf(stderr, "Render target lost during paint\n");
+                    return {};
+                }
+                auto _tpaint_ct = std::chrono::steady_clock::now();
+
+                if (opts.bench) {
+                    auto ms = [](auto a, auto b) {
+                        return std::chrono::duration<double, std::milli>(b - a).count();
+                    };
+                    int lines = 1;
+                    for (char c : content->raw_utf8) if (c == '\n') ++lines;
+
+                    std::fprintf(stderr,
+                        "Colorizer timing --cached-tree (%d lines, lang=%s):\n",
+                        lines, lang.c_str());
+                    std::fprintf(stderr, "  file read        %8.2f ms\n",
+                        ms(_t0, _tread));
+                    std::fprintf(stderr, "  parse (cold)     %8.2f ms  (wlx_core_parse)\n",
+                        ms(_tparse0, _tparse1));
+                    std::fprintf(stderr, "  layout (skel)    %8.2f ms  (skeleton, no colors)\n",
+                        ms(_tparse1, _tlayout_ct));
+                    std::fprintf(stderr, "    line split     %8.2f ms\n",
+                        ltimings_ct.line_split_ms);
+                    std::fprintf(stderr, "    span index     %8.2f ms  (empty, skipped)\n",
+                        ltimings_ct.span_index_ms);
+                    std::fprintf(stderr, "    build blocks   %8.2f ms\n",
+                        ltimings_ct.build_blocks_ms);
+                    std::fprintf(stderr, "    line index     %8.2f ms\n",
+                        ltimings_ct.line_index_ms);
+                    std::fprintf(stderr,
+                        "  highlight range  %8.2f ms  (wlx_core_highlight_range, "
+                        "bytes %u..%u)\n",
+                        ms(_thigh0, _thigh1), vlo, vhi);
+                    std::fprintf(stderr, "  paint            %8.2f ms\n",
+                        ms(_tlayout_ct, _tpaint_ct));
+                    std::fprintf(stderr,
+                        "  hot total        %8.2f ms  (read+parse+layout+highlight+paint)\n",
+                        ms(_t0, _tpaint_ct));
+                }
+
+                // ----- Save (cached-tree path) -----
+                std::wstring out_ct = sibling_path(opts.input_path,
+                                                    opts.dark ? L"_dark.png" : L".png");
+                std::error_code ec_ct;
+                fs::create_directories(fs::path(out_ct).parent_path(), ec_ct);
+                if (ec_ct) {
+                    std::fprintf(stderr, "Cannot create output directory: %s\n",
+                                 ec_ct.message().c_str());
+                    return {};
+                }
+                hr = renderer_ct.save_to_png(wic_factory.Get(), out_ct.c_str());
+                if (FAILED(hr)) {
+                    std::fprintf(stderr, "Failed to save PNG: 0x%08lx\n", hr);
+                    return {};
+                }
+                return out_ct;
+                // tree freed here via TreePtr destructor
+            }
+        }
+        // Fallback: word_wrap or parse failed — fall through to eager whole-doc below.
+    } else if (opts.cached_tree && display.word_wrap) {
+        std::fprintf(stderr,
+            "[--cached-tree] fallback: word_wrap on — using whole-doc colorize\n");
+    }
+
+    // ----- Layout (eager whole-doc) -----
 
     LayoutTimings ltimings;
     auto layout = layout_source(dwrite_factory.Get(),
