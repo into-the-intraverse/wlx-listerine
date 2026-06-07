@@ -20,7 +20,9 @@ namespace wlx::runtime::host {
 // read `closed`/`generation` after the ViewState is gone. COM-free; carries NO HWND.
 struct ViewLiveToken {
     std::atomic<uint64_t> generation{0};  // == the latest load's generation for this view
-    std::atomic<bool>     closed{false};  // set true in ListCloseWindow before delete vs
+    std::atomic<bool>     closed{false};  // set true in ListCloseWindow BEFORE deleting the
+                                          // ViewState; the worker re-checks it after parse to
+                                          // skip PostMessage to a window that's going away.
 };
 
 // Per-plugin-module (statically linked): a strictly-monotonic load counter and a
@@ -28,10 +30,17 @@ struct ViewLiveToken {
 inline std::atomic<uint64_t> g_load_gen{0};
 inline std::atomic<bool>     g_shutting_down{false};
 
+// Per-view load state, stored on each plugin's ViewState (not consumed by this
+// unit): Loading until the async parse result is adopted, then Ready.
 enum class LoadState : uint8_t { Loading, Ready };
 
 // Generic, COM-free job carried to the worker. Plugin-specific parse inputs are
 // captured in the parse closure, NOT added here.
+//
+// Result ownership: spawn_parse_worker PostMessages a raw Result* (ownership moves
+// to the UI thread). The WndProc handler for done_msg MUST wrap lParam in a
+// unique_ptr<Result> immediately, then call should_adopt_result to decide whether
+// to keep it — every reject path then frees it on scope exit (no leak).
 struct ParseJob {
     std::wstring path;                         // deep copy (host buffer is transient)
     uint64_t     generation = 0;               // g_load_gen value stamped for this load
@@ -60,7 +69,8 @@ void pin_plugin_module_once();
 // Spawn a detached worker that runs parse_fn(job) -> std::unique_ptr<Result>, then
 // PostMessages the raw Result* (ownership to the UI thread) via job->done_msg.
 // Result is plugin-specific. The worker holds ONLY the job + parse_fn (must capture
-// only copyable, COM-free data — NEVER the ViewState). No join, ever.
+// only copyable, COM-free data — NEVER the ViewState; there is no compile-time
+// enforcement, it is the caller's responsibility). No join, ever.
 template <class Result, class ParseFn>
 void spawn_parse_worker(std::unique_ptr<ParseJob> job, ParseFn parse_fn) {
     pin_plugin_module_once();
@@ -72,13 +82,16 @@ void spawn_parse_worker(std::unique_ptr<ParseJob> job, ParseFn parse_fn) {
         if (g_shutting_down.load(std::memory_order_acquire)) return;   // result frees here, off loader lock
         if (job->live->closed.load(std::memory_order_acquire)) return; // view closed -> free locally
         Result* raw = result.release();
-        if (!PostMessage(job->hwnd, job->done_msg, (WPARAM)(UINT_PTR)job->generation, (LPARAM)raw))
+        if (!PostMessage(job->hwnd, job->done_msg,
+                         static_cast<WPARAM>(job->generation), reinterpret_cast<LPARAM>(raw)))
             result.reset(raw);   // post failed (queue full / dead hwnd) -> reclaim + free locally
     }).detach();
 }
 
 // Synchronous bypass: parse + adopt inline (for any non-interactive caller that
 // can't run a message pump). Returns the heap Result (caller adopts immediately).
+// Deliberately skips the g_shutting_down / closed gates — there's no pump to drain
+// and the caller must not invoke it after detach.
 template <class Result, class ParseFn>
 std::unique_ptr<Result> run_sync(const ParseJob& job, ParseFn parse_fn) {
     return parse_fn(job);
