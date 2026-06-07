@@ -42,6 +42,7 @@
 #include "runtime/host/context_menu.h"
 #include "runtime/host/dark_mode.h"
 #include "runtime/host/factories.h"
+#include "runtime/host/async_loader.h"
 #include "runtime/host/grammar_menu.h"
 #include "runtime/host/hit_test.h"
 #include "runtime/host/host_integration.h"
@@ -111,9 +112,37 @@ struct ViewState {
     bool index_dirty = true;
 
     wlx::runtime::host::GotoPrompt goto_prompt;
+
+    // Async load (Lever 2): the live token is shared with in-flight parse workers
+    // so a late worker can safely read generation/closed after the ViewState dies.
+    std::shared_ptr<wlx::runtime::host::ViewLiveToken> live;
+    uint64_t current_gen = 0;
+    wlx::runtime::host::LoadState state = wlx::runtime::host::LoadState::Loading;
 };
 
 static_assert(SearchState<ViewState>);
+
+// Process-unique message id used to hand a completed parse result from a worker
+// thread back to ViewWndProc on the UI thread. RegisterWindowMessageW guarantees
+// a value distinct from any other plugin's — a foreign WndProc can never mishandle
+// it (it's also a runtime value, so it can't be a switch `case` label).
+static UINT wm_md_parse_done() {
+    static const UINT m = RegisterWindowMessageW(L"WlxListerineMd.ParseDone");
+    return m;
+}
+
+// Plugin-local async parse result. Carries ONLY copyable, COM-free data: built on
+// the worker thread, adopted on the UI thread. The first two members mirror the
+// generic ParseResult prefix defensively; the unique message above makes foreign
+// delivery impossible regardless.
+struct ParseResultMd {
+    uint64_t generation = 0;
+    std::shared_ptr<wlx::runtime::host::ViewLiveToken> live;  // same control block as the spawning view
+    bool failed = false;
+    wlx::runtime::io::FileIdentity identity;   // adopt recomputes ParseCacheKey + store_parse
+    std::string raw_utf8;                      // moved out of FileContent; adopt counts source lines
+    std::shared_ptr<Document> document;
+};
 
 // ---------- globals ----------
 
@@ -262,7 +291,22 @@ static void materialize_viewport(ViewState* vs) {
         update_scrollbar(vs);                     // total_height changed -> max_scroll_y, clamp
 }
 
-static void load_document(ViewState* vs, const wchar_t* path) {
+// The SINGLE load funnel (Lever 2). Runs on the UI thread. "Non-blocking" here
+// means no md4c PARSE on the UI thread — a cheap stat for the parse-cache fast
+// path still happens synchronously. On a cache hit we adopt inline; on a miss we
+// spawn a detached worker that reads + parses off-thread and PostMessages the
+// result back to ViewWndProc (wm_md_parse_done) for UI-thread adoption.
+static void begin_async_load(ViewState* vs, const wchar_t* path) {
+    // Bump the generation: supersede any in-flight worker for this view, and stamp
+    // the live token so a running worker self-cancels at its next gate.
+    vs->current_gen = ++wlx::runtime::host::g_load_gen;
+    vs->live->generation.store(vs->current_gen, std::memory_order_release);
+    vs->state = wlx::runtime::host::LoadState::Loading;
+
+    // Per-load UI-side reset (same as the old load_document head). The renderer's
+    // search_matches_ still holds SearchMatch objects whose block_index values
+    // point into the previous file's layout; clear them so a repaint before the
+    // next F7 doesn't walk them against the new layout and draw spurious rects.
     vs->file_path = path;
     vs->scroll_y = 0;
     vs->sel_anchor = TextPosition{};
@@ -275,43 +319,69 @@ static void load_document(ViewState* vs, const wchar_t* path) {
     vs->last_query = SearchQuery{};
     vs->index_dirty = true;
     vs->goto_prompt = {};
-    // Also clear matches in the renderer: its search_matches_ still holds
-    // SearchMatch objects whose block_index values point into the previous
-    // file's layout. Any repaint before the next F7 would walk them against
-    // the new layout and could draw spurious highlight rects.
     if (vs->renderer) vs->renderer->set_search_matches({}, -1);
     if (vs->hud) vs->hud->clear();
 
-    auto content = g_file_service.read(path);
-    if (!content) return;
-
-    // Check parse cache
-    ParseCacheKey pk;
-    pk.path = content->identity.path;
-    pk.size = content->identity.size;
-    pk.mtime = content->identity.mtime;
-    pk.parser_version = MarkdownParser::parser_version();
-    vs->parse_key = pk;
-    vs->source_line_count =
-        static_cast<int>(std::count(content->raw_utf8.begin(),
-                                    content->raw_utf8.end(), '\n')) + 1;
-
-    auto cached_doc = g_cache.lookup_parse(pk);
-    if (cached_doc) {
-        vs->document = cached_doc;
-    } else {
-        MarkdownParser parser;
-        auto doc = std::make_shared<Document>(
-            parser.parse(content->raw_utf8.c_str(), content->raw_utf8.size()));
-        g_cache.store_parse(pk, doc);
-        vs->document = doc;
+    // Parse-cache fast path: cheap stat (NOT a full read) -> ParseCacheKey ->
+    // lookup. A hit means an instant revisit — adopt synchronously, no worker.
+    if (auto id = g_file_service.identity(path)) {
+        ParseCacheKey pk;
+        pk.path = id->path;
+        pk.size = id->size;
+        pk.mtime = id->mtime;
+        pk.parser_version = MarkdownParser::parser_version();
+        if (auto cached = g_cache.lookup_parse(pk)) {
+            vs->parse_key = pk;
+            // Cache-hit path doesn't re-read the bytes, so source_line_count can't
+            // be recomputed (the Document carries no source). Reset to 0 (not the
+            // previous file's stale count): do_layout's estimate then falls back to
+            // 1 digit and self-corrects the gutter against the real line_tops count
+            // — so the gutter width is always correct, at worst one extra relayout
+            // pass on a parse-hit / layout-miss. The layout cache normally also
+            // hits here (same file revisit), making source_line_count irrelevant.
+            vs->source_line_count = 0;
+            vs->document = cached;
+            vs->state = wlx::runtime::host::LoadState::Ready;
+            do_layout(vs);
+            InvalidateRect(vs->hwnd, nullptr, FALSE);
+            return;
+        }
     }
 
-    do_layout(vs);
+    // Miss (or stat failed) -> spawn the parse worker. The closure captures NOTHING
+    // but the job: no vs, no this, no COM, no g_cache, no g_views. FileService and
+    // MarkdownParser are worker-local + pure.
+    auto job = std::make_unique<wlx::runtime::host::ParseJob>();
+    job->path = path;
+    job->generation = vs->current_gen;
+    job->live = vs->live;
+    job->hwnd = vs->hwnd;
+    job->done_msg = wm_md_parse_done();
+    wlx::runtime::host::spawn_parse_worker<ParseResultMd>(std::move(job),
+        [](const wlx::runtime::host::ParseJob& j) -> std::unique_ptr<ParseResultMd> {
+            auto r = std::make_unique<ParseResultMd>();
+            r->generation = j.generation;
+            r->live = j.live;
+            wlx::runtime::io::FileService fs;             // worker-LOCAL, stateless
+            auto content = fs.read(j.path.c_str());
+            if (!content) { r->failed = true; return r; }
+            MarkdownParser parser;                        // worker-LOCAL, pure
+            r->identity = content->identity;
+            r->document = std::make_shared<Document>(
+                parser.parse(content->raw_utf8.c_str(), content->raw_utf8.size()));
+            r->raw_utf8 = std::move(content->raw_utf8);
+            return r;
+        });
+}
+
+// Thin alias kept for the synchronous callers (reload_view, link ReloadDocument).
+// Routes to the async funnel; the parse still moves off the UI thread.
+static void load_document(ViewState* vs, const wchar_t* path) {
+    begin_async_load(vs, path);
 }
 
 static void reload_view(ViewState& vs, const wchar_t* path) {
-    load_document(&vs, path);
+    begin_async_load(&vs, path);
     InvalidateRect(vs.hwnd, nullptr, FALSE);
 }
 
@@ -380,6 +450,44 @@ static void invoke_link_action(ViewState* vs, const InteractionEngine::LinkActio
 static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto* vs = reinterpret_cast<ViewState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
 
+    // Async parse adoption (Lever 2). wm_md_parse_done() is a runtime-registered
+    // message, so it can't be a switch `case`. Always take ownership of the raw
+    // Result* first (every path below frees it on scope exit), then recover the
+    // live ViewState via g_views — NOT the top-of-function `vs`, which can dangle
+    // for a recycled/late-dispatched message — and gate adoption on identity +
+    // generation + closed via should_adopt_result.
+    if (msg == wm_md_parse_done()) {
+        std::unique_ptr<ParseResultMd> res(reinterpret_cast<ParseResultMd*>(lp));
+        auto it = g_views.find(hwnd);
+        if (it == g_views.end()) return 0;            // closed/recycled -> drop (res frees)
+        ViewState* v = it->second;
+        if (!wlx::runtime::host::should_adopt_result(res->live.get(), res->generation,
+                                                     v->live.get(), v->current_gen))
+            return 0;                                 // superseded/closed -> drop (res frees)
+        v->state = wlx::runtime::host::LoadState::Ready;
+        if (res->failed) {
+            v->document.reset();
+            v->layout.reset();
+            update_scrollbar(v);
+            InvalidateRect(hwnd, nullptr, FALSE);
+            return 0;
+        }
+        ParseCacheKey pk;
+        pk.path = res->identity.path;
+        pk.size = res->identity.size;
+        pk.mtime = res->identity.mtime;
+        pk.parser_version = MarkdownParser::parser_version();
+        v->parse_key = pk;
+        g_cache.store_parse(pk, res->document);        // cache touched ONLY on the UI thread
+        v->source_line_count =
+            static_cast<int>(std::count(res->raw_utf8.begin(),
+                                        res->raw_utf8.end(), '\n')) + 1;
+        v->document = res->document;
+        do_layout(v);                                  // Lever 1 lazy layout
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+    }
+
     switch (msg) {
     case WM_PAINT: {
         PAINTSTRUCT ps;
@@ -395,6 +503,18 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             vs->renderer->paint(*vs->layout, vs->scroll_y, sel_lo, sel_hi,
                                 vs->goto_prompt.active ? &vs->goto_prompt.buffer : nullptr,
                                 static_cast<int>(vs->layout->line_tops.size()));
+        } else if (vs && vs->renderer) {
+            // Loading frame (async parse in flight): no layout yet. Paint a minimal
+            // themed clear so light mode doesn't flash raw black before the first
+            // result lands. Mirrors RenderEngine::paint's BeginDraw/Clear/EndDraw.
+            if (vs->renderer->needs_recreate())
+                vs->renderer->create_device_resources(hwnd);
+            if (auto* rt = vs->renderer->render_target()) {
+                rt->BeginDraw();
+                rt->Clear(ThemeService::to_d2d_color(
+                    g_theme.palette(vs->dark_mode).background));
+                rt->EndDraw();
+            }
         }
         EndPaint(hwnd, &ps);
         return 0;
@@ -522,7 +642,7 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
 
     case WM_LBUTTONDOWN: {
-        if (!vs || !vs->layout) break;
+        if (!vs || vs->state != LoadState::Ready || !vs->layout) break;
         SetFocus(hwnd);
         float px = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(GET_X_LPARAM(lp)))
                                 : static_cast<float>(GET_X_LPARAM(lp));
@@ -558,7 +678,7 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
 
     case WM_LBUTTONUP: {
-        if (!vs || !vs->layout) break;
+        if (!vs || vs->state != LoadState::Ready || !vs->layout) break;
         bool was_dragging = vs->selecting;
         vs->selecting = false;
         ReleaseCapture();
@@ -764,8 +884,10 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
         bool handled = false;
 
-        // Ctrl+G — open the go-to-line prompt
-        if (wp == 'G' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+        // Ctrl+G — open the go-to-line prompt (no-op while a load is in flight;
+        // a Loading view has no layout / line index to jump within).
+        if (wp == 'G' && (GetKeyState(VK_CONTROL) & 0x8000) &&
+            vs->state == LoadState::Ready) {
             vs->goto_prompt.active = true;
             vs->goto_prompt.buffer.clear();
             InvalidateRect(hwnd, nullptr, FALSE);
@@ -855,6 +977,14 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_ERASEBKGND:
         return TRUE;
 
+    case WM_NCDESTROY:
+        // Clear the back-pointer so a message dispatched after ListCloseWindow has
+        // already deleted the ViewState (e.g. a late wm_md_parse_done) reads a null
+        // `vs` at the top instead of a dangling one. (g_views/closed already guard
+        // adoption; this hardens every other branch.)
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+        break;
+
     default:
         break;
     }
@@ -885,6 +1015,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {
         break;
 
     case DLL_PROCESS_DETACH:
+        // Signal in-flight parse workers to bail (they gate on this before any
+        // PostMessage / Result free) BEFORE any other teardown. We never join —
+        // the worker holds no ViewState/COM ref, so it can't touch unmapped state.
+        wlx::runtime::host::g_shutting_down.store(true, std::memory_order_release);
         // DLL_PROCESS_DETACH runs under the loader lock.  COM Release() calls
         // here can deadlock (terminated threads hold locks, or DWrite shared
         // factory cleanup waits on internal state).  This applies to BOTH the
@@ -952,6 +1086,9 @@ HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
     vs->parent = ParentWin;
     vs->dark_mode = dark;
     vs->wrap_text = wrap;
+    // Liveness token: shared with every parse worker this view spawns, so a late
+    // worker can read generation/closed safely after the ViewState is gone.
+    vs->live = std::make_shared<wlx::runtime::host::ViewLiveToken>();
 
     SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(vs));
     g_views[hwnd] = vs;
@@ -976,8 +1113,9 @@ HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
         InvalidateRect(vs->hwnd, nullptr, FALSE);
     };
 
-    // Load and render document
-    load_document(vs, FileToLoad);
+    // Kick off the async load (returns immediately; parse runs off the UI thread,
+    // adopted via wm_md_parse_done). The cache fast path adopts inline.
+    begin_async_load(vs, FileToLoad);
     InvalidateRect(hwnd, nullptr, FALSE);
 
     g_integration.attach(vs, ParentWin);
@@ -1003,7 +1141,7 @@ int __stdcall ListLoadNextW(HWND ParentWin, HWND PluginWin, wchar_t* FileToLoad,
     }
     vs->wrap_text = new_wrap;
 
-    load_document(vs, FileToLoad);
+    begin_async_load(vs, FileToLoad);
     InvalidateRect(vs->hwnd, nullptr, FALSE);
 
     return LISTPLUGIN_OK;
@@ -1013,9 +1151,14 @@ void __stdcall ListCloseWindow(HWND ListWin) {
     WLX_TRACE(L"ListCloseWindow hwnd=%p", ListWin);
     auto it = g_views.find(ListWin);
     if (it != g_views.end()) {
-        g_integration.detach(it->second);  // must come before delete
-        delete it->second;
-        g_views.erase(it);
+        ViewState* vs = it->second;
+        g_integration.detach(vs);          // must come before delete
+        g_views.erase(it);                 // erase BEFORE delete: adopt's g_views.find
+                                           // can never see a being-deleted entry
+        vs->live->closed.store(true, std::memory_order_release);  // in-flight worker self-cancels
+        ++wlx::runtime::host::g_load_gen;  // supersede any worker still mid-parse
+        SetWindowLongPtrW(ListWin, GWLP_USERDATA, 0);  // clear back-pointer before delete
+        delete vs;
     }
     DestroyWindow(ListWin);
 }
@@ -1102,7 +1245,7 @@ int __stdcall ListSearchTextW(HWND ListWin, wchar_t* SearchString, int SearchPar
     if (!SearchString || !*SearchString) return LISTPLUGIN_ERROR;
 
     auto* vs = it->second;
-    if (!vs->layout) return LISTPLUGIN_ERROR;
+    if (vs->state != LoadState::Ready || !vs->layout) return LISTPLUGIN_ERROR;
 
     SearchQuery q;
     q.needle       = SearchString;
