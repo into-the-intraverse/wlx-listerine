@@ -77,8 +77,6 @@ wlx_core_colorize(WlxCore* h,
 
     // View the caller's buffer directly — colorize() is synchronous and reads
     // it only for the duration of this call, so no owning copy is needed.
-    // View the caller's buffer directly — colorize() is synchronous and reads
-    // it only for the duration of this call, so no owning copy is needed.
     auto result = reg.colorize(std::string_view(source, len), language,
                                dark_mode != 0, range_start, range_end);
     return marshal_spans(result, out_spans, out_count);
