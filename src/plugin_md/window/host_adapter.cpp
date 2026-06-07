@@ -132,9 +132,10 @@ static UINT wm_md_parse_done() {
 }
 
 // Plugin-local async parse result. Carries ONLY copyable, COM-free data: built on
-// the worker thread, adopted on the UI thread. The first two members mirror the
-// generic ParseResult prefix defensively; the unique message above makes foreign
-// delivery impossible regardless.
+// the worker thread, adopted on the UI thread. There is no shared ParseResult base
+// type — each plugin has its own; the unique RegisterWindowMessageW value above
+// makes cross-plugin (foreign-WndProc) delivery impossible, so no common layout is
+// needed.
 struct ParseResultMd {
     uint64_t generation = 0;
     std::shared_ptr<wlx::runtime::host::ViewLiveToken> live;  // same control block as the spawning view
@@ -296,6 +297,10 @@ static void materialize_viewport(ViewState* vs) {
 // path still happens synchronously. On a cache hit we adopt inline; on a miss we
 // spawn a detached worker that reads + parses off-thread and PostMessages the
 // result back to ViewWndProc (wm_md_parse_done) for UI-thread adoption.
+// INVARIANT: EVERY load path (ListLoadW, ListLoadNextW, reload, link ReloadDocument)
+// MUST enter here, so the generation bumps (superseding stale workers) and the
+// per-load state reset always happen. Do not parse/relayout a new file elsewhere.
+// It always arranges a repaint (loading frame on a miss, content on a hit).
 static void begin_async_load(ViewState* vs, const wchar_t* path) {
     // Bump the generation: supersede any in-flight worker for this view, and stamp
     // the live token so a running worker self-cancels at its next gate.
@@ -312,6 +317,7 @@ static void begin_async_load(ViewState* vs, const wchar_t* path) {
     vs->sel_anchor = TextPosition{};
     vs->sel_active = TextPosition{};
     vs->selecting = false;
+    vs->hovered_span = -1;
     vs->hovered_code_block = -1;
     vs->copied_code_block = -1;
     vs->matches.clear();
@@ -372,17 +378,20 @@ static void begin_async_load(ViewState* vs, const wchar_t* path) {
             r->raw_utf8 = std::move(content->raw_utf8);
             return r;
         });
+    // Worker spawned: paint the loading frame now (the fast path above invalidated
+    // for its inline adopt and returned). The worker triggers the real repaint at
+    // adoption. So the funnel always arranges a repaint — callers needn't.
+    InvalidateRect(vs->hwnd, nullptr, FALSE);
 }
 
-// Thin alias kept for the synchronous callers (reload_view, link ReloadDocument).
-// Routes to the async funnel; the parse still moves off the UI thread.
+// Thin alias kept for the one remaining caller (invoke_link_action's
+// ReloadDocument). Routes to the async funnel; the parse still moves off-thread.
 static void load_document(ViewState* vs, const wchar_t* path) {
     begin_async_load(vs, path);
 }
 
 static void reload_view(ViewState& vs, const wchar_t* path) {
-    begin_async_load(&vs, path);
-    InvalidateRect(vs.hwnd, nullptr, FALSE);
+    begin_async_load(&vs, path);   // funnel arranges the repaint (loading frame / inline adopt)
 }
 
 static_assert(HostView<ViewState>);
@@ -464,6 +473,9 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (!wlx::runtime::host::should_adopt_result(res->live.get(), res->generation,
                                                      v->live.get(), v->current_gen))
             return 0;                                 // superseded/closed -> drop (res frees)
+        // Ready means "no longer loading" — NOT "has content". On failure below we
+        // leave document/layout null, so a Ready view may still have no layout; every
+        // interactive handler must guard `state == Ready && layout`, not state alone.
         v->state = wlx::runtime::host::LoadState::Ready;
         if (res->failed) {
             v->document.reset();
@@ -1114,9 +1126,9 @@ HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
     };
 
     // Kick off the async load (returns immediately; parse runs off the UI thread,
-    // adopted via wm_md_parse_done). The cache fast path adopts inline.
+    // adopted via wm_md_parse_done). The cache fast path adopts inline. The funnel
+    // arranges the repaint (loading frame on a miss, content on a hit).
     begin_async_load(vs, FileToLoad);
-    InvalidateRect(hwnd, nullptr, FALSE);
 
     g_integration.attach(vs, ParentWin);
 
@@ -1141,8 +1153,7 @@ int __stdcall ListLoadNextW(HWND ParentWin, HWND PluginWin, wchar_t* FileToLoad,
     }
     vs->wrap_text = new_wrap;
 
-    begin_async_load(vs, FileToLoad);
-    InvalidateRect(vs->hwnd, nullptr, FALSE);
+    begin_async_load(vs, FileToLoad);   // funnel arranges the repaint
 
     return LISTPLUGIN_OK;
 }
