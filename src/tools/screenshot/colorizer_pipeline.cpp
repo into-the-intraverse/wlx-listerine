@@ -401,29 +401,16 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
                 uint32_t vlo = 0;
                 uint32_t vhi = static_cast<uint32_t>(content->raw_utf8.size());
 
-                if (!opts.full && !layout_ct.blocks.empty() && !line_byte_starts.empty()) {
+                if (!opts.full) {
+                    // Same visible->byte math as the host's colorize_viewport.
                     const float viewport_h = static_cast<float>(bmp_height_ct);
-                    const float top        = scroll_y_ct;
-                    const float bottom     = scroll_y_ct + viewport_h;
-                    const float over_top   = top    - viewport_h;
-                    const float over_bot   = bottom + viewport_h;
-
-                    const int block_count  = static_cast<int>(layout_ct.blocks.size());
-                    const int n = std::min(block_count,
-                                           static_cast<int>(line_byte_starts.size()));
-                    int first = -1, last = -1;
-                    for (int i = 0; i < n; ++i) {
-                        const auto& r = layout_ct.blocks[static_cast<size_t>(i)].rect;
-                        if (r.bottom < over_top) continue;
-                        if (r.top    > over_bot)  break;
-                        if (first < 0) first = i;
-                        last = i;
-                    }
-                    if (first >= 0) {
-                        vlo = static_cast<uint32_t>(line_byte_starts[first]);
-                        vhi = (last + 1 < static_cast<int>(line_byte_starts.size()))
-                            ? static_cast<uint32_t>(line_byte_starts[last + 1])
-                            : static_cast<uint32_t>(content->raw_utf8.size());
+                    auto vr = wlx::plugin_colorizer::layout::viewport_byte_range(
+                        layout_ct.blocks, line_byte_starts,
+                        static_cast<int>(content->raw_utf8.size()),
+                        scroll_y_ct, viewport_h, /*overscan=*/viewport_h);
+                    if (!vr.empty) {
+                        vlo = vr.lo;
+                        vhi = vr.hi;
                     }
                 }
 

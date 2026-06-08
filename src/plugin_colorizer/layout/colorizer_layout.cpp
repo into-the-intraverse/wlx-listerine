@@ -709,6 +709,66 @@ wlx::runtime::layout::LayoutDocument layout_source(
     return doc;
 }
 
+// ---- viewport -> byte range (shared host + tool) ----------------------------
+
+ByteRange viewport_byte_range(
+    const std::vector<LayoutBlock>& blocks,
+    const std::vector<int>& line_byte_starts,
+    int raw_size,
+    float scroll_y, float viewport_h, float overscan) {
+    if (blocks.empty() || line_byte_starts.empty()) return {};
+
+    const float top         = scroll_y;
+    const float bottom      = scroll_y + viewport_h;
+    const float over_top    = top    - overscan;
+    const float over_bottom = bottom + overscan;
+
+    const int block_count = static_cast<int>(blocks.size());
+    const int n = std::min(block_count, static_cast<int>(line_byte_starts.size()));
+    if (n == 0) return {};
+
+    int first = -1, last = -1;
+    for (int i = 0; i < n; ++i) {
+        const auto& r = blocks[static_cast<size_t>(i)].rect;
+        if (r.bottom < over_top) continue;
+        if (r.top > over_bottom) break;
+        if (first < 0) first = i;
+        last = i;
+    }
+    if (first < 0) return {};
+
+    ByteRange out;
+    out.empty = false;
+    out.lo = static_cast<uint32_t>(line_byte_starts[first]);
+    out.hi = (last + 1 < static_cast<int>(line_byte_starts.size()))
+                 ? static_cast<uint32_t>(line_byte_starts[last + 1])
+                 : static_cast<uint32_t>(raw_size);
+    return out;
+}
+
+ColoredDecision colored_interval_update(uint32_t vlo, uint32_t vhi,
+                                        uint32_t clo, uint32_t chi) {
+    ColoredDecision d;
+    // Already colored? (window inside the contiguous colored interval). Skip.
+    if (chi > clo && vlo >= clo && vhi <= chi) {
+        d.skip = true;
+        return d;
+    }
+    // Highlight, then update the interval: union when contiguous/overlapping with
+    // the existing one, else (a disjoint jump) reset to the new window.
+    if (chi <= clo) {
+        d.new_lo = vlo;
+        d.new_hi = vhi;
+    } else if (vlo <= chi && vhi >= clo) {
+        d.new_lo = std::min(clo, vlo);
+        d.new_hi = std::max(chi, vhi);
+    } else {
+        d.new_lo = vlo;
+        d.new_hi = vhi;
+    }
+    return d;
+}
+
 // ---- incremental (viewport-scoped) recoloring -------------------------------
 
 void apply_spans_to_range(

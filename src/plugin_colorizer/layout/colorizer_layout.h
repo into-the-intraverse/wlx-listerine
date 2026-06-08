@@ -59,6 +59,60 @@ wlx::runtime::layout::LayoutDocument layout_source(
     LayoutTimings* timings = nullptr,
     std::vector<int>* out_line_byte_starts = nullptr);
 
+// Result of mapping a viewport (in document-Y DIPs) to a source byte range.
+// `empty` is true when nothing is visible / there are no blocks; lo/hi are then 0.
+struct ByteRange {
+    uint32_t lo = 0;
+    uint32_t hi = 0;
+    bool empty = true;
+};
+
+// Map the visible block range to a source UTF-8 byte range, exactly mirroring the
+// loop in the colorizer host's colorize_viewport (and the screenshot tool's
+// --cached-tree path). Pure — no COM, no I/O.
+//
+// The visible window is [scroll_y - overscan, scroll_y + viewport_h + overscan):
+// over_top = scroll_y - overscan and over_bottom = scroll_y + viewport_h + overscan.
+// (The host passes overscan == viewport_h, i.e. one screenful on each side.) Blocks
+// are scanned in Y order (blocks[i].rect.top/bottom): a block with rect.bottom <
+// over_top is skipped; the scan stops at the first block with rect.top > over_bottom.
+// `n = min(blocks.size(), line_byte_starts.size())` bounds the scan (the two are
+// parallel, one entry per block).
+//
+// The returned byte range is [line_byte_starts[first], hi) where
+//   hi = (last + 1 < line_byte_starts.size()) ? line_byte_starts[last + 1] : raw_size.
+// `raw_size` is the total source length (cached_raw_utf8.size()), used as the
+// last block's end. NOTE: this is plain raw_size, NOT the raw_size + 1 sentinel
+// used internally by apply_spans_to_range's overlap test. Returns {empty=true}
+// when there are no blocks / no line_byte_starts / nothing visible.
+//
+// A huge viewport_h (or huge overscan) makes every block visible, yielding
+// [0, raw_size) — the whole-document range used by the tool's --full path.
+ByteRange viewport_byte_range(
+    const std::vector<wlx::runtime::layout::LayoutBlock>& blocks,
+    const std::vector<int>& line_byte_starts,
+    int raw_size,
+    float scroll_y, float viewport_h, float overscan);
+
+// Decide whether the visible byte range [vlo, vhi) is already covered by the
+// already-colored interval [clo, chi), and what interval to record after
+// highlighting. Mirrors colorize_viewport's skip / union / reset logic exactly:
+//   - skip  iff the colored interval is non-empty (chi > clo) AND
+//            vlo >= clo AND vhi <= chi (the window is fully inside it).
+//   - otherwise highlight, then update the interval:
+//       * colored interval empty (chi <= clo) -> set to [vlo, vhi).
+//       * else if it overlaps/abuts (vlo <= chi AND vhi >= clo) -> union:
+//         [min(clo, vlo), max(chi, vhi)).
+//       * else (disjoint jump) -> reset to [vlo, vhi).
+// When skip is true, new_lo/new_hi are left at 0 and MUST be ignored by the caller.
+struct ColoredDecision {
+    bool skip = false;
+    uint32_t new_lo = 0;
+    uint32_t new_hi = 0;
+};
+ColoredDecision colored_interval_update(uint32_t vlo, uint32_t vhi,
+                                        uint32_t clo, uint32_t chi);
+
 // Distribute syntax `spans` onto the layout's per-line blocks, REPLACING the
 // color_ranges of every block whose source line is touched by the [byte_lo,
 // byte_hi) window. Each colorizer block is exactly one source line;

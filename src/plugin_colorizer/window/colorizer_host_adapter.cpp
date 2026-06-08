@@ -418,37 +418,17 @@ static void colorize_viewport(ColorViewState* vs) {
     if (doc.blocks.empty() || vs->line_byte_starts.empty()) return;
 
     const float viewport_h = vs->renderer ? vs->renderer->dip_height() : 100.0f;
-    const float top = vs->scroll_y;
-    const float bottom = vs->scroll_y + viewport_h;
     // One screenful of overscan on each side so a small scroll doesn't re-trigger.
-    const float over_top = top - viewport_h;
-    const float over_bottom = bottom + viewport_h;
-
-    const int block_count = static_cast<int>(doc.blocks.size());
-    const int n = std::min(block_count, static_cast<int>(vs->line_byte_starts.size()));
-    if (n == 0) return;
-
-    // First/last visible (with overscan) block via block rects (Y-sorted).
-    int first = -1, last = -1;
-    for (int i = 0; i < n; ++i) {
-        const auto& r = doc.blocks[static_cast<size_t>(i)].rect;
-        if (r.bottom < over_top) continue;
-        if (r.top > over_bottom) break;
-        if (first < 0) first = i;
-        last = i;
-    }
-    if (first < 0) return;
-
     const int raw_size = static_cast<int>(vs->cached_raw_utf8.size());
-    uint32_t vlo = static_cast<uint32_t>(vs->line_byte_starts[first]);
-    uint32_t vhi = (last + 1 < static_cast<int>(vs->line_byte_starts.size()))
-                       ? static_cast<uint32_t>(vs->line_byte_starts[last + 1])
-                       : static_cast<uint32_t>(raw_size);
+    ByteRange vr = viewport_byte_range(doc.blocks, vs->line_byte_starts, raw_size,
+                                       vs->scroll_y, viewport_h, /*overscan=*/viewport_h);
+    if (vr.empty) return;
+    const uint32_t vlo = vr.lo;
+    const uint32_t vhi = vr.hi;
 
     // Already colored? (window inside the contiguous colored interval). Skip.
-    if (vs->colored_hi > vs->colored_lo &&
-        vlo >= vs->colored_lo && vhi <= vs->colored_hi)
-        return;
+    ColoredDecision cd = colored_interval_update(vlo, vhi, vs->colored_lo, vs->colored_hi);
+    if (cd.skip) return;
 
     WlxColorSpan* spans = nullptr;
     uint32_t count = 0;
@@ -464,16 +444,8 @@ static void colorize_viewport(ColorViewState* vs) {
     // Update the colored interval: union when contiguous/overlapping with the
     // existing one, else (a disjoint jump) reset to the new window. Previously
     // colored blocks keep their color_ranges, which is harmless.
-    if (vs->colored_hi <= vs->colored_lo) {
-        vs->colored_lo = vlo;
-        vs->colored_hi = vhi;
-    } else if (vlo <= vs->colored_hi && vhi >= vs->colored_lo) {
-        vs->colored_lo = std::min(vs->colored_lo, vlo);
-        vs->colored_hi = std::max(vs->colored_hi, vhi);
-    } else {
-        vs->colored_lo = vlo;
-        vs->colored_hi = vhi;
-    }
+    vs->colored_lo = cd.new_lo;
+    vs->colored_hi = cd.new_hi;
 }
 
 // UI-thread whole-doc fallback: color the entire cached source with `language`

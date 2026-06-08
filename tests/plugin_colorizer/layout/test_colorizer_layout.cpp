@@ -20,8 +20,13 @@ using Microsoft::WRL::ComPtr;
 using wlx::core::colorizer::ColorizeResult;
 using wlx::core::colorizer::ColorSpan;
 using wlx::plugin_colorizer::layout::apply_spans_to_range;
+using wlx::plugin_colorizer::layout::ByteRange;
+using wlx::plugin_colorizer::layout::ColoredDecision;
+using wlx::plugin_colorizer::layout::colored_interval_update;
 using wlx::plugin_colorizer::layout::ColorizerDisplayConfig;
 using wlx::plugin_colorizer::layout::layout_source;
+using wlx::plugin_colorizer::layout::viewport_byte_range;
+using wlx::runtime::layout::LayoutBlock;
 using wlx::runtime::layout::LayoutDocument;
 using wlx::runtime::parser::LinkKind;
 using wlx::runtime::theme::ThemeService;
@@ -342,4 +347,200 @@ TEST_CASE("apply_spans_to_range: whole-doc window matches the eager whole-doc bu
             CHECK(e[k].color == i[k].color);
         }
     }
+}
+
+// ---- viewport_byte_range (visible blocks -> source byte range) --------------
+
+namespace {
+
+// Build N synthetic blocks stacked vertically, each `h` DIPs tall starting at
+// `y0`, plus a parallel line_byte_starts (one entry per block). Block i covers
+// document Y [y0 + i*h, y0 + (i+1)*h). Mirrors the colorizer's one-line-per-block
+// grid; only rect.top/bottom matter to viewport_byte_range.
+std::vector<LayoutBlock> make_blocks(const std::vector<int>& byte_starts,
+                                     float y0 = 4.0f, float h = 10.0f) {
+    std::vector<LayoutBlock> blocks;
+    blocks.reserve(byte_starts.size());
+    for (size_t i = 0; i < byte_starts.size(); ++i) {
+        LayoutBlock b;
+        float top = y0 + static_cast<float>(i) * h;
+        b.rect = D2D1::RectF(0.0f, top, 100.0f, top + h);
+        blocks.push_back(std::move(b));
+    }
+    return blocks;
+}
+
+}  // namespace
+
+TEST_CASE("viewport_byte_range: empty blocks -> empty range") {
+    std::vector<LayoutBlock> blocks;       // none
+    std::vector<int> starts;               // none
+    auto vr = viewport_byte_range(blocks, starts, /*raw_size=*/0,
+                                  /*scroll_y=*/0.0f, /*viewport_h=*/100.0f,
+                                  /*overscan=*/100.0f);
+    CHECK(vr.empty);
+}
+
+TEST_CASE("viewport_byte_range: empty line_byte_starts -> empty range") {
+    auto blocks = make_blocks({0, 10, 20});
+    std::vector<int> starts;               // mismatched: zero starts
+    auto vr = viewport_byte_range(blocks, starts, /*raw_size=*/30,
+                                  0.0f, 100.0f, 100.0f);
+    CHECK(vr.empty);
+}
+
+TEST_CASE("viewport_byte_range: single block at scroll 0 starts at block0 byte") {
+    // One block; raw_size is the doc-end sentinel for the last block's hi.
+    const std::vector<int> starts = {0};
+    auto blocks = make_blocks(starts);
+    auto vr = viewport_byte_range(blocks, starts, /*raw_size=*/6,
+                                  /*scroll_y=*/0.0f, /*viewport_h=*/100.0f,
+                                  /*overscan=*/100.0f);
+    REQUIRE_FALSE(vr.empty);
+    CHECK(vr.lo == 0);
+    CHECK(vr.hi == 6);   // last block -> raw_size (NOT raw_size + 1)
+}
+
+TEST_CASE("viewport_byte_range: scroll 0 small viewport, no overscan -> only block0") {
+    // 4 blocks, byte starts 0/10/20/30, raw_size 40. Block0 = Y[4,14),
+    // block1 = Y[14,24), ... With scroll 0, viewport_h 10, overscan 0:
+    // visible window [0,10) overlaps only block0 (its top 4 <= 10, bottom 14 >= 0;
+    // block1 top 14 > 10 -> break). hi = line_byte_starts[1] = 10.
+    const std::vector<int> starts = {0, 10, 20, 30};
+    auto blocks = make_blocks(starts);
+    auto vr = viewport_byte_range(blocks, starts, /*raw_size=*/40,
+                                  /*scroll_y=*/0.0f, /*viewport_h=*/10.0f,
+                                  /*overscan=*/0.0f);
+    REQUIRE_FALSE(vr.empty);
+    CHECK(vr.lo == 0);
+    CHECK(vr.hi == 10);  // next block's byte start (not the last block)
+}
+
+TEST_CASE("viewport_byte_range: scrolled down starts at the right block") {
+    // Blocks: 0=Y[4,14) 1=Y[14,24) 2=Y[24,34) 3=Y[34,44). scroll_y 30,
+    // viewport_h 10, overscan 0 -> over_top 30, over_bottom 40. Scan:
+    //   block0 bottom 14 < 30 -> continue; block1 bottom 24 < 30 -> continue;
+    //   block2 bottom 34 (not < 30), top 24 (not > 40) -> first=last=2;
+    //   block3 top 34 (not > 40) -> last=3. first=2, last=3.
+    const std::vector<int> starts = {0, 10, 20, 30};
+    auto blocks = make_blocks(starts);
+    auto vr = viewport_byte_range(blocks, starts, /*raw_size=*/40,
+                                  /*scroll_y=*/30.0f, /*viewport_h=*/10.0f,
+                                  /*overscan=*/0.0f);
+    REQUIRE_FALSE(vr.empty);
+    CHECK(vr.lo == 20);  // line_byte_starts[2]
+    CHECK(vr.hi == 40);  // block3 is the last block -> raw_size
+}
+
+TEST_CASE("viewport_byte_range: overscan extends the visible range (hi grows)") {
+    // Same scroll/viewport as the no-overscan block0 case, but one screenful of
+    // overscan on each side pulls in neighbours. scroll_y 0, viewport_h 10,
+    // overscan 10 -> window [-10, 20): block0 Y[4,14) and block1 Y[14,24) (top
+    // 14 <= 20) are in; block2 top 24 > 20 -> break. first=0, last=1. hi=20.
+    const std::vector<int> starts = {0, 10, 20, 30};
+    auto blocks = make_blocks(starts);
+    auto vr = viewport_byte_range(blocks, starts, /*raw_size=*/40,
+                                  /*scroll_y=*/0.0f, /*viewport_h=*/10.0f,
+                                  /*overscan=*/10.0f);
+    REQUIRE_FALSE(vr.empty);
+    CHECK(vr.lo == 0);
+    CHECK(vr.hi == 20);  // overscan pulled in block1, hi = starts[2]
+}
+
+TEST_CASE("viewport_byte_range: huge viewport covers ALL blocks (the --full case)") {
+    // A huge viewport_h makes every block visible -> [0, raw_size), exactly the
+    // whole-document range the tool's --full path produces.
+    const std::vector<int> starts = {0, 10, 20, 30};
+    auto blocks = make_blocks(starts);
+    auto vr = viewport_byte_range(blocks, starts, /*raw_size=*/40,
+                                  /*scroll_y=*/0.0f, /*viewport_h=*/1.0e9f,
+                                  /*overscan=*/0.0f);
+    REQUIRE_FALSE(vr.empty);
+    CHECK(vr.lo == 0);
+    CHECK(vr.hi == 40);  // last block -> raw_size = whole doc
+}
+
+TEST_CASE("viewport_byte_range: scrolled past the end -> empty") {
+    // Window sits entirely below every block: nothing visible.
+    const std::vector<int> starts = {0, 10, 20, 30};
+    auto blocks = make_blocks(starts);  // last bottom = 44
+    auto vr = viewport_byte_range(blocks, starts, /*raw_size=*/40,
+                                  /*scroll_y=*/1000.0f, /*viewport_h=*/10.0f,
+                                  /*overscan=*/0.0f);
+    CHECK(vr.empty);
+}
+
+TEST_CASE("viewport_byte_range: mismatched lengths bound the scan to min(blocks, starts)") {
+    // 4 blocks but only 2 byte starts -> n = 2; a huge viewport visits blocks
+    // 0 and 1 only. last = 1, and last+1 (==2) is NOT < starts.size() (==2),
+    // so hi falls back to raw_size.
+    const std::vector<int> starts = {0, 10};
+    auto blocks = make_blocks({0, 10, 20, 30});
+    auto vr = viewport_byte_range(blocks, starts, /*raw_size=*/40,
+                                  /*scroll_y=*/0.0f, /*viewport_h=*/1.0e9f,
+                                  /*overscan=*/0.0f);
+    REQUIRE_FALSE(vr.empty);
+    CHECK(vr.lo == 0);
+    CHECK(vr.hi == 40);  // last+1 out of range -> raw_size
+}
+
+// ---- colored_interval_update (skip / union / reset) -------------------------
+
+TEST_CASE("colored_interval_update: initial empty interval -> highlight [vlo,vhi)") {
+    // colored interval (0,0) is empty (chi <= clo) -> never skip; record [vlo,vhi).
+    auto d = colored_interval_update(/*vlo=*/10, /*vhi=*/20, /*clo=*/0, /*chi=*/0);
+    CHECK_FALSE(d.skip);
+    CHECK(d.new_lo == 10);
+    CHECK(d.new_hi == 20);
+}
+
+TEST_CASE("colored_interval_update: visible fully inside colored -> skip") {
+    auto d = colored_interval_update(/*vlo=*/20, /*vhi=*/30, /*clo=*/10, /*chi=*/40);
+    CHECK(d.skip);
+}
+
+TEST_CASE("colored_interval_update: exact-boundary inside is still a skip") {
+    // vlo == clo and vhi == chi: the window equals the colored interval -> skip.
+    auto d = colored_interval_update(/*vlo=*/10, /*vhi=*/40, /*clo=*/10, /*chi=*/40);
+    CHECK(d.skip);
+}
+
+TEST_CASE("colored_interval_update: visible extends below -> union") {
+    // Overlaps the bottom of the colored interval and extends past it.
+    auto d = colored_interval_update(/*vlo=*/30, /*vhi=*/60, /*clo=*/10, /*chi=*/40);
+    CHECK_FALSE(d.skip);
+    CHECK(d.new_lo == 10);  // min(10, 30)
+    CHECK(d.new_hi == 60);  // max(40, 60)
+}
+
+TEST_CASE("colored_interval_update: visible extends above -> union") {
+    auto d = colored_interval_update(/*vlo=*/0, /*vhi=*/20, /*clo=*/10, /*chi=*/40);
+    CHECK_FALSE(d.skip);
+    CHECK(d.new_lo == 0);   // min(10, 0)
+    CHECK(d.new_hi == 40);  // max(40, 20)
+}
+
+TEST_CASE("colored_interval_update: abutting window unions (vlo == chi)") {
+    // vlo == chi: not fully inside (vhi > chi), and the overlap/abut test
+    // (vlo <= chi && vhi >= clo) holds -> union, not reset.
+    auto d = colored_interval_update(/*vlo=*/40, /*vhi=*/50, /*clo=*/10, /*chi=*/40);
+    CHECK_FALSE(d.skip);
+    CHECK(d.new_lo == 10);
+    CHECK(d.new_hi == 50);
+}
+
+TEST_CASE("colored_interval_update: disjoint jump above -> reset to [vlo,vhi)") {
+    // Window starts strictly past the colored interval's top (vlo > chi) -> reset.
+    auto d = colored_interval_update(/*vlo=*/100, /*vhi=*/120, /*clo=*/10, /*chi=*/40);
+    CHECK_FALSE(d.skip);
+    CHECK(d.new_lo == 100);
+    CHECK(d.new_hi == 120);
+}
+
+TEST_CASE("colored_interval_update: disjoint jump below -> reset to [vlo,vhi)") {
+    // Window ends strictly before the colored interval's bottom (vhi < clo) -> reset.
+    auto d = colored_interval_update(/*vlo=*/0, /*vhi=*/5, /*clo=*/10, /*chi=*/40);
+    CHECK_FALSE(d.skip);
+    CHECK(d.new_lo == 0);
+    CHECK(d.new_hi == 5);
 }
