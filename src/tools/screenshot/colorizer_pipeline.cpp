@@ -7,6 +7,7 @@
 #include <toml++/toml.hpp>
 
 #include <windows.h>
+#include <psapi.h>
 #include <d2d1.h>
 #include <dwrite.h>
 #include <wincodec.h>
@@ -223,9 +224,42 @@ ColorizerDisplayConfig load_display_config(const std::wstring& path) {
     return d;
 }
 
+// ---------- memory stats ----------
+
+size_t process_working_set() {
+    PROCESS_MEMORY_COUNTERS pmc = {};
+    pmc.cb = sizeof(pmc);
+    GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
+    return pmc.WorkingSetSize;
+}
+
+size_t process_peak_working_set() {
+    PROCESS_MEMORY_COUNTERS pmc = {};
+    pmc.cb = sizeof(pmc);
+    GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
+    return pmc.PeakWorkingSetSize;
+}
+
+// Print the memory footprint of opening this file: peak working set (the
+// process high-water mark, path-independent) and the working-set delta vs the
+// pre-work baseline. Shared by the cached-tree and eager bench blocks.
+void print_bench_memory(size_t source_bytes, size_t mem_before) {
+    double peak_mb = static_cast<double>(process_peak_working_set()) / (1024.0 * 1024.0);
+    double delta_mb = static_cast<double>(
+        static_cast<ptrdiff_t>(process_working_set()) -
+        static_cast<ptrdiff_t>(mem_before)) / (1024.0 * 1024.0);
+    std::fprintf(stderr, "  source size    %8zu bytes UTF-8\n", source_bytes);
+    std::fprintf(stderr, "  peak workingset%8.1f MB\n", peak_mb);
+    std::fprintf(stderr, "  process delta  %+8.1f MB  (working set vs baseline)\n", delta_mb);
+}
+
 }  // namespace
 
 std::wstring run_colorizer_pipeline(const Options& opts) {
+    // Baseline working set before any work, so --bench can report the delta
+    // attributable to opening this file (factories + grammar + tree + layout).
+    size_t mem_before = opts.bench ? process_working_set() : 0;
+
     // ----- Factories -----
     ComPtr<ID2D1Factory> d2d_factory;
     HRESULT hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED,
@@ -489,6 +523,7 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
                     std::fprintf(stderr,
                         "  hot total        %8.2f ms  (read+parse+layout+highlight+paint)\n",
                         hot_ct);
+                    print_bench_memory(content->raw_utf8.size(), mem_before);
                 }
 
                 // ----- Save (cached-tree path) -----
@@ -585,6 +620,7 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
         std::fprintf(stderr, "  paint            %8.2f ms\n", ms(_tlayout, _tpaint));
         std::fprintf(stderr, "  hot total        %8.2f ms  (read+colorize+layout+paint)\n", ms(_t0, _tpaint));
         std::fprintf(stderr, "  per line         %8.3f ms\n", ms(_tcolor, _tlayout) / std::max(1, lines));
+        print_bench_memory(content->raw_utf8.size(), mem_before);
     }
 
     // ----- Save -----
