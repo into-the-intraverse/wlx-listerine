@@ -418,8 +418,8 @@ static void colorize_viewport(ColorViewState* vs) {
     if (doc.blocks.empty() || vs->line_byte_starts.empty()) return;
 
     const float viewport_h = vs->renderer ? vs->renderer->dip_height() : 100.0f;
-    // One screenful of overscan on each side so a small scroll doesn't re-trigger.
     const int raw_size = static_cast<int>(vs->cached_raw_utf8.size());
+    // One screenful of overscan on each side so a small scroll doesn't re-trigger.
     ByteRange vr = viewport_byte_range(doc.blocks, vs->line_byte_starts, raw_size,
                                        vs->scroll_y, viewport_h, /*overscan=*/viewport_h);
     if (vr.empty) return;

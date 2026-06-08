@@ -718,10 +718,8 @@ ByteRange viewport_byte_range(
     float scroll_y, float viewport_h, float overscan) {
     if (blocks.empty() || line_byte_starts.empty()) return {};
 
-    const float top         = scroll_y;
-    const float bottom      = scroll_y + viewport_h;
-    const float over_top    = top    - overscan;
-    const float over_bottom = bottom + overscan;
+    const float over_top    = scroll_y - overscan;
+    const float over_bottom = scroll_y + viewport_h + overscan;
 
     const int block_count = static_cast<int>(blocks.size());
     const int n = std::min(block_count, static_cast<int>(line_byte_starts.size()));

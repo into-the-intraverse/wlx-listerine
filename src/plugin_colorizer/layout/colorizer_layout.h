@@ -67,27 +67,15 @@ struct ByteRange {
     bool empty = true;
 };
 
-// Map the visible block range to a source UTF-8 byte range, exactly mirroring the
-// loop in the colorizer host's colorize_viewport (and the screenshot tool's
-// --cached-tree path). Pure — no COM, no I/O.
+// Map the visible block range to a source UTF-8 byte range. Pure — no COM, no I/O.
+// Used by the colorizer host and the screenshot tool's --cached-tree path.
 //
-// The visible window is [scroll_y - overscan, scroll_y + viewport_h + overscan):
-// over_top = scroll_y - overscan and over_bottom = scroll_y + viewport_h + overscan.
-// (The host passes overscan == viewport_h, i.e. one screenful on each side.) Blocks
-// are scanned in Y order (blocks[i].rect.top/bottom): a block with rect.bottom <
-// over_top is skipped; the scan stops at the first block with rect.top > over_bottom.
-// `n = min(blocks.size(), line_byte_starts.size())` bounds the scan (the two are
-// parallel, one entry per block).
-//
-// The returned byte range is [line_byte_starts[first], hi) where
-//   hi = (last + 1 < line_byte_starts.size()) ? line_byte_starts[last + 1] : raw_size.
-// `raw_size` is the total source length (cached_raw_utf8.size()), used as the
-// last block's end. NOTE: this is plain raw_size, NOT the raw_size + 1 sentinel
-// used internally by apply_spans_to_range's overlap test. Returns {empty=true}
-// when there are no blocks / no line_byte_starts / nothing visible.
-//
-// A huge viewport_h (or huge overscan) makes every block visible, yielding
-// [0, raw_size) — the whole-document range used by the tool's --full path.
+// `overscan` extends the window symmetrically (host passes overscan == viewport_h,
+// i.e. one screenful on each side). Returns [lo, hi) aligned to block boundaries:
+// lo = line_byte_starts[first visible block]; hi = line_byte_starts[last + 1], or
+// `raw_size` for the final block. NOTE: hi is plain raw_size, NOT raw_size + 1 (the
+// +1 sentinel is internal to apply_spans_to_range's overlap test).
+// Returns {empty=true} when there are no blocks / no line_byte_starts / nothing visible.
 ByteRange viewport_byte_range(
     const std::vector<wlx::runtime::layout::LayoutBlock>& blocks,
     const std::vector<int>& line_byte_starts,

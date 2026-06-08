@@ -408,6 +408,7 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
                         layout_ct.blocks, line_byte_starts,
                         static_cast<int>(content->raw_utf8.size()),
                         scroll_y_ct, viewport_h, /*overscan=*/viewport_h);
+                    // vr.empty means empty/out-of-range layout; fall back to whole-doc coloring.
                     if (!vr.empty) {
                         vlo = vr.lo;
                         vhi = vr.hi;
