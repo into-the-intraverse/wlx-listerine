@@ -230,6 +230,18 @@ std::vector<ColorSpan> QueryHighlighter::highlight(
         if (cap.index >= capture_count) continue;
         const auto& cs = capture_styles[cap.index];
         if (!cs.has_fg && !cs.has_bg && cs.modifiers == 0) continue;
+        // A background-only style — (ERROR)/(MISSING) @diagnostic.error — on a
+        // CONTAINER node (one with named children) wraps validly-parsed subtrees.
+        // Emitting its background would suppress every foreground syntax span it
+        // covers in the flatten below (later patterns win, then covered_until
+        // jumps to the node's end). tree-sitter is a fuzzy, preprocessor-unaware
+        // parser: on macro-heavy but VALID C/C++ (e.g. sqlite3.c's SQLITE_API
+        // declarations) it can mark the whole-file root as one ERROR node; without
+        // this guard that single span turns the entire file red and erases all
+        // coloring. Skip container error backgrounds; genuine leaf errors (no
+        // named children) still get their marker.
+        if (cs.has_bg && !cs.has_fg && ts_node_named_child_count(cap.node) > 0)
+            continue;
         raw.push_back({start, end, match.pattern_index, cs.fg, cs.bg, cs.has_bg, cs.modifiers});
     }
 

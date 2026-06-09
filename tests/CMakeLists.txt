@@ -37,6 +37,7 @@ target_link_libraries(tests PRIVATE
 add_executable(colorizer-tests
     ${CMAKE_SOURCE_DIR}/tests/test_main.cpp
     core_dll/colorizer/test_colorizer.cpp
+    core_dll/colorizer/test_error_node_highlighting.cpp
     core_dll/theme/test_colorizer_helix_theme.cpp
     core_dll/grammar/test_colorizer_grammar.cpp
     core_dll/highlighting/test_colorizer_query_highlighter.cpp
