@@ -82,12 +82,12 @@ Baseline: commit `123b4a7-dirty`, 2026-06-10, median of 5 runs (`scripts/bench.p
 
 | Scenario | Open (ms) | Peak memory (MB) | Memory held (MB) |
 |----------|-----------|------------------|------------------|
-| markdown (1.0 MB) | 172 | — | 123.1 |
-| C++ header json.hpp (0.9 MB) | 166 | 61.0 | 53.7 |
-| C file sqlite3.c (8.8 MB) | 1020 | 393.3 | 349.5 |
-| worst case: markdown full layout (1.0 MB) | 312 | — | 170.1 |
-| worst case: whole-file highlight json.hpp (0.9 MB) | 7355 | 52.5 | 45.2 |
-| worst case: whole-file highlight sqlite3.c (8.8 MB) | 2041 | 336.2 | 250.7 |
+| markdown — [big.md](test_data/bench/big.md) (1.0 MB) | 172 | — | 123.1 |
+| C++ header [json.hpp](https://raw.githubusercontent.com/nlohmann/json/v3.11.3/single_include/nlohmann/json.hpp) (0.9 MB) | 166 | 61.0 | 53.7 |
+| C file [sqlite3.c](https://www.sqlite.org/2025/sqlite-amalgamation-3500100.zip) (8.8 MB) | 1020 | 393.3 | 349.5 |
+| worst case: markdown full layout — [big.md](test_data/bench/big.md) (1.0 MB) | 312 | — | 170.1 |
+| worst case: whole-file highlight [json.hpp](https://raw.githubusercontent.com/nlohmann/json/v3.11.3/single_include/nlohmann/json.hpp) (0.9 MB) | 7355 | 52.5 | 45.2 |
+| worst case: whole-file highlight [sqlite3.c](https://www.sqlite.org/2025/sqlite-amalgamation-3500100.zip) (8.8 MB) | 2041 | 336.2 | 250.7 |
 
 <!-- bench:end -->
 
@@ -98,11 +98,8 @@ Baseline: commit `123b4a7-dirty`, 2026-06-10, median of 5 runs (`scripts/bench.p
 Deferred from the 2026-06 code review (verified real, fix postponed):
 
 - **Cancellable parses in the core DLL** — the process-wide registry mutex is held for the duration of every `colorize()`/`parse()`, and a superseded worker parse runs to completion, so opening a small file while a 100&nbsp;MB parse is in flight blocks `WM_PAINT` until the dead parse finishes. Needs cancellation plumbed through the C ABI (`ts_parser_set_cancellation_flag`) and/or a try-lock viewport highlight.
-- **Unify the UTF-8↔UTF-16 offset converters** — `code_fence_layout.cpp` and `colorizer_layout.cpp` each carry their own byte↔wchar offset mapping (both now correct, still duplicated ~80 lines). Extract one shared offset-map primitive.
 - **Incremental line index for lazy markdown** — `materialize_viewport` rebuilds the whole `line_tops` index per paint that materializes anything; block shifts are batched now, the index rebuild is not. Needs an incremental index design. (`apply_height_delta` is kept alive only by tests since the batching.)
-- **Aligned table cells measure hit-rects pre-alignment** — center/right-aligned cells hit-test span/code-bg rects before `SetTextAlignment`, the same class of bug fixed for header bold; fixing it means passing alignment into `build_inline_layout`.
 - **`/W4 /WX`** — no warning level is configured anywhere (MSVC default /W3); enabling it needs a one-time warning cleanup pass.
-- **Small cleanups** — `search_step` returns the full match vector by value (copied per F3); `layout_source` carries a dead `source` parameter (call sites span both plugins and the screenshot tool); `abi_spans_to_result` is duplicated between the colorizer adapter and the screenshot tool.
 - **Known limitation (accepted)** — on FAT/exFAT volumes the parse cache can serve a stale document for a same-size save within the 2-second mtime granularity window (`ParseCacheKey` is path+size+mtime; no content hash).
 
 ## 📄 License
