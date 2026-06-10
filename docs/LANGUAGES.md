@@ -2,41 +2,48 @@
 
 ## Shipped Grammars
 
-The colorizer plugin (`wlx-listerine-colorizer`) ships with 25+ tree-sitter grammars covering:
+The colorizer plugin (`wlx-listerine-colorizer`) ships 27 tree-sitter grammar DLLs covering 26 languages:
 
 | Language     | Extensions                              |
 |--------------|-----------------------------------------|
-| Bash         | `.sh`, `.bash`, `.zsh`                  |
+| Bash         | `.sh`, `.bash`, `.zsh`, shell dotfiles (`.bashrc`, `.bash_profile`, `.zshrc`, `.profile`, `.envrc`, …) |
 | C / C++      | `.c`, `.h`, `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hxx` (default: tree-sitter-cpp; opt-in Unreal variant — see below) |
 | C#           | `.cs`                                   |
-| CMake        | `.cmake`, `CMakeLists.txt`              |
+| CMake        | `.cmake`, `CMakeLists.txt`, `CMakeCache.txt` |
 | CSS          | `.css`                                  |
 | Dockerfile   | `.dockerfile`, `Dockerfile`, `Containerfile`, `*dockerfile*` |
-| Git          | `.gitconfig`, `.gitignore`, `.gitattributes`, `git-rebase-todo` |
+| Git          | `.gitconfig`, `.gitmodules`, `.gitignore`, `.gitattributes`, `git-rebase-todo`; `.dockerignore`/`.npmignore` reuse the gitignore grammar |
 | Go           | `.go`                                   |
 | HTML         | `.html`, `.htm`                         |
 | Java         | `.java`                                 |
 | JavaScript   | `.js`, `.mjs`, `.cjs`, `.jsx`           |
-| JSON         | `.json`, `.jsonc`                       |
+| JSON         | `.json`, `.jsonc`, `Pipfile.lock`, `bun.lock` |
 | Lua          | `.lua`                                  |
 | PHP          | `.php`                                  |
 | PowerShell   | `.ps1`, `.psm1`, `.psd1`                |
 | Python       | `.py`, `.pyi`                           |
 | Rust         | `.rs`                                   |
-| TOML         | `.toml`                                 |
+| TOML         | `.toml`, `Pipfile`, `uv.lock`, `poetry.lock` |
 | TypeScript   | `.ts`, `.tsx`, `.mts`                   |
-| Vim          | `.vim`, `.vimrc`                        |
+| Vim          | `.vim`, `.vimrc`, `.nvimrc`             |
+| XML          | `.xml`, `.svg`, VS/MSBuild files (`.vcxproj`, `.csproj`, `.fsproj`, `.vbproj`, `.proj`, `.props`, `.targets`, `.filters`, `.slnx`, `.xaml`, `.resx`) |
 | YAML         | `.yaml`, `.yml`                         |
+
+The extension → grammar map lives in `src/plugin_colorizer/language/path_to_language.h`; filename special cases (`Dockerfile`, `CMakeLists.txt`, lockfiles, `git-rebase-todo`) in its `filename_to_language()`.
 
 DLLs live at `grammars/<lang>/tree-sitter-<lang>.dll` next to the per-language `highlights.scm`.
 
 At install time, drop new grammar subdirectories into `<TC plugin dir>/wlx-listerine/grammars/<lang>/`. Both plugins pick them up from this single shared location — there is no per-plugin grammar directory anymore.
 
-Files with extensions outside this set are displayed as plain text with line numbers and whitespace markers, but without syntax highlighting.
+Files with extensions outside this set (including `.txt` and `.sql`, which is routed but has no shipped grammar yet) are displayed as plain text with line numbers and whitespace markers, but without syntax highlighting.
+
+### Per-file grammar override
+
+Right-click → language submenu forces a specific grammar for the current view (session-only; "Auto-detect" restores extension-based routing). Useful for files with misleading or missing extensions.
 
 ### Plugin boundary
 
-`.md` and `.markdown` files are **not** handled by the colorizer — they are owned by the sibling plugin `wlx-listerine-md`, which renders rich markdown rather than tokenized syntax.
+`.md` and `.markdown` files are owned by the sibling plugin `wlx-listerine-md`, which renders rich markdown rather than tokenized syntax. The colorizer claims the extensions only as a plain-text fallback — its grammar map intentionally has no markdown entry.
 
 ## Switching to Unreal C++
 
@@ -57,7 +64,7 @@ The fork is **SHA-pinned** in `CMakeLists.txt` (no upstream releases yet). Bumpi
 
 The grammar list is hardcoded in CMake (fetched at build time) and the extension map is hardcoded in C++. Adding a language requires three edits and a rebuild:
 
-1. **Declare and fetch the grammar source in `CMakeLists.txt`:**
+1. **Declare and fetch the grammar source in `cmake/grammars.cmake`:**
    ```cmake
    FetchContent_Declare(ts-foo
        GIT_REPOSITORY https://github.com/owner/tree-sitter-foo.git
@@ -69,14 +76,14 @@ The grammar list is hardcoded in CMake (fetched at build time) and the extension
    ```
    `add_grammar(foo …)` builds `grammars/foo/tree-sitter-foo.dll` and copies upstream `queries/highlights.scm` if no local override exists at `grammars/foo/highlights.scm`.
 
-2. **Map extensions to the language in `src/colorizer/colorizer_host_adapter.cpp`:**
+2. **Map extensions to the language in `src/plugin_colorizer/language/path_to_language.h`:**
    ```cpp
-   static const struct { const wchar_t* ext; const char* lang; } kExtLangMap[] = {
+   constexpr ExtEntry kExtTable[] = {
        // ...
        { L"foo",  "foo" },
    };
    ```
-   Add an entry to `kDefaultDetectString` so Total Commander knows to route `.foo` files to the colorizer:
+   Add an entry to `kDefaultDetectString` (in `src/plugin_colorizer/window/colorizer_host_adapter.cpp`) so Total Commander knows to route `.foo` files to the colorizer, and mirror it in the shipped `config/wlx-listerine-colorizer.toml` `extensions`/`detect_string`:
    ```cpp
    L"... | EXT=\"FOO\" | ...";
    ```

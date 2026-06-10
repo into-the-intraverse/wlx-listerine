@@ -74,27 +74,22 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the full reference.
 
 ## 📈 Performance
 
-Both plugins are built around one idea: **only do work for the part of the file you can see.** A file is parsed once on a background thread (so the viewer window appears immediately), then layout and syntax coloring happen just for the visible area and continue incrementally as you scroll.
-
-The first three rows below are what opening a file actually costs. The **worst case** rows force the slow paths the plugins normally avoid — laying out or syntax-coloring the *entire* file up front. You only hit those with `word_wrap = true` (wrapping needs whole-file coloring) or a language the fast path can't handle; they are tracked as regression sentinels. `json.hpp` is deliberately nasty: one giant nested C++ template header that stresses the highlighter far beyond what its size suggests.
+Both plugins only do work for the visible part of a file — parse once on a background thread, then lay out and color just what's on screen. The **worst case** rows instead force whole-file processing; you only hit them with `word_wrap = true` or an unsupported language (`json.hpp` is a deliberately brutal stress file). "Memory held" is mostly the parsed syntax tree — kept while the file is open so scrolling re-colors instantly, freed on close.
 
 <!-- bench:begin -->
 Measured on: AMD Ryzen 7 9800X3D 8-Core Processor, 62 GB RAM, Windows build 10.0.26200
-Baseline: commit `9a3e8eb`, 2026-06-10, median of 5 runs (`scripts/bench.py`)
+Baseline: commit `123b4a7-dirty`, 2026-06-10, median of 5 runs (`scripts/bench.py`)
 
-| Scenario | Open (ms) | Peak WS (MB) | Δ WS (MB) |
-|----------|-----------|--------------|-----------|
-| md eager (1.0 MB) | 312 | — | 170.4 |
-| md lazy (1.0 MB) | 166 | — | 122.7 |
-| colorizer eager json.hpp (0.9 MB) | 7250 | 52.6 | 45.2 |
-| colorizer cached json.hpp (0.9 MB) | 168 | 61.0 | 53.6 |
-| colorizer eager sqlite3.c (8.8 MB) | 2047 | 336.3 | 250.7 |
-| colorizer cached sqlite3.c (8.8 MB) | 1011 | 393.3 | 349.4 |
+| Scenario | Open (ms) | Peak memory (MB) | Memory held (MB) |
+|----------|-----------|------------------|------------------|
+| markdown (1.0 MB) | 172 | — | 123.1 |
+| C++ header json.hpp (0.9 MB) | 166 | 61.0 | 53.7 |
+| C file sqlite3.c (8.8 MB) | 1020 | 393.3 | 349.5 |
+| worst case: markdown full layout (1.0 MB) | 312 | — | 170.1 |
+| worst case: whole-file highlight json.hpp (0.9 MB) | 7355 | 52.5 | 45.2 |
+| worst case: whole-file highlight sqlite3.c (8.8 MB) | 2041 | 336.2 | 250.7 |
+
 <!-- bench:end -->
-
-**About the memory column:** the code viewer keeps the parsed syntax tree in memory while a file is open, so scrolling re-colors instantly instead of re-reading the file — that's why the 8.8 MB `sqlite3.c` holds a few hundred MB. It is all released when the viewer closes. "Peak" is the highest the memory got while opening; "held" is what stays allocated while viewing.
-
-Numbers are medians of 5 runs on the machine listed above, measured with `uv run scripts/bench.py` — they are machine-specific, so compare trends, not absolutes. Re-baseline after intentional changes with `--update`.
 
 ## 🚧 TODO
 

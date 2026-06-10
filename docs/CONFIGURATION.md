@@ -12,6 +12,7 @@ Each release includes a `.toml.sample` showing all defaults. To customize, renam
 |-----|---------|-------------|
 | `extensions` | `["md", "markdown", "mdown", "mkd", "mkdn"]` | File extensions to handle |
 | `detect_string` | `EXT="MD" \| EXT="MARKDOWN"` | TC detect string |
+| `line_numbers` | `true` | Show the line-number gutter |
 
 ### [fonts]
 
@@ -50,6 +51,8 @@ Each release includes a `.toml.sample` showing all defaults. To customize, renam
 | `quote_border` | `#D0D7DE` | `#404040` | Blockquote border |
 | `rule` | `#D8DEE4` | `#404040` | Horizontal rule |
 | `selection` | `#DDEBFF` | `#264F78` | Text selection |
+| `search_highlight` | `#FFE066` | `#A87800` | Search match highlight |
+| `search_highlight_current` | `#FFA500` | `#E89820` | Current search match |
 
 ### [code]
 
@@ -67,7 +70,7 @@ below.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `extensions` | `["c", "cpp", "h", "hpp", "py", "js", ...]` | File extensions to handle (30+ languages) |
+| `extensions` | `["c", "cpp", "h", "hpp", "py", "js", ...]` | File extensions to handle (~80 extensions: source languages, shell/git dotfiles, VS/MSBuild XML project files, lockfiles, `txt`) |
 | `detect_string` | `EXT="C" \| EXT="CPP" \| ...` | TC detect string |
 
 ### [display]
@@ -109,23 +112,17 @@ Theme selection lives in the shared `wlx-listerine-core.toml` — see
 
 ## Syntax Color Themes
 
-Theme files live in the `themes/` directory. The install ships `themes/default.toml.sample` and `themes/default_light.toml.sample`; they are *not* loaded as-is. If no `themes/<name>.toml` exists, the plugin falls back to a built-in default that's close to `default.toml.sample` (the same VS Code Dark+/Light+ palette, with hierarchical-fallback covering most scope variants). To customize, rename a sample file (drop the `.sample` suffix) or copy it to a new name. The default theme defines colors for both light and dark modes:
+Theme files live in the `themes/` directory. The install ships `themes/default.toml.sample` and `themes/default_light.toml.sample`; they are *not* loaded as-is. If no `themes/<name>.toml` exists, the plugin falls back to a built-in default that's close to `default.toml.sample` (the same VS Code Dark+/Light+ palette, with hierarchical-fallback covering most scope variants). To customize, rename a sample file (drop the `.sample` suffix) or copy it to a new name.
 
-| Token | Description |
-|-------|-------------|
-| `keyword` | Language keywords (`if`, `for`, `return`) |
-| `keyword2` | Secondary keywords (`int`, `bool`, type keywords) |
-| `function` | Function names |
-| `string` | String literals |
-| `number` | Numeric literals |
-| `comment` | Comments |
-| `operator` | Operators |
-| `type` | Type names |
-| `preprocessor` | Preprocessor directives |
-| `namespace` | Namespace identifiers |
-| `variable` | Variable names |
-| `punctuation` | Punctuation (braces, semicolons) |
-| `plain` | Default/unmatched text |
+Themes use the [Helix editor theme format](https://docs.helix-editor.com/themes.html): flat scope-to-style entries, an optional `[palette]` section for named colors, and an `inherits` key for deriving from another theme. A style is either a bare color or a table with modifiers:
+
+```toml
+"keyword"           = "#C586C0"
+"keyword.directive" = { fg = "#C586C0", modifiers = ["bold"] }
+"comment"           = { fg = "#6A9955", modifiers = ["italic"] }
+```
+
+Scopes resolve hierarchically — `keyword.directive` falls back to `keyword` when not defined. Common scopes: `keyword`, `function`, `string`, `constant.numeric`, `comment`, `operator`, `type`, `namespace`, `variable`, `punctuation`, `tag`, `attribute`, `markup.*`, `diff.*`. Supported modifiers: `bold`, `italic`, `underline` (also as an `underline = { ... }` table), `strikethrough`; terminal-only Helix modifiers (`reversed`, `dim`, `blink`, `hidden`) are silently ignored, so themes from the [Helix community](https://github.com/helix-editor/helix/tree/master/runtime/themes) can be dropped in unmodified.
 
 To create a custom theme, copy `themes/default.toml.sample` to a new file (e.g. `mytheme.toml`) and set `[theme] dark = "mytheme"` in `wlx-listerine-core.toml`. The `.sample` file itself is overwritten on every install — never edit it directly.
 
