@@ -182,16 +182,26 @@ def read_readme_block() -> str:
 
 def write_readme_block(block: str) -> None:
     text = README.read_text(encoding="utf-8")
-    begin = text.find(MARK_BEGIN) + len(MARK_BEGIN)
+    begin = text.find(MARK_BEGIN)
     end = text.find(MARK_END)
+    if begin == -1 or end == -1 or end < begin:
+        sys.exit(f"README markers {MARK_BEGIN} / {MARK_END} missing or malformed"
+                 " — restore the Performance section from git history")
+    begin += len(MARK_BEGIN)
     README.write_text(text[:begin] + "\n" + block + "\n" + text[end:],
-                      encoding="utf-8")
+                      encoding="utf-8", newline="\n")
 
 
 def parse_baseline(block: str) -> dict:
     """Table rows between the markers -> {scenario key: metrics dict}."""
     def num(s: str):
-        return None if s == "—" else float(s)
+        if s == "—":
+            return None
+        try:
+            return float(s)
+        except ValueError:
+            sys.exit(f"unparseable baseline cell {s!r} in README — fix the"
+                     " table or restore it from git history")
 
     baseline = {}
     for line in block.splitlines():
