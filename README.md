@@ -59,6 +59,17 @@ Developer baselines — machine-specific, only comparable on the same hardware.
 Regenerate with `uv run scripts/bench.py --update` (see `scripts/bench.py`).
 
 <!-- bench:begin -->
+Measured on: AMD Ryzen 7 9800X3D 8-Core Processor, 62 GB RAM, Windows build 10.0.26200
+Baseline: commit `9a3e8eb`, 2026-06-10, median of 5 runs (`scripts/bench.py`)
+
+| Scenario | Open (ms) | Peak WS (MB) | Δ WS (MB) |
+|----------|-----------|--------------|-----------|
+| md eager (1.0 MB) | 312 | — | 170.4 |
+| md lazy (1.0 MB) | 166 | — | 122.7 |
+| colorizer eager json.hpp (0.9 MB) | 7250 | 52.6 | 45.2 |
+| colorizer cached json.hpp (0.9 MB) | 168 | 61.0 | 53.6 |
+| colorizer eager sqlite3.c (8.8 MB) | 2047 | 336.3 | 250.7 |
+| colorizer cached sqlite3.c (8.8 MB) | 1011 | 393.3 | 349.4 |
 <!-- bench:end -->
 
 ## 🚧 TODO
