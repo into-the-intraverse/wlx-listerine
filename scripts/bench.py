@@ -12,6 +12,7 @@ import argparse
 import ctypes
 import hashlib
 import re
+import shutil
 import statistics
 import subprocess
 import sys
@@ -78,7 +79,9 @@ def ensure_inputs() -> None:
         with tempfile.TemporaryDirectory(dir=FETCHED_DIR) as td:
             tmp = Path(td) / "download.bin"
             try:
-                urllib.request.urlretrieve(url, tmp)
+                with urllib.request.urlopen(url, timeout=60) as resp, \
+                        open(tmp, "wb") as f:
+                    shutil.copyfileobj(resp, f)
             except OSError as e:
                 sys.exit(f"download failed for {url}: {e}")
             if member:
@@ -94,9 +97,94 @@ def ensure_inputs() -> None:
             tmp.replace(target)
 
 
+# ---- running & parsing ----------------------------------------------------
+# md pipelines print "hot path"; colorizer pipelines print "hot total".
+RX_OPEN = re.compile(r"^\s*hot (?:path|total)\s+([\d.]+)\s*ms", re.M)
+RX_PEAK = re.compile(r"^\s*peak workingset\s*([\d.]+)\s*MB", re.M)
+RX_DELTA = re.compile(r"^\s*process delta\s*([+-]?[\d.]+)\s*(KB|MB)", re.M)
+
+
+def parse_bench_output(stderr: str) -> dict:
+    m_open = RX_OPEN.search(stderr)
+    m_delta = RX_DELTA.search(stderr)
+    if not m_open or not m_delta:
+        raise ValueError("expected bench labels not found in tool output")
+    delta = float(m_delta.group(1))
+    if m_delta.group(2) == "KB":  # md pipeline reports KB
+        delta /= 1024.0
+    m_peak = RX_PEAK.search(stderr)  # absent in md pipeline
+    return {
+        "open_ms": float(m_open.group(1)),
+        "peak_mb": float(m_peak.group(1)) if m_peak else None,
+        "delta_mb": delta,
+    }
+
+
+def run_scenario(key: str, input_path: Path, extra: list, runs: int) -> dict | None:
+    """Median per metric across runs; None (after printing why) on any failure."""
+    samples = []
+    for i in range(runs):
+        proc = subprocess.run(
+            [str(TOOL), str(input_path), *COMMON_ARGS, *extra],
+            cwd=REPO_ROOT, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=600)
+        if proc.returncode != 0:
+            print(f"FAIL {key} run {i + 1}: exit {proc.returncode}\n"
+                  f"{proc.stderr[-2000:]}", file=sys.stderr)
+            return None
+        try:
+            samples.append(parse_bench_output(proc.stderr))
+        except ValueError as e:
+            print(f"FAIL {key} run {i + 1}: {e}\n{proc.stderr[-2000:]}",
+                  file=sys.stderr)
+            return None
+
+    def med(metric: str):
+        vals = [s[metric] for s in samples if s[metric] is not None]
+        return statistics.median(vals) if vals else None
+
+    return {"open_ms": med("open_ms"), "peak_mb": med("peak_mb"),
+            "delta_mb": med("delta_mb")}
+
+
 def main() -> int:
-    ensure_inputs()  # temporary main — replaced in the next task
-    print("inputs ok")
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--runs", type=int, default=DEFAULT_RUNS,
+                    help=f"runs per scenario (default {DEFAULT_RUNS})")
+    ap.add_argument("--only", default=None, metavar="SUBSTR",
+                    help="run only scenarios whose key contains SUBSTR")
+    ap.add_argument("--update", action="store_true",
+                    help="rewrite the README baseline table")
+    args = ap.parse_args()
+
+    if not TOOL.exists():
+        sys.exit(f"{TOOL} not found — build first:\n"
+                 "  conan install . --output-folder=build --build=missing"
+                 " -s build_type=Release -s compiler.cppstd=20\n"
+                 "  cmake --preset conan-default && cmake --build --preset conan-release")
+
+    ensure_inputs()
+
+    selected = [(k, p, e) for k, p, e in SCENARIOS
+                if args.only is None or args.only in k]
+    if not selected:
+        sys.exit(f"--only {args.only!r} matches no scenario")
+
+    results, failed = {}, []
+    for key, input_path, extra in selected:
+        print(f"running {key} ({args.runs} runs) ...")
+        r = run_scenario(key, input_path, extra, args.runs)
+        if r is None:
+            failed.append(key)
+        else:
+            results[key] = r
+            peak = "—" if r["peak_mb"] is None else f"{r['peak_mb']:.1f}"
+            print(f"  open {r['open_ms']:.1f} ms  peak {peak} MB"
+                  f"  delta {r['delta_mb']:.1f} MB")
+
+    if failed:
+        print(f"\nFAILED scenarios: {', '.join(failed)}", file=sys.stderr)
+        return 1
     return 0
 
 
