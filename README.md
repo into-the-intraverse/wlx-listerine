@@ -9,18 +9,37 @@
 ## 📦 Plugins
 
 ### 📝 wlx-listerine-md — Markdown renderer
-- Native **Direct2D/DirectWrite** rendering
+- Native **Direct2D/DirectWrite** rendering with **color emoji**
+- GitHub-flavored Markdown: **tables**, **task lists**, **strikethrough**
 - **Light** and **dark mode** (follows Windows theme)
-- **Syntax-highlighted** code blocks [tree-sitter](https://github.com/tree-sitter/tree-sitter)
+- **Syntax-highlighted** code blocks via [tree-sitter](https://github.com/tree-sitter/tree-sitter)
 - Clickable **links** (anchors, relative docs, external URLs)
+- **Instant open** — files parse on a background thread, layout is viewport-lazy
+- Optional **line-number gutter**
 - **Configurable** fonts, spacing, and colors
 
 ### 🖍️ wlx-listerine-colorizer — Syntax colorizer
 - **Tree-sitter** based tokenization
+- Ships with grammars for **26 languages** (git, vim, c++, Unreal C++ opt-in, and more)
 - Line numbers, indent guides, whitespace markers
-- Ships with **25+ grammars** (git, vim, c++, Unreal C++ opt-in, and more)
+- Clickable **URLs** in any colorized text
+- **Per-file grammar override** — pick a language from the right-click menu
 - **Easily extendable** — drop tree-sitter grammar DLLs into [grammars/](grammars)
 - **Helix-compatible** color themes with **text modifiers** (bold, italic, underline, strikethrough) — drop in themes from the [Helix community](https://github.com/helix-editor/helix/tree/master/runtime/themes)
+- **Instant open** — background parse, viewport-scoped highlighting on scroll
+
+### 🖱️ Both plugins
+- **Text selection** with clipboard copy (drag, double-click word select)
+- **Text search** via Lister's find dialog, with match highlighting and a **counter HUD** (`3/17`, prev/next)
+- **Go to line** prompt (`Ctrl+G`)
+- **Right-click context menu** — copy, select all, search Google for selection, link actions, copy code block, edit config
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+C` / `Ctrl+A` | Copy selection / select all |
+| `Ctrl+G` | Go to line |
+| `F2` | Reload file |
+| `Esc` | Clear selection → clear search matches → close Lister |
 
 ---
 
@@ -55,8 +74,9 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the full reference.
 
 ## 📈 Performance
 
-Developer baselines — machine-specific, only comparable on the same hardware.
-Regenerate with `uv run scripts/bench.py --update` (see `scripts/bench.py`).
+Both plugins are built around one idea: **only do work for the part of the file you can see.** A file is parsed once on a background thread (so the viewer window appears immediately), then layout and syntax coloring happen just for the visible area and continue incrementally as you scroll.
+
+The first three rows below are what opening a file actually costs. The **worst case** rows force the slow paths the plugins normally avoid — laying out or syntax-coloring the *entire* file up front. You only hit those with `word_wrap = true` (wrapping needs whole-file coloring) or a language the fast path can't handle; they are tracked as regression sentinels. `json.hpp` is deliberately nasty: one giant nested C++ template header that stresses the highlighter far beyond what its size suggests.
 
 <!-- bench:begin -->
 Measured on: AMD Ryzen 7 9800X3D 8-Core Processor, 62 GB RAM, Windows build 10.0.26200
@@ -71,6 +91,10 @@ Baseline: commit `9a3e8eb`, 2026-06-10, median of 5 runs (`scripts/bench.py`)
 | colorizer eager sqlite3.c (8.8 MB) | 2047 | 336.3 | 250.7 |
 | colorizer cached sqlite3.c (8.8 MB) | 1011 | 393.3 | 349.4 |
 <!-- bench:end -->
+
+**About the memory column:** the code viewer keeps the parsed syntax tree in memory while a file is open, so scrolling re-colors instantly instead of re-reading the file — that's why the 8.8 MB `sqlite3.c` holds a few hundred MB. It is all released when the viewer closes. "Peak" is the highest the memory got while opening; "held" is what stays allocated while viewing.
+
+Numbers are medians of 5 runs on the machine listed above, measured with `uv run scripts/bench.py` — they are machine-specific, so compare trends, not absolutes. Re-baseline after intentional changes with `--update`.
 
 ## 🚧 TODO
 

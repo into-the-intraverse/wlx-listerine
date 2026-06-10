@@ -46,14 +46,19 @@ DOWNLOADS = [
 COMMON_ARGS = ["--bench", "--width", "1000", "--height", "1200", "--dark"]
 
 # (scenario key, input path, extra args). Keys are stable identifiers — the
-# README rows and compare output match on them (startswith), don't rename.
+# README rows and compare output match on them (startswith), don't rename
+# without regenerating the baseline. First three rows = what opening a file
+# actually costs (the plugins' real paths: lazy markdown layout, cached-tree
+# viewport highlight). "worst case" rows = the whole-file paths the plugins
+# only hit as fallbacks (word wrap / unsupported language); kept as
+# regression sentinels.
 SCENARIOS = [
-    ("md eager",                   BENCH_DIR / "big.md",      []),
-    ("md lazy",                    BENCH_DIR / "big.md",      ["--lazy"]),
-    ("colorizer eager json.hpp",   FETCHED_DIR / "json.hpp",  ["--colorizer"]),
-    ("colorizer cached json.hpp",  FETCHED_DIR / "json.hpp",  ["--colorizer", "--cached-tree"]),
-    ("colorizer eager sqlite3.c",  FETCHED_DIR / "sqlite3.c", ["--colorizer"]),
-    ("colorizer cached sqlite3.c", FETCHED_DIR / "sqlite3.c", ["--colorizer", "--cached-tree"]),
+    ("markdown",                                   BENCH_DIR / "big.md",      ["--lazy"]),
+    ("C++ header json.hpp",                        FETCHED_DIR / "json.hpp",  ["--colorizer", "--cached-tree"]),
+    ("C file sqlite3.c",                           FETCHED_DIR / "sqlite3.c", ["--colorizer", "--cached-tree"]),
+    ("worst case: markdown full layout",           BENCH_DIR / "big.md",      []),
+    ("worst case: whole-file highlight json.hpp",  FETCHED_DIR / "json.hpp",  ["--colorizer"]),
+    ("worst case: whole-file highlight sqlite3.c", FETCHED_DIR / "sqlite3.c", ["--colorizer"]),
 ]
 
 DEFAULT_RUNS = 5
@@ -222,8 +227,8 @@ def render_block(results: dict, runs: int) -> str:
         f"Baseline: commit `{git_commit()}`, {date.today().isoformat()},"
         f" median of {runs} runs (`scripts/bench.py`)",
         "",
-        "| Scenario | Open (ms) | Peak WS (MB) | Δ WS (MB) |",
-        "|----------|-----------|--------------|-----------|",
+        "| Scenario | Open (ms) | Peak memory (MB) | Memory held (MB) |",
+        "|----------|-----------|------------------|------------------|",
     ]
     for key, input_path, _extra in SCENARIOS:
         r = results[key]
@@ -286,13 +291,13 @@ def fmt_compare(cur, base) -> str:
 
 
 def print_compare(results: dict, baseline: dict) -> None:
-    print(f"\n{'scenario':<30} {'open ms':<36} {'peak MB':<32} {'Δ MB':<32}")
+    print(f"\n{'scenario':<46} {'open ms':<36} {'peak MB':<32} {'held MB':<32}")
     for key, _input, _extra in SCENARIOS:
         if key not in results:
             continue
         r = results[key]
         b = baseline.get(key, {})
-        print(f"{key:<30} "
+        print(f"{key:<46} "
               f"{fmt_compare(r['open_ms'], b.get('open_ms')):<36} "
               f"{fmt_compare(r['peak_mb'], b.get('peak_mb')):<32} "
               f"{fmt_compare(r['delta_mb'], b.get('delta_mb')):<32}")
