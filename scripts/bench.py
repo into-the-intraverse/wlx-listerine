@@ -170,9 +170,18 @@ def fmt_mb(v) -> str:
     return "—" if v is None else f"{v:.1f}"
 
 
+# README rows link each input to the actual file: fetched inputs to their
+# pinned download URL, the committed fixture to its repo path.
+FILE_LINKS = {name: url for name, url, _sha, _member in DOWNLOADS}
+FILE_LINKS["big.md"] = "test_data/bench/big.md"
+
+
 def scenario_label(key: str, input_path: Path) -> str:
     size_mb = input_path.stat().st_size / (1024 * 1024)
-    return f"{key} ({size_mb:.1f} MB)"
+    name = input_path.name
+    link = f"[{name}]({FILE_LINKS[name]})"
+    label = key.replace(name, link) if name in key else f"{key} — {link}"
+    return f"{label} ({size_mb:.1f} MB)"
 
 
 def read_readme_block() -> str:
@@ -213,8 +222,10 @@ def parse_baseline(block: str) -> dict:
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
         if len(cells) != 4 or cells[0] in ("Scenario", "") or set(cells[0]) <= {"-"}:
             continue
+        # Strip [name](url) link markup so labels match the plain scenario keys.
+        label = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", cells[0])
         for key, _input, _extra in SCENARIOS:
-            if cells[0].startswith(key):
+            if label.startswith(key):
                 baseline[key] = {"open_ms": num(cells[1]),
                                  "peak_mb": num(cells[2]),
                                  "delta_mb": num(cells[3])}
