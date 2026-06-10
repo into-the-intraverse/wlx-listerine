@@ -53,6 +53,14 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the full reference.
 - [Adding Languages](docs/LANGUAGES.md) — how to add more syntax grammars
 - [Building from Source](docs/BUILDING.md) — build instructions for developers
 
+## 📈 Performance
+
+Developer baselines — machine-specific, only comparable on the same hardware.
+Regenerate with `uv run scripts/bench.py --update` (see `scripts/bench.py`).
+
+<!-- bench:begin -->
+<!-- bench:end -->
+
 ## 🚧 TODO
 
 - **CPP highlighting on GHA windows-2025** — the upstream tree-sitter-cpp v0.23.4 grammar (ABI 14) emits no named-node spans on the GitHub Actions windows-2025 image, so plain `.cpp` files render only keyword tokens. Local builds with the same MSVC 14.44 toolset and conan binary work fine; root cause not yet pinned. The `Grammar: unreal-cpp` "highlights query loads" subcase is disabled until upstream ships an ABI 15 release or we route cpp through the taku25 fork.

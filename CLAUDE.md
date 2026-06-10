@@ -91,6 +91,17 @@ bun run update-goldens -- 01_headings_atx
 git config core.hooksPath .githooks
 ```
 
+## Performance Benchmarks
+
+Machine-specific baselines live in the README "Performance" section (median of 5 runs, `scripts/bench.py`).
+
+```bash
+uv run scripts/bench.py            # run suite, print current vs README baseline
+uv run scripts/bench.py --update   # re-measure and rewrite the README baseline
+```
+
+First run downloads pinned inputs into `test_data/bench/fetched/`. Requires a Release build of `screenshot_tool.exe`. Run on an idle machine; numbers are only comparable on the same hardware.
+
 ## Configuration
 
 `config/wlx-listerine-md.toml` (schema v2). Sections: `[general]` (extensions, detect_string), `[fonts]` (body, code, emoji + sizes), `[spacing]` (paragraph, heading, list, quote, code, line height), `[colors.light]` and `[colors.dark]` (10 colors each: background, text, heading, muted, link, link_hover, code_bg, quote_border, rule, selection).
