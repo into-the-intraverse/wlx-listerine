@@ -234,6 +234,10 @@ def render_block(results: dict, runs: int) -> str:
         r = results[key]
         lines.append(f"| {scenario_label(key, input_path)} | {fmt_open(r['open_ms'])}"
                      f" | {fmt_mb(r['peak_mb'])} | {fmt_mb(r['delta_mb'])} |")
+    # Blank line before the end marker: md4c swallows any non-blank line
+    # directly after a table into the table, so a glued comment marker would
+    # render as a literal row in the md plugin.
+    lines.append("")
     return "\n".join(lines)
 
 
