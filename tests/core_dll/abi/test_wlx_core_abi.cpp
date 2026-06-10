@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 #include <wlx_core/abi.h>
+#include <wlx_core/abi_spans_to_result.h>
 #include <cstring>
 #include <filesystem>
 #include <thread>
@@ -129,6 +130,40 @@ TEST_CASE("wlx_core_highlight_range sub-range yields a subset of full spans"
     wlx_core_free_spans(full);
     wlx_core_free_spans(sub);
     wlx_core_free_tree(core, t);
+    wlx_core_release(core);
+}
+
+TEST_CASE("abi_spans_to_result: null spans yield an empty result") {
+    CHECK(wlx_core::abi_spans_to_result(nullptr, 0).spans.empty());
+    CHECK(wlx_core::abi_spans_to_result(nullptr, 5).spans.empty());
+}
+
+TEST_CASE("abi_spans_to_result converts colorize output field-by-field"
+    * doctest::skip(!has_grammars())) {
+    auto* core = wlx_core_acquire();
+    const char* src = "int main(){return 0;}";
+    uint32_t len = (uint32_t)strlen(src);
+
+    // Two identical colorize calls: one is converted (and freed) by the helper,
+    // the other stays raw for the field-by-field comparison.
+    WlxColorSpan* raw = nullptr; uint32_t nraw = 0;
+    REQUIRE(wlx_core_colorize(core, src, len, "c", 1, 0, 0, &raw, &nraw) == 0);
+    REQUIRE(nraw > 0);
+    WlxColorSpan* conv = nullptr; uint32_t nconv = 0;
+    REQUIRE(wlx_core_colorize(core, src, len, "c", 1, 0, 0, &conv, &nconv) == 0);
+    REQUIRE(nconv == nraw);
+
+    auto result = wlx_core::abi_spans_to_result(conv, nconv);
+    REQUIRE(result.spans.size() == nraw);
+    for (uint32_t i = 0; i < nraw; ++i) {
+        CHECK(result.spans[i].start     == raw[i].start);
+        CHECK(result.spans[i].length    == raw[i].length);
+        CHECK(result.spans[i].color     == raw[i].color);
+        CHECK(result.spans[i].bg_color  == raw[i].bg_color);
+        CHECK(result.spans[i].has_bg    == (raw[i].has_bg != 0));
+        CHECK(result.spans[i].modifiers == raw[i].modifiers);
+    }
+    wlx_core_free_spans(raw);
     wlx_core_release(core);
 }
 

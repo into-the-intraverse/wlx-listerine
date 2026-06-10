@@ -33,6 +33,7 @@
 #include "core_dll/registry/core_config.h"
 #include "plugin_colorizer/layout/colorizer_layout.h"
 #include "wlx_core/abi.h"
+#include "wlx_core/abi_spans_to_result.h"
 #include "plugin_colorizer/language/path_to_language.h"
 #include "plugin_colorizer/language/routing.h"
 #include "tools/screenshot/token_json_writer.h"
@@ -113,28 +114,6 @@ std::string fnv1a_hex(const std::string& bytes) {
     std::snprintf(buf, sizeof(buf), "%016llx",
                   static_cast<unsigned long long>(h));
     return std::string(buf);
-}
-
-// Convert an ABI WlxColorSpan array into a ColorizeResult. Frees the spans via
-// wlx_core_free_spans. Returns an empty result if spans is null or count is zero.
-static ColorizeResult abi_spans_to_result(WlxColorSpan* spans, uint32_t count) {
-    using wlx::core::colorizer::ColorSpan;
-    ColorizeResult out;
-    if (!spans || count == 0) {
-        if (spans) wlx_core_free_spans(spans);
-        return out;
-    }
-    out.spans.reserve(count);
-    for (uint32_t i = 0; i < count; ++i) {
-        const auto& s = spans[i];
-        ColorSpan cs;
-        cs.start    = s.start;  cs.length   = s.length;
-        cs.color    = s.color;  cs.bg_color = s.bg_color;
-        cs.has_bg   = s.has_bg != 0; cs.modifiers = s.modifiers;
-        out.spans.push_back(cs);
-    }
-    wlx_core_free_spans(spans);
-    return out;
 }
 
 std::string compute_config_hash(const std::string& theme_name,
@@ -433,7 +412,6 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
                 std::vector<int> line_byte_starts;
                 LayoutTimings ltimings_ct;
                 auto layout_ct = layout_source(dwrite_factory.Get(),
-                                               content->text,
                                                content->raw_utf8,
                                                /*colors=*/{},
                                                theme,
@@ -483,7 +461,7 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
                         "[--cached-tree] wlx_core_highlight_range failed (%d) — "
                         "rendering without colors\n", hres);
                 } else {
-                    ColorizeResult ct_result = abi_spans_to_result(ct_spans, ct_count);
+                    ColorizeResult ct_result = wlx_core::abi_spans_to_result(ct_spans, ct_count);
                     apply_spans_to_range(layout_ct, content->raw_utf8, line_byte_starts,
                                          ct_result, vlo, vhi, display.tab_width);
                 }
@@ -572,7 +550,6 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
 
     LayoutTimings ltimings;
     auto layout = layout_source(dwrite_factory.Get(),
-                                content->text,        // wstring source
                                 content->raw_utf8,    // utf-8 source
                                 colors,
                                 theme,

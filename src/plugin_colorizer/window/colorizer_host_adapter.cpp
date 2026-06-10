@@ -41,6 +41,7 @@
 #include "runtime/theme/theme_service.h"
 #include "runtime/util/string_util.h"
 #include "wlx_core/abi.h"
+#include "wlx_core/abi_spans_to_result.h"
 #include "core_dll/colorizer/colorizer.h"  // ColorizeResult / ColorSpan still used by ColorViewState
 #include "plugin_colorizer/layout/colorizer_layout.h"
 #include "plugin_colorizer/language/path_to_language.h"
@@ -81,28 +82,6 @@ namespace wlx::plugin_colorizer::window {
 using namespace wlx::core::colorizer;
 using namespace wlx::plugin_colorizer::language;
 using namespace wlx::plugin_colorizer::layout;
-
-// File-local: convert ABI WlxColorSpan array into the C++ ColorizeResult type.
-// Frees the spans via wlx_core_free_spans. Returns an empty ColorizeResult if
-// spans is null or count is zero.
-static ColorizeResult abi_spans_to_result(WlxColorSpan* spans, uint32_t count) {
-    ColorizeResult out;
-    if (!spans || count == 0) {
-        if (spans) wlx_core_free_spans(spans);
-        return out;
-    }
-    out.spans.reserve(count);
-    for (uint32_t i = 0; i < count; ++i) {
-        const auto& s = spans[i];
-        ColorSpan cs;
-        cs.start = s.start; cs.length = s.length;
-        cs.color = s.color; cs.bg_color = s.bg_color;
-        cs.has_bg = s.has_bg != 0; cs.modifiers = s.modifiers;
-        out.spans.push_back(cs);
-    }
-    wlx_core_free_spans(spans);
-    return out;
-}
 
 // ---------- per-window state ----------
 
@@ -380,7 +359,7 @@ static void update_scrollbar(ColorViewState* vs) {
     wlx::runtime::host::update_scrollbar(*vs);
 }
 
-static void do_layout(ColorViewState* vs, const std::wstring& text, const std::string& raw_utf8,
+static void do_layout(ColorViewState* vs, const std::string& raw_utf8,
                       const ColorizeResult& colors) {
     if (!dwrite_factory()) return;
 
@@ -392,7 +371,7 @@ static void do_layout(ColorViewState* vs, const std::wstring& text, const std::s
 
     vs->line_byte_starts.clear();
     auto layout = std::make_shared<LayoutDocument>(
-        layout_source(dwrite_factory(), text, raw_utf8,
+        layout_source(dwrite_factory(), raw_utf8,
                       colors, g_theme, vs->dark_mode, viewport_width, cfg,
                       /*timings=*/nullptr, &vs->line_byte_starts));
     // layout_source already builds the line index + gutter, and fills
@@ -453,7 +432,7 @@ static void colorize_viewport(ColorViewState* vs) {
                                  vs->dark_mode ? 1 : 0, vlo, vhi,
                                  &spans, &count) != 0)
         return;  // highlight failed — leave existing colors as-is
-    ColorizeResult result = abi_spans_to_result(spans, count);
+    ColorizeResult result = wlx_core::abi_spans_to_result(spans, count);
 
     apply_spans_to_range(doc, vs->cached_raw_utf8, vs->line_byte_starts,
                          result, vlo, vhi, g_display_cfg.tab_width);
@@ -488,13 +467,13 @@ static void apply_whole_doc_fallback(ColorViewState* vs, const std::string& lang
                               vs->dark_mode ? 1 : 0,
                               0, 0,
                               &spans, &count) == 0) {
-            vs->cached_colors = abi_spans_to_result(spans, count);
+            vs->cached_colors = wlx_core::abi_spans_to_result(spans, count);
         }
     } else if (!language.empty()) {
         WLX_TRACE(L"viewport-colorize fallback: language '%hs' unsupported, "
                   L"plain-text render", language.c_str());
     }
-    do_layout(vs, vs->cached_text, vs->cached_raw_utf8, vs->cached_colors);
+    do_layout(vs, vs->cached_raw_utf8, vs->cached_colors);
 }
 
 // The shared worker body (pure; runs OFF the UI thread). Captures only copyable,
@@ -646,7 +625,7 @@ static void begin_async_recolor(ColorViewState* vs) {
 
 static void relayout(ColorViewState* vs) {
     if (vs->cached_text.empty() && vs->file_path.empty()) return;
-    do_layout(vs, vs->cached_text, vs->cached_raw_utf8, vs->cached_colors);
+    do_layout(vs, vs->cached_raw_utf8, vs->cached_colors);
 }
 
 // No-wrap line breaking is width-independent, so a horizontal resize doesn't
@@ -755,7 +734,7 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
             v->tree.reset();
         if (v->tree) {
             // Skeleton layout (empty colors); colorize the first viewport now.
-            do_layout(v, v->cached_text, v->cached_raw_utf8, /*colors=*/{});
+            do_layout(v, v->cached_raw_utf8, /*colors=*/{});
             colorize_viewport(v);
         } else {
             // Whole-doc fallback on the UI thread (unsupported / wrap / parse fail).
@@ -1384,9 +1363,9 @@ HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
         q.backwards = backwards;
         auto r = search_step(*vs, q, /*findfirst=*/false);
         if (!r.has_match) return;
-        scroll_to_match(vs, r.matches[r.cursor]);
-        if (vs->renderer) vs->renderer->set_search_matches(r.matches, r.cursor);
-        vs->hud->update(r.cursor + 1, static_cast<int>(r.matches.size()));
+        scroll_to_match(vs, vs->matches[r.cursor]);
+        if (vs->renderer) vs->renderer->set_search_matches(vs->matches, r.cursor);
+        vs->hud->update(r.cursor + 1, static_cast<int>(vs->matches.size()));
         InvalidateRect(vs->hwnd, nullptr, FALSE);
     };
 
@@ -1515,7 +1494,7 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
                 // do_layout resets the colored interval, so the next paint
                 // re-highlights the viewport from the cached tree with the new
                 // dark flag. Selection/matches stay valid (same block structure).
-                do_layout(vs, vs->cached_text, vs->cached_raw_utf8, /*colors=*/{});
+                do_layout(vs, vs->cached_raw_utf8, /*colors=*/{});
                 InvalidateRect(vs->hwnd, nullptr, FALSE);
             } else {
                 // Re-parse + re-color the IN-MEMORY source (no file re-read) off
@@ -1570,9 +1549,9 @@ int __stdcall ListSearchTextW(HWND ListWin, wchar_t* SearchString, int SearchPar
         InvalidateRect(vs->hwnd, nullptr, FALSE);
         return LISTPLUGIN_ERROR;
     }
-    scroll_to_match(vs, r.matches[r.cursor]);
-    if (vs->renderer) vs->renderer->set_search_matches(r.matches, r.cursor);
-    if (vs->hud) vs->hud->update(r.cursor + 1, static_cast<int>(r.matches.size()));
+    scroll_to_match(vs, vs->matches[r.cursor]);
+    if (vs->renderer) vs->renderer->set_search_matches(vs->matches, r.cursor);
+    if (vs->hud) vs->hud->update(r.cursor + 1, static_cast<int>(vs->matches.size()));
     InvalidateRect(vs->hwnd, nullptr, FALSE);
     return LISTPLUGIN_OK;
 }

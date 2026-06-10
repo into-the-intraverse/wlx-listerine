@@ -7,6 +7,7 @@ add_library(wlx-core STATIC
     layout/inline_layout.cpp
     layout/code_fence_layout.cpp
     layout/layout_engine.cpp
+    layout/utf8_offset_map.cpp
     layout/line_index.cpp
     layout/md_materialize.cpp
     render/render_engine.cpp

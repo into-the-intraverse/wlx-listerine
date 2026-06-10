@@ -50,7 +50,6 @@ struct LayoutTimings {
 // skeleton (blocks + run.text, no color_ranges) and colorize incrementally.
 wlx::runtime::layout::LayoutDocument layout_source(
     IDWriteFactory* dwrite,
-    const std::wstring& source,
     const std::string& raw_utf8,
     const wlx::core::colorizer::ColorizeResult& colors,
     const wlx::runtime::theme::ThemeService& theme,

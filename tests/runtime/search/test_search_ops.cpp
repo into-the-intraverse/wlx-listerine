@@ -42,7 +42,7 @@ TEST_CASE("search_step findfirst on three-match doc lands on match 0") {
     auto r = search_step(v, q, /*findfirst=*/true);
     CHECK(r.has_match);
     CHECK(r.cursor == 0);
-    CHECK(r.matches.size() == 3);
+    CHECK(v.matches.size() == 3);
     CHECK(r.index_was_rebuilt);
 }
 
@@ -71,7 +71,7 @@ TEST_CASE("search_step no-match returns has_match=false and clears cursor") {
     auto r = search_step(v, q, /*findfirst=*/true);
     CHECK_FALSE(r.has_match);
     CHECK(r.cursor == -1);
-    CHECK(r.matches.empty());
+    CHECK(v.matches.empty());
     CHECK(v.current_match == -1);
 }
 
@@ -88,7 +88,7 @@ TEST_CASE("search_step clamps cursor after relayout shrinks match set") {
     v.index_dirty = true;
     auto step = search_step(v, q, /*findfirst=*/false);
     CHECK(step.has_match);
-    CHECK(step.matches.size() == 1);
+    CHECK(v.matches.size() == 1);
     // Prior cursor=2 was clamped to 0 (matches.size()-1), then advance wraps to 0.
     CHECK(step.cursor == 0);
 }
@@ -100,7 +100,7 @@ TEST_CASE("search_step query change without findfirst still requeries") {
     SearchQuery q2; q2.needle = L"bar";
     auto r = search_step(v, q2, /*findfirst=*/false);
     CHECK(r.has_match);
-    CHECK(r.matches.size() == 1);
+    CHECK(v.matches.size() == 1);
     CHECK(r.cursor == 0);
 }
 

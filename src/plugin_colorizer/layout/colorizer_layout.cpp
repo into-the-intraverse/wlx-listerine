@@ -7,6 +7,7 @@
 #include "runtime/interaction/url_scanner.h"
 #include "runtime/layout/interactive_span.h"
 #include "runtime/layout/line_index.h"
+#include "runtime/layout/utf8_offset_map.h"
 #include "wlx_core/text_modifier.h"
 
 #include <algorithm>
@@ -24,46 +25,13 @@ namespace wlx::plugin_colorizer::layout {
 
 // ---- helpers ----------------------------------------------------------------
 
-// Build a wchar -> UTF-8 byte-offset prefix table for one decoded line:
-// table[w] = byte offset where wchar w starts, plus a sentinel == total byte
-// length. Surrogate pairs (one 4-byte UTF-8 char -> two wchars) repeat the
-// pair's start so lower_bound never lands inside the pair. Built ONCE per
-// non-ASCII line so mapping ColorSpan byte offsets -> wchar offsets is
-// O(log n) per span instead of a MultiByteToWideChar prefix conversion
-// (O(line length)) per span end — the old per-span conversion was a
-// multi-second hang on long minified single-line files.
-static std::vector<int> build_wchar_to_byte(const std::wstring& line) {
-    std::vector<int> table;
-    table.reserve(line.size() + 1);
-    int byte_pos = 0;
-    for (size_t w = 0; w < line.size(); ++w) {
-        table.push_back(byte_pos);
-        wchar_t wc = line[w];
-        if (wc < 0x80) {
-            byte_pos += 1;
-        } else if (wc < 0x800) {
-            byte_pos += 2;
-        } else if (wc >= 0xD800 && wc < 0xDC00 && w + 1 < line.size() &&
-                   line[w + 1] >= 0xDC00 && line[w + 1] < 0xE000) {
-            table.push_back(byte_pos);  // low surrogate: same 4-byte char
-            byte_pos += 4;
-            ++w;
-        } else {
-            byte_pos += 3;  // BMP >= 0x800 (MB2WC never decodes to lone surrogates)
-        }
-    }
-    table.push_back(byte_pos);  // sentinel: end of line content
-    return table;
-}
-
-// Map a byte offset within a line to its wchar offset. `wchar_to_byte` is the
-// table from build_wchar_to_byte, or nullptr for a pure-ASCII line, where byte
-// offsets == wchar offsets (the identity fast path).
-static int byte_to_wchar(const std::vector<int>* wchar_to_byte, int byte_off) {
-    if (!wchar_to_byte) return byte_off;
-    auto it = std::lower_bound(wchar_to_byte->begin(), wchar_to_byte->end(), byte_off);
-    return static_cast<int>(it - wchar_to_byte->begin());
-}
+// The wchar -> UTF-8 byte-offset prefix table for one decoded line comes from
+// the shared utf8_offsets/byte_to_wchar primitives (runtime/layout/
+// utf8_offset_map.h). Built ONCE per non-ASCII line so mapping ColorSpan byte
+// offsets -> wchar offsets is O(log n) per span instead of a
+// MultiByteToWideChar prefix conversion (O(line length)) per span end — the
+// old per-span conversion was a multi-second hang on long minified
+// single-line files.
 
 // Expand a single source line (wstring) by converting tabs to spaces.
 // Returns the expanded line, and fills out_tab_map[i] = expanded offset for source char i.
@@ -138,7 +106,7 @@ struct PerLineSpan {
 // prefix table (nullptr for a pure-ASCII line).
 static void clamp_span_to_line(int line_byte_start,
                                const std::wstring& orig_line,
-                               const std::vector<int>* wchar_to_byte,
+                               const std::vector<uint32_t>* wchar_to_byte,
                                uint32_t seg_start, uint32_t seg_end,
                                const wlx::core::colorizer::ColorSpan& sp,
                                std::vector<PerLineSpan>& out) {
@@ -147,9 +115,11 @@ static void clamp_span_to_line(int line_byte_start,
     int rel_end_bytes   = static_cast<int>(seg_end)   - line_byte_start;
 
     int wstart = (rel_start_bytes > 0)
-                 ? byte_to_wchar(wchar_to_byte, rel_start_bytes)
+                 ? static_cast<int>(byte_to_wchar(
+                       wchar_to_byte, static_cast<uint32_t>(rel_start_bytes)))
                  : 0;
-    int wend   = byte_to_wchar(wchar_to_byte, rel_end_bytes);
+    int wend   = static_cast<int>(byte_to_wchar(
+                     wchar_to_byte, static_cast<uint32_t>(rel_end_bytes)));
     int wlen   = wend - wstart;
 
     if (wlen > 0 && wstart >= 0 && wstart < static_cast<int>(orig_line.size())) {
@@ -190,7 +160,7 @@ static void distribute_spans_to_lines(
     // offsets and no table is needed.
     const size_t window = static_cast<size_t>(line_last - line_first + 1);
     std::vector<std::wstring> decoded(window);
-    std::vector<std::vector<int>> byte_tables(window);
+    std::vector<std::vector<uint32_t>> byte_tables(window);
     std::vector<char> decoded_done(window, 0);
     auto line_text = [&](size_t wi, int line_byte_start, int content_end) -> const std::wstring& {
         if (!decoded_done[wi]) {
@@ -199,7 +169,7 @@ static void distribute_spans_to_lines(
             for (wchar_t wc : decoded[wi]) {
                 if (wc >= 0x80) { ascii = false; break; }
             }
-            if (!ascii) byte_tables[wi] = build_wchar_to_byte(decoded[wi]);
+            if (!ascii) byte_tables[wi] = utf8_offsets(decoded[wi]);
             decoded_done[wi] = 1;
         }
         return decoded[wi];
@@ -247,7 +217,7 @@ static void distribute_spans_to_lines(
             const size_t wi = static_cast<size_t>(li - line_first);
             const std::wstring& orig_line =
                 line_text(wi, line_byte_start, line_content_end_byte);
-            const std::vector<int>* table =
+            const std::vector<uint32_t>* table =
                 byte_tables[wi].empty() ? nullptr : &byte_tables[wi];
             clamp_span_to_line(line_byte_start, orig_line, table,
                                seg_start, seg_end, sp, out_line_spans[wi]);
@@ -494,7 +464,6 @@ static void apply_line_decorations(
 
 wlx::runtime::layout::LayoutDocument layout_source(
     IDWriteFactory* dwrite,
-    const std::wstring& source,
     const std::string& raw_utf8,
     const wlx::core::colorizer::ColorizeResult& colors,
     const wlx::runtime::theme::ThemeService& theme,

@@ -58,7 +58,7 @@ LayoutDocument run_layout(IDWriteFactory* dwrite,
     for (wchar_t wc : source) {
         raw_utf8.push_back(static_cast<char>(wc));
     }
-    return layout_source(dwrite, source, raw_utf8, colors, theme,
+    return layout_source(dwrite, raw_utf8, colors, theme,
                          /*dark_mode=*/false, viewport_width, display);
 }
 
@@ -205,7 +205,7 @@ TEST_CASE("layout_source: tab_width 0 from unvalidated config is clamped, not a 
     ColorizeResult colors;
     ColorizerDisplayConfig display;
     display.tab_width = 0;
-    auto doc = layout_source(factory.Get(), L"\tx", "\tx", colors, theme,
+    auto doc = layout_source(factory.Get(), "\tx", colors, theme,
                              /*dark_mode=*/false, /*viewport_width=*/800.0f, display);
     REQUIRE(doc.blocks.size() == 1);
     CHECK(doc.blocks[0].text_runs[0].text == L" x");  // tab expanded with width 1
@@ -239,8 +239,7 @@ LayoutDocument run_skeleton(IDWriteFactory* dwrite, const std::string& raw_utf8,
     ThemeService theme;
     ColorizeResult empty;
     ColorizerDisplayConfig display;  // no word_wrap -> lazy/incremental path
-    std::wstring source(raw_utf8.begin(), raw_utf8.end());  // ASCII-only in tests
-    return layout_source(dwrite, source, raw_utf8, empty, theme,
+    return layout_source(dwrite, raw_utf8, empty, theme,
                          /*dark_mode=*/false, /*viewport_width=*/800.0f, display,
                          /*timings=*/nullptr, &out_line_byte_starts);
 }
@@ -352,7 +351,6 @@ TEST_CASE("apply_spans_to_range: whole-doc window matches the eager whole-doc bu
     auto factory = create_dwrite_factory();
     REQUIRE(factory);
     const std::string raw = "int a;\nint b;\nint c;";
-    std::wstring source(raw.begin(), raw.end());
 
     ColorizeResult colors;
     colors.spans.push_back(make_span(0, 3, 0xAA0000));   // line0 "int"
@@ -362,7 +360,7 @@ TEST_CASE("apply_spans_to_range: whole-doc window matches the eager whole-doc bu
     // Eager whole-doc build (colors passed up front).
     ThemeService theme;
     ColorizerDisplayConfig display;
-    auto eager = layout_source(factory.Get(), source, raw, colors, theme,
+    auto eager = layout_source(factory.Get(), raw, colors, theme,
                                false, 800.0f, display);
 
     // Skeleton + incremental whole-doc recolor.
@@ -415,7 +413,6 @@ TEST_CASE("non-ASCII line: multiple spans keep correct wchar offsets") {
     // diverge from wchar offsets after byte 3. Both spans must convert
     // independently on the same line.
     const std::string raw = "// \xC3\xA9t\xC3\xA9 abc";
-    const std::wstring source = L"// \x00E9t\x00E9 abc";
 
     ColorizeResult colors;
     colors.spans.push_back(make_span(3, 5, 0x111111));  // the accented word -> wchar [3,6)
@@ -423,7 +420,7 @@ TEST_CASE("non-ASCII line: multiple spans keep correct wchar offsets") {
 
     ThemeService theme;
     ColorizerDisplayConfig display;
-    auto doc = layout_source(factory.Get(), source, raw, colors, theme,
+    auto doc = layout_source(factory.Get(), raw, colors, theme,
                              /*dark_mode=*/false, /*viewport_width=*/800.0f, display);
     REQUIRE(doc.blocks.size() == 1);
     const auto& crs = doc.blocks[0].text_runs[0].color_ranges;
@@ -438,7 +435,7 @@ TEST_CASE("non-ASCII line: multiple spans keep correct wchar offsets") {
     // The incremental (windowed) path must use the same byte->wchar mapping.
     std::vector<int> starts;
     ColorizeResult empty;
-    auto incr = layout_source(factory.Get(), source, raw, empty, theme,
+    auto incr = layout_source(factory.Get(), raw, empty, theme,
                               false, 800.0f, display, /*timings=*/nullptr, &starts);
     apply_spans_to_range(incr, raw, starts, colors, 0,
                          static_cast<uint32_t>(raw.size()), 4);
@@ -455,7 +452,6 @@ TEST_CASE("non-ASCII line: 4-byte emoji (surrogate pair) span offsets") {
     REQUIRE(factory);
     // "a<U+1F600>b": the emoji is 4 UTF-8 bytes but TWO wchars (a surrogate pair).
     const std::string raw = "a\xF0\x9F\x98\x80""b";
-    const std::wstring source = L"a\U0001F600b";
 
     ColorizeResult colors;
     colors.spans.push_back(make_span(1, 4, 0x111111));  // the emoji -> wchar [1,3)
@@ -463,7 +459,7 @@ TEST_CASE("non-ASCII line: 4-byte emoji (surrogate pair) span offsets") {
 
     ThemeService theme;
     ColorizerDisplayConfig display;
-    auto doc = layout_source(factory.Get(), source, raw, colors, theme,
+    auto doc = layout_source(factory.Get(), raw, colors, theme,
                              /*dark_mode=*/false, /*viewport_width=*/800.0f, display);
     REQUIRE(doc.blocks.size() == 1);
     const auto& crs = doc.blocks[0].text_runs[0].color_ranges;
@@ -480,7 +476,6 @@ TEST_CASE("modifiers: lazy materialize bakes bold/strikethrough into the line la
     auto factory = create_dwrite_factory();
     REQUIRE(factory);
     const std::string raw = "int a;";
-    const std::wstring source = L"int a;";
 
     ColorizeResult colors;
     ColorSpan s = make_span(0, 3, 0xAA0000);  // "int"
@@ -489,7 +484,7 @@ TEST_CASE("modifiers: lazy materialize bakes bold/strikethrough into the line la
 
     ThemeService theme;
     ColorizerDisplayConfig display;  // word_wrap off -> lazy path
-    auto doc = layout_source(factory.Get(), source, raw, colors, theme,
+    auto doc = layout_source(factory.Get(), raw, colors, theme,
                              /*dark_mode=*/false, /*viewport_width=*/800.0f, display);
     REQUIRE(doc.blocks.size() == 1);
     materialize_all(doc);
@@ -511,7 +506,6 @@ TEST_CASE("modifiers: eager (word-wrap) path applies them at creation, before me
     auto factory = create_dwrite_factory();
     REQUIRE(factory);
     const std::string raw = "int a;";
-    const std::wstring source = L"int a;";
 
     ColorizeResult colors;
     ColorSpan s = make_span(0, 3, 0xAA0000);
@@ -521,7 +515,7 @@ TEST_CASE("modifiers: eager (word-wrap) path applies them at creation, before me
     ThemeService theme;
     ColorizerDisplayConfig display;
     display.word_wrap = true;  // eager: layouts built (and measured) up front
-    auto doc = layout_source(factory.Get(), source, raw, colors, theme,
+    auto doc = layout_source(factory.Get(), raw, colors, theme,
                              /*dark_mode=*/false, /*viewport_width=*/800.0f, display);
     REQUIRE(doc.blocks.size() == 1);
     CHECK(!doc.materialize_block);  // eager docs install no hook

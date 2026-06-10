@@ -20,10 +20,11 @@ concept SearchState = requires(V& v) {
     { v.index_dirty }   -> std::same_as<bool&>;
 };
 
+// Cursor + metadata only: the matches themselves live in (and are updated
+// in-place on) vs.matches, so the per-step vector copy is avoided.
 struct SearchStepResult {
     bool has_match;
     int cursor;
-    std::vector<SearchMatch> matches;
     bool index_was_rebuilt;
 };
 
@@ -48,13 +49,13 @@ SearchStepResult search_step(V& vs, const SearchQuery& q, bool findfirst) {
     }
     if (vs.matches.empty()) {
         vs.current_match = -1;
-        return {false, -1, {}, rebuilt};
+        return {false, -1, rebuilt};
     }
     const int n = static_cast<int>(vs.matches.size());
     vs.current_match = q.backwards
         ? (vs.current_match <= 0 ? n - 1 : vs.current_match - 1)
         : (vs.current_match + 1) % n;
-    return {true, vs.current_match, vs.matches, rebuilt};
+    return {true, vs.current_match, rebuilt};
 }
 
 }  // namespace wlx::runtime::search

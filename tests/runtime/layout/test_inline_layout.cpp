@@ -44,29 +44,6 @@ TEST_CASE("build_code_fence_layout measures a fenced block") {
     CHECK(r.height > 0.0f);
 }
 
-TEST_CASE("utf8_with_offsets: surrogate pair encodes as 4-byte UTF-8, offsets aligned") {
-    // U+1F600 = UTF-16 pair D83D DE00 = UTF-8 F0 9F 98 80. The old per-wchar
-    // encoder emitted two 3-byte CESU-8 units (invalid UTF-8 for tree-sitter)
-    // and the offset table drifted by 2 bytes per emoji.
-    std::wstring text = L"a\U0001F600b";
-    REQUIRE(text.size() == 4);  // 'a' + high + low surrogate + 'b'
-
-    auto m = utf8_with_offsets(text);
-
-    REQUIRE(m.utf8.size() == 6);  // 1 + 4 + 1 bytes
-    CHECK(static_cast<unsigned char>(m.utf8[1]) == 0xF0);
-    CHECK(static_cast<unsigned char>(m.utf8[2]) == 0x9F);
-    CHECK(static_cast<unsigned char>(m.utf8[3]) == 0x98);
-    CHECK(static_cast<unsigned char>(m.utf8[4]) == 0x80);
-
-    REQUIRE(m.wchar_to_byte.size() == text.size() + 1);  // + end sentinel
-    CHECK(m.wchar_to_byte[0] == 0);  // 'a'
-    CHECK(m.wchar_to_byte[1] == 1);  // high surrogate: pair start
-    CHECK(m.wchar_to_byte[2] == 1);  // low surrogate shares the pair start
-    CHECK(m.wchar_to_byte[3] == 5);  // 'b' — stays aligned after the emoji
-    CHECK(m.wchar_to_byte[4] == 6);  // sentinel == total bytes
-}
-
 TEST_CASE("build_inline_layout produces a measured layout for a paragraph") {
     auto factory = dwf();
     REQUIRE(factory);

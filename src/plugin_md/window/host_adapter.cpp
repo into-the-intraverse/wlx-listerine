@@ -1208,9 +1208,9 @@ HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
         q.backwards = backwards;
         auto r = search_step(*vs, q, /*findfirst=*/false);
         if (!r.has_match) return;
-        scroll_to_match(vs, r.matches[r.cursor]);
-        if (vs->renderer) vs->renderer->set_search_matches(r.matches, r.cursor);
-        vs->hud->update(r.cursor + 1, static_cast<int>(r.matches.size()));
+        scroll_to_match(vs, vs->matches[r.cursor]);
+        if (vs->renderer) vs->renderer->set_search_matches(vs->matches, r.cursor);
+        vs->hud->update(r.cursor + 1, static_cast<int>(vs->matches.size()));
         InvalidateRect(vs->hwnd, nullptr, FALSE);
     };
 
@@ -1365,9 +1365,9 @@ int __stdcall ListSearchTextW(HWND ListWin, wchar_t* SearchString, int SearchPar
         InvalidateRect(vs->hwnd, nullptr, FALSE);
         return LISTPLUGIN_ERROR;
     }
-    scroll_to_match(vs, r.matches[r.cursor]);
-    if (vs->renderer) vs->renderer->set_search_matches(r.matches, r.cursor);
-    if (vs->hud) vs->hud->update(r.cursor + 1, static_cast<int>(r.matches.size()));
+    scroll_to_match(vs, vs->matches[r.cursor]);
+    if (vs->renderer) vs->renderer->set_search_matches(vs->matches, r.cursor);
+    if (vs->hud) vs->hud->update(r.cursor + 1, static_cast<int>(vs->matches.size()));
     InvalidateRect(vs->hwnd, nullptr, FALSE);
     return LISTPLUGIN_OK;
 }
