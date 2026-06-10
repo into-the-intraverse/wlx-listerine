@@ -1,24 +1,30 @@
 #include <doctest/doctest.h>
 #include "runtime/cache/cache_service.h"
+#include "runtime/layout/layout_document.h"
 #include "runtime/parser/block_node.h"
 #include "runtime/parser/document.h"
 
 using namespace wlx::runtime::cache;
+using namespace wlx::runtime::layout;
 using namespace wlx::runtime::parser;
 
-TEST_CASE("Viewport width bucketing") {
+TEST_CASE("Viewport width bucketing floors (cached layout never wider than viewport)") {
     CHECK(CacheService::bucket_width(0) == 0);
     CHECK(CacheService::bucket_width(1) == 0);
-    CHECK(CacheService::bucket_width(25) == 0);
-    CHECK(CacheService::bucket_width(26) == 50);
+    CHECK(CacheService::bucket_width(49) == 0);
     CHECK(CacheService::bucket_width(50) == 50);
     CHECK(CacheService::bucket_width(75) == 50);
-    CHECK(CacheService::bucket_width(76) == 100);
+    CHECK(CacheService::bucket_width(99) == 50);
+    CHECK(CacheService::bucket_width(100) == 100);
     CHECK(CacheService::bucket_width(800) == 800);
     CHECK(CacheService::bucket_width(810) == 800);
-    CHECK(CacheService::bucket_width(825) == 800);
-    CHECK(CacheService::bucket_width(826) == 850);
+    CHECK(CacheService::bucket_width(849) == 800);
+    CHECK(CacheService::bucket_width(850) == 850);
     CHECK(CacheService::bucket_width(1920) == 1900);
+
+    // Floor invariant: the bucket (= layout width) never exceeds the viewport.
+    for (int w : {1, 26, 49, 51, 76, 333, 826, 1919})
+        CHECK(CacheService::bucket_width(w) <= w);
 }
 
 TEST_CASE("Parse cache store and lookup") {
@@ -65,22 +71,51 @@ TEST_CASE("Parse cache key mismatch on parser version") {
     CHECK(cache.lookup_parse(key2) .get() == nullptr);
 }
 
-TEST_CASE("Invalidate by path") {
+TEST_CASE("Parse cache caps at kMaxEntries") {
     CacheService cache;
 
-    ParseCacheKey key1{L"a.md", 100, 1000, 1};
-    ParseCacheKey key2{L"b.md", 200, 2000, 1};
+    for (uint64_t i = 0; i < CacheService::kMaxEntries + 4; i++)
+        cache.store_parse({L"f.md", 100, /*mtime=*/i, 1}, std::make_shared<Document>());
 
-    cache.store_parse(key1, std::make_shared<Document>());
-    cache.store_parse(key2, std::make_shared<Document>());
+    CHECK(cache.parse_cache_size() == CacheService::kMaxEntries);
+    // Oldest four evicted, rest survive.
+    CHECK(cache.lookup_parse({L"f.md", 100, 0, 1}) .get() == nullptr);
+    CHECK(cache.lookup_parse({L"f.md", 100, 3, 1}) .get() == nullptr);
+    CHECK(cache.lookup_parse({L"f.md", 100, 4, 1}) .get() != nullptr);
+    CHECK(cache.lookup_parse({L"f.md", 100, CacheService::kMaxEntries + 3, 1}) .get() != nullptr);
+}
 
-    CHECK(cache.parse_cache_size() == 2);
+TEST_CASE("Parse cache eviction is LRU: lookup promotes") {
+    CacheService cache;
 
-    cache.invalidate(L"a.md");
+    for (uint64_t i = 0; i < CacheService::kMaxEntries; i++)
+        cache.store_parse({L"f.md", 100, /*mtime=*/i, 1}, std::make_shared<Document>());
 
-    CHECK(cache.lookup_parse(key1) .get() == nullptr);
-    CHECK(cache.lookup_parse(key2) .get() != nullptr);
-    CHECK(cache.parse_cache_size() == 1);
+    // Touch the oldest entry so mtime=1 becomes the LRU tail instead.
+    CHECK(cache.lookup_parse({L"f.md", 100, 0, 1}) .get() != nullptr);
+
+    cache.store_parse({L"f.md", 100, 999, 1}, std::make_shared<Document>());
+
+    CHECK(cache.parse_cache_size() == CacheService::kMaxEntries);
+    CHECK(cache.lookup_parse({L"f.md", 100, 0, 1}) .get() != nullptr);  // promoted -> survived
+    CHECK(cache.lookup_parse({L"f.md", 100, 1, 1}) .get() == nullptr);  // LRU tail -> evicted
+}
+
+TEST_CASE("Layout cache caps at kMaxEntries") {
+    CacheService cache;
+
+    LayoutCacheKey k;
+    k.parse_key = ParseCacheKey{L"f.md", 100, 1000, 1};
+    for (size_t i = 0; i < CacheService::kMaxEntries + 1; i++) {
+        k.viewport_width_bucket = static_cast<int>((i + 1) * 50);
+        cache.store_layout(k, std::make_shared<LayoutDocument>());
+    }
+
+    CHECK(cache.layout_cache_size() == CacheService::kMaxEntries);
+    k.viewport_width_bucket = 50;
+    CHECK(cache.lookup_layout(k) .get() == nullptr);   // oldest -> evicted
+    k.viewport_width_bucket = 100;
+    CHECK(cache.lookup_layout(k) .get() != nullptr);
 }
 
 TEST_CASE("Clear empties all caches") {

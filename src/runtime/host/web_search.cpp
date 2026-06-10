@@ -5,13 +5,14 @@
 #include "runtime/host/web_search.h"
 
 #include <windows.h>
-#include <shellapi.h>
 
 #include <cwctype>
 #include <string>
 
 #define WLX_TRACE_TAG L"wlx-host"
 #include "runtime/diagnostics/wlx_trace.h"
+
+#include "runtime/host/link_actions.h"
 
 namespace wlx::runtime::host {
 
@@ -96,16 +97,9 @@ std::wstring build_google_search_url(std::wstring_view query) {
 void search_with_google(std::wstring_view query) {
     auto url = build_google_search_url(query);
     if (url.empty()) return;
-    HINSTANCE hi = ShellExecuteW(nullptr, L"open", url.c_str(),
-                                 nullptr, nullptr, SW_SHOW);
-    if (reinterpret_cast<INT_PTR>(hi) <= 32) {
-        // The HINSTANCE return is overloaded to carry an integer error code
-        // (1..31, per MSDN's ShellExecute table) when the call fails. Print
-        // it as a signed integer so traces are readable; %p would just show
-        // a pointer-width hex value.
-        WLX_TRACE(L"search_with_google: ShellExecuteW failed (code %lld)",
-                  static_cast<long long>(reinterpret_cast<INT_PTR>(hi)));
-    }
+    // Delegates the ShellExecuteW + failure-trace plumbing (and the scheme
+    // allowlist; https:// always passes) to the shared opener.
+    open_external_url(url);
 }
 
 }  // namespace wlx::runtime::host

@@ -21,6 +21,16 @@ TEST_CASE("parse_hex_color with invalid string returns fallback") {
     CHECK(ThemeService::parse_hex_color("not_a_color", 0x123456) == 0x123456);
     CHECK(ThemeService::parse_hex_color("", 0xABCDEF) == 0xABCDEF);
     CHECK(ThemeService::parse_hex_color("ZZZZZZ", 42) == 42);
+    CHECK(ThemeService::parse_hex_color("#1F23ZZ", 42) == 42);    // trailing garbage
+    CHECK(ThemeService::parse_hex_color("#AABBCCDD", 42) == 42);  // 8 digits: ARGB not allowed
+    CHECK(ThemeService::parse_hex_color("-1", 42) == 42);         // sign not allowed
+    CHECK(ThemeService::parse_hex_color("#FFFF", 42) == 42);      // wrong length
+}
+
+TEST_CASE("parse_hex_color expands 3-digit shorthand") {
+    CHECK(ThemeService::parse_hex_color("#fff") == 0xFFFFFF);
+    CHECK(ThemeService::parse_hex_color("#abc") == 0xAABBCC);
+    CHECK(ThemeService::parse_hex_color("1A2") == 0x11AA22);
 }
 
 TEST_CASE("to_d2d_color converts correctly") {
@@ -71,6 +81,22 @@ TEST_CASE("theme_hash returns same value for same config") {
     ThemeService a;
     ThemeService b;
     CHECK(a.theme_hash() == b.theme_hash());
+}
+
+TEST_CASE("theme_hash covers font families, spacing, and code language") {
+    ThemeService base;
+
+    ThemeService font;
+    font.mutable_config().fonts.body_family = L"Arial";
+    CHECK(font.theme_hash() != base.theme_hash());
+
+    ThemeService spacing;
+    spacing.mutable_config().spacing.list_indent = 48.0f;
+    CHECK(spacing.theme_hash() != base.theme_hash());
+
+    ThemeService lang;
+    lang.mutable_config().code_default_language = "cpp";
+    CHECK(lang.theme_hash() != base.theme_hash());
 }
 
 TEST_CASE("loading from nonexistent file uses defaults") {

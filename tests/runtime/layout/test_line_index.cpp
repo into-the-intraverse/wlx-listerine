@@ -49,6 +49,22 @@ TEST_CASE("build_line_index: table-row cells sharing a top collapse to one line"
     CHECK(doc.line_tops.size() == 2);
 }
 
+TEST_CASE("build_line_index: blockquote containers add no phantom lines") {
+    LayoutDocument doc;
+    LayoutBlock q;  // container: spans its children, carries no text runs
+    q.type = BlockType::BlockQuote;
+    q.rect = D2D1::RectF(0.0f, 0.0f, 100.0f, 40.0f);
+    doc.blocks.push_back(q);
+    doc.blocks.push_back(make_block(BlockType::Paragraph, 0.0f, L"one", nullptr));
+    doc.blocks.push_back(make_block(BlockType::Paragraph, 20.0f, L"two", nullptr));
+
+    build_line_index(doc);
+
+    REQUIRE(doc.line_tops.size() == 2);  // only the children count
+    CHECK(doc.line_tops[0] == doctest::Approx(0.0f));
+    CHECK(doc.line_tops[1] == doctest::Approx(20.0f));
+}
+
 TEST_CASE("build_line_index: hard breaks in a paragraph add lines; soft wrap does not") {
     ComPtr<IDWriteFactory> factory;
     REQUIRE(SUCCEEDED(DWriteCreateFactory(

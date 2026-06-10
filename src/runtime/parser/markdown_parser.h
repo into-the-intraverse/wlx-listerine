@@ -48,8 +48,8 @@ private:
     int code_depth_ = 0;
     std::optional<LinkTarget> pending_link_;
 
-    // Code block state
-    bool in_code_block_ = false;
+    // True between MD_BLOCK_HTML enter/leave; raw HTML text is dropped there
+    bool in_html_block_ = false;
 };
 
 }  // namespace wlx::runtime::parser

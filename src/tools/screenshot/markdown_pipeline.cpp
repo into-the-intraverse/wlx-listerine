@@ -6,7 +6,6 @@
 #include "tools/screenshot/options.h"
 
 #include <windows.h>
-#include <psapi.h>
 #include <d2d1.h>
 #include <dwrite.h>
 #include <wincodec.h>
@@ -27,6 +26,7 @@
 #include "wlx_core/abi.h"
 #include "runtime/search/search_index.h"
 #include "runtime/search/search_hud_painter.h"
+#include "tools/screenshot/working_set_sample.h"
 
 #include <memory>
 
@@ -87,19 +87,12 @@ size_t estimate_layout_memory(const LayoutDocument& layout) {
     return bytes;
 }
 
-size_t process_working_set() {
-    PROCESS_MEMORY_COUNTERS pmc = {};
-    pmc.cb = sizeof(pmc);
-    GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
-    return pmc.WorkingSetSize;
-}
-
 }  // namespace
 
 std::wstring run_markdown_pipeline(const Options& opts) {
     // Capture baseline memory before any work — keeps the benchmark's
     // process delta number measuring just what this pipeline allocates.
-    size_t mem_before = opts.bench ? process_working_set() : 0;
+    size_t mem_before = opts.bench ? sample_working_set().current : 0;
 
     // Build output path as sibling of input: dir/foo.md -> dir/foo.png
     fs::path input(opts.input_path);
@@ -251,8 +244,13 @@ std::wstring run_markdown_pipeline(const Options& opts) {
         renderer.set_search_matches(matches, hud_cursor);
     }
 
-    // Paint
-    renderer.paint(layout, scroll_y);
+    // Paint. A swallowed EndDraw failure here would save a corrupt PNG with
+    // exit 0 (and bake it into goldens), so fail hard on any FAILED(hr).
+    hr = renderer.paint(layout, scroll_y);
+    if (FAILED(hr)) {
+        std::fprintf(stderr, "Paint failed (EndDraw): 0x%08lx\n", hr);
+        return {};
+    }
 
     // Overlay the HUD via the painter.
     if (!opts.search.empty()) {
@@ -273,13 +271,9 @@ std::wstring run_markdown_pipeline(const Options& opts) {
             HRESULT hr_e = rt->EndDraw();
             if (FAILED(hr_e)) {
                 std::fprintf(stderr, "HUD overlay EndDraw failed: 0x%08lx\n", hr_e);
+                return {};
             }
         }
-    }
-
-    if (renderer.needs_recreate()) {
-        std::fprintf(stderr, "Render target lost during paint\n");
-        return {};
     }
 
     double t_paint = now_ms();
@@ -294,7 +288,7 @@ std::wstring run_markdown_pipeline(const Options& opts) {
     double t_save = now_ms();
 
     if (opts.bench) {
-        size_t mem_after = process_working_set();
+        size_t mem_after = sample_working_set().current;
 
         std::fprintf(stderr, "\n--- Benchmark ---\n");
         std::fprintf(stderr, "File:       %ls\n", opts.input_path.c_str());
@@ -339,8 +333,11 @@ std::wstring run_markdown_pipeline(const Options& opts) {
         std::fprintf(stderr, "Memory (estimates):\n");
         std::fprintf(stderr, "  document AST   %6zu bytes\n", doc_mem);
         std::fprintf(stderr, "  layout data    %6zu bytes\n", lay_mem);
+        // Signed: the working set can legitimately SHRINK vs the baseline,
+        // and unsigned size_t subtraction would wrap to a huge bogus delta.
         std::fprintf(stderr, "  process delta  %+.0f KB\n",
-                     static_cast<double>(mem_after - mem_before) / 1024.0);
+                     static_cast<double>(static_cast<ptrdiff_t>(mem_after) -
+                                         static_cast<ptrdiff_t>(mem_before)) / 1024.0);
         std::fprintf(stderr, "\n");
     }
 

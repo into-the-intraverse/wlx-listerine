@@ -1,7 +1,6 @@
 #pragma once
 
 #include "runtime/parser/link_target.h"
-#include "runtime/parser/source_range.h"
 
 #include <optional>
 #include <string>
@@ -11,13 +10,9 @@ namespace wlx::runtime::parser {
 
 enum class InlineType {
     Text,
-    Emphasis,
-    Strong,
     InlineCode,
-    Link,
     SoftBreak,
-    HardBreak,
-    EmojiText
+    HardBreak
 };
 
 struct InlineNode {
@@ -28,7 +23,6 @@ struct InlineNode {
     bool strikethrough = false;
     bool code = false;
     std::optional<LinkTarget> link;
-    SourceRange source;
 };
 
 }  // namespace wlx::runtime::parser

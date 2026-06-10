@@ -25,7 +25,9 @@ namespace wlx::runtime::diagnostics {
 #define WLX_TRACE_TAG L"wlx"
 #endif
 
-inline void wlx_trace_emit_(const wchar_t* fmt, ...) {
+// The tag is a parameter (not baked into the inline body) so every TU shares
+// one ODR-clean definition; WLX_TRACE_TAG expands at each macro use site.
+inline void wlx_trace_emit_(const wchar_t* tag, const wchar_t* fmt, ...) {
     wchar_t body[768];
     va_list ap;
     va_start(ap, fmt);
@@ -34,11 +36,15 @@ inline void wlx_trace_emit_(const wchar_t* fmt, ...) {
 
     wchar_t line[1024];
     _snwprintf_s(line, _countof(line), _TRUNCATE,
-                 L"[%s] %s\n", WLX_TRACE_TAG, body);
+                 L"[%s] %s\n", tag, body);
     OutputDebugStringW(line);
 }
 
-#define WLX_TRACE(...) wlx_trace_emit_(__VA_ARGS__)
+// Fully qualified so the macro expands correctly from any namespace (the
+// emit function is otherwise invisible to unqualified lookup outside
+// wlx::runtime::diagnostics).
+#define WLX_TRACE(...) \
+    ::wlx::runtime::diagnostics::wlx_trace_emit_(WLX_TRACE_TAG, __VA_ARGS__)
 
 // Decode common Win32 message names to keep traces readable.
 inline const wchar_t* wlx_trace_msg_name_(UINT msg) {

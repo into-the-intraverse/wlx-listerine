@@ -16,7 +16,11 @@ TextPosition hit_test_position(const LayoutDocument& layout, float x, float y) {
     for (int i = 0; i < block_count; i++) {
         auto& block = layout.blocks[i];
         if (block.text_runs.empty()) continue;
-        if (y < block.rect.top || y > block.rect.bottom) continue;
+        // Text-bearing blocks are Y-ordered (containers like the blockquote
+        // border block are appended out of order, but carry no text runs and
+        // were skipped above) — nothing below this one can contain y.
+        if (y < block.rect.top) break;
+        if (y > block.rect.bottom) continue;
         // For table cells (multiple blocks share the same row), also check x bounds
         if (x < block.rect.left || x > block.rect.right) continue;
 

@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstring>
 #include <memory>
+#include <vector>
 
 using namespace wlx::runtime::layout;
 using namespace wlx::runtime::parser;
@@ -170,6 +171,73 @@ TEST_CASE("materialize_viewport builds the in-range blocks and reports change") 
 
     // Idempotent: a second call has nothing to (re)materialize.
     CHECK_FALSE(materialize_viewport(lazy, 0.0f, 100000.0f));
+}
+
+TEST_CASE("materialize_viewport shifts out-of-range blocks by the net delta") {
+    auto factory = dwf2();
+    REQUIRE(factory);
+    MarkdownParser p;
+    const char* md = "# Heading\n\npara one\n\npara two\n\npara three";
+    auto doc = std::make_shared<Document>(p.parse(md, std::strlen(md)));
+    ThemeService theme;
+    LayoutEngine eng(factory.Get(), theme, false);
+    auto lazy = eng.layout(*doc, 800.0f, false, 0.0f, /*lazy=*/true);
+    auto ctx = eng.take_md_ctx();
+    REQUIRE(static_cast<bool>(ctx));
+    ctx->document = doc;
+    REQUIRE(lazy.blocks.size() == 4);
+
+    std::vector<float> old_tops;
+    for (auto& b : lazy.blocks) old_tops.push_back(b.rect.top);
+    float old_total = lazy.total_height;
+
+    // A small viewport materializes only the leading block(s); the heading
+    // estimate differs from its measured height, so a reflow must happen.
+    bool changed = materialize_viewport(lazy, 0.0f, /*viewport_h=*/30.0f);
+    REQUIRE(changed);
+
+    // Every still-unmaterialized block is translated by exactly the net delta.
+    float d = lazy.total_height - old_total;
+    bool saw_unmaterialized = false;
+    for (size_t j = 0; j < lazy.blocks.size(); ++j) {
+        if (lazy.blocks[j].text_runs[0].layout) continue;  // materialized: height changed
+        saw_unmaterialized = true;
+        CHECK(lazy.blocks[j].rect.top == doctest::Approx(old_tops[j] + d));
+    }
+    CHECK(saw_unmaterialized);  // the viewport must not have covered everything
+
+    // Tops stay ordered after the shift.
+    for (size_t j = 1; j < lazy.blocks.size(); ++j)
+        CHECK(lazy.blocks[j].rect.top >= lazy.blocks[j - 1].rect.top);
+}
+
+TEST_CASE("anchor of a heading inside a quote reflows (eager path sets block_index)") {
+    auto factory = dwf2();
+    REQUIRE(factory);
+    MarkdownParser p;
+    // The quoted heading takes the EAGER heading path inside a lazy document;
+    // its anchor must still carry a block index so reflow can re-derive its Y.
+    const char* md = "# Top\n\nsome paragraph text\n\n> ## Inner Heading\n\ntail";
+    auto doc = std::make_shared<Document>(p.parse(md, std::strlen(md)));
+    ThemeService theme;
+    LayoutEngine eng(factory.Get(), theme, false);
+    auto lazy = eng.layout(*doc, 800.0f, false, 0.0f, /*lazy=*/true);
+    auto ctx = eng.take_md_ctx();
+    REQUIRE(static_cast<bool>(ctx));
+    ctx->document = doc;
+
+    const AnchorEntry* inner = nullptr;
+    for (auto& a : lazy.anchors)
+        if (a.slug == L"inner-heading") inner = &a;
+    REQUIRE(inner);
+    REQUIRE(inner->block_index >= 0);
+    CHECK(lazy.blocks[inner->block_index].type == BlockType::Heading);
+
+    materialize_viewport(lazy, 0.0f, 100000.0f);
+
+    // After reflow the anchor tracks its heading block's top exactly.
+    CHECK(inner->y_offset ==
+          doctest::Approx(lazy.blocks[inner->block_index].rect.top));
 }
 
 TEST_CASE("materialize_viewport is a no-op on an eager document") {

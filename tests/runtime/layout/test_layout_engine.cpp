@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 #include "runtime/layout/layout_engine.h"
+#include "runtime/layout/line_index.h"
 #include "runtime/parser/markdown_parser.h"
 #include "runtime/theme/theme_service.h"
 
@@ -157,6 +158,28 @@ TEST_CASE("List items have bullets") {
     CHECK(found_bullet);
 }
 
+TEST_CASE("List item: fenced code block child is laid out, indented") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+
+    // Loose item: the parser nests the fence under the ListItem. It used to be
+    // silently dropped because the continuation loop only handled List and
+    // Paragraph children.
+    auto doc = parse("- item\n\n  ```\n  code();\n  ```\n");
+    auto layout = do_layout(factory.Get(), doc);
+
+    const LayoutBlock* item = nullptr;
+    const LayoutBlock* fence = nullptr;
+    for (auto& block : layout.blocks) {
+        if (block.type == BlockType::ListItem && !item) item = &block;
+        if (block.type == BlockType::CodeFence) fence = &block;
+    }
+    REQUIRE(item);
+    REQUIRE(fence);
+    CHECK(fence->rect.left > item->rect.left);   // indented to the item's content column
+    CHECK(fence->rect.top >= item->rect.bottom); // below the bullet line
+}
+
 TEST_CASE("Blockquote has left border") {
     auto factory = create_dwrite_factory();
     REQUIRE(factory);
@@ -172,6 +195,55 @@ TEST_CASE("Blockquote has left border") {
         }
     }
     CHECK(found_quote);
+}
+
+TEST_CASE("Blockquote container precedes its children; line index stays ascending") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+
+    // Regression: the containers used to be pushed AFTER their children with
+    // rect.top jumping back to the quote start, producing non-monotonic block
+    // tops (paint cull skipped the border) and out-of-order line_tops.
+    auto doc = parse("> para one\n>\n> para two\n>\n> > nested quote\n\ntail");
+    auto layout = do_layout(factory.Get(), doc);
+
+    // The container comes before its children, shares the first child's top,
+    // and spans the whole quote.
+    int quote_idx = -1;
+    for (int i = 0; i < (int)layout.blocks.size(); i++) {
+        if (layout.blocks[i].type == BlockType::BlockQuote) {
+            quote_idx = i;
+            break;
+        }
+    }
+    REQUIRE(quote_idx >= 0);
+    REQUIRE(quote_idx + 1 < (int)layout.blocks.size());
+    CHECK(layout.blocks[quote_idx].rect.top ==
+          doctest::Approx(layout.blocks[quote_idx + 1].rect.top));
+    CHECK(layout.blocks[quote_idx].rect.bottom >=
+          layout.blocks[quote_idx + 1].rect.bottom);
+
+    // Tops must be non-decreasing across the whole document.
+    for (size_t i = 1; i < layout.blocks.size(); i++)
+        CHECK(layout.blocks[i].rect.top >= layout.blocks[i - 1].rect.top);
+
+    // Every container (outer + nested) is registered, ascending, for the
+    // renderer's dedicated border-container paint pass — the spanning bottoms
+    // checked above are exactly what breaks its lower_bound seek.
+    REQUIRE(layout.border_containers.size() == 2);
+    CHECK(layout.border_containers[0] == quote_idx);
+    CHECK(layout.border_containers[1] > quote_idx);
+    for (int idx : layout.border_containers) {
+        REQUIRE(idx < (int)layout.blocks.size());
+        CHECK(layout.blocks[idx].type == BlockType::BlockQuote);
+        CHECK(layout.blocks[idx].has_left_border);
+        CHECK(layout.blocks[idx].text_runs.empty());
+    }
+
+    build_line_index(layout);
+    REQUIRE(layout.line_tops.size() >= 4);  // 2 quote paras + nested para + tail
+    for (size_t i = 1; i < layout.line_tops.size(); i++)
+        CHECK(layout.line_tops[i] > layout.line_tops[i - 1]);  // strictly ascending
 }
 
 TEST_CASE("Horizontal rule has bottom rule") {
@@ -223,6 +295,31 @@ TEST_CASE("Link produces interactive span") {
         }
     }
     CHECK(found_span);
+}
+
+TEST_CASE("layout_table - link in a cell produces a hit-testable span") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+
+    // Regression: cell spans were measured but never offset/appended into the
+    // cell block, so links in tables painted as links but were unclickable.
+    auto doc = parse("| head | x |\n| --- | --- |\n| [click](https://example.com) | d |\n");
+    auto layout = do_layout(factory.Get(), doc);
+
+    const LayoutBlock* link_cell = nullptr;
+    for (auto& block : layout.blocks) {
+        if (block.type == BlockType::TableCell && !block.spans.empty())
+            link_cell = &block;
+    }
+    REQUIRE(link_cell);
+    auto& span = link_cell->spans[0];
+    CHECK(span.target.kind == LinkKind::ExternalUrl);
+    // Span rect must lie inside the cell block rect — verifies the
+    // cell-local-to-document coordinate translation.
+    CHECK(span.rect.left   >= link_cell->rect.left);
+    CHECK(span.rect.right  <= link_cell->rect.right);
+    CHECK(span.rect.top    >= link_cell->rect.top);
+    CHECK(span.rect.bottom <= link_cell->rect.bottom);
 }
 
 TEST_CASE("Different viewport widths produce different layouts") {

@@ -140,6 +140,15 @@ TEST_CASE("HelixTheme load: missing theme falls back to built-in") {
     CHECK(theme.resolve_fg("keyword", 0) == 0xC586C0);
 }
 
+TEST_CASE("HelixTheme load: failed load falls back to the requested mode") {
+    // Regression: a failed LIGHT theme load used to substitute the DARK
+    // defaults — dark colors on a light background.
+    auto theme = HelixTheme::load("nonexistent_theme_name", "nonexistent_dir",
+                                  /*dark_fallback=*/false);
+    CHECK(!theme.empty());
+    CHECK(theme.resolve_fg("keyword", 0) == 0xAF00DB);  // light default, not dark
+}
+
 // ===========================================================================
 // TOML parsing: palette, styles, hex colors
 // ===========================================================================
@@ -213,6 +222,22 @@ TEST_CASE("HelixTheme load: #RGB shorthand expansion") {
 
     auto theme = HelixTheme::load("test4", tmp.path().string());
     CHECK(theme.resolve_fg("keyword", 0) == 0xFF0000);
+}
+
+TEST_CASE("HelixTheme load: malformed hex color values are rejected") {
+    TempThemeDir tmp;
+    tmp.write("test_badhex", R"(
+        "keyword" = "#FF0000"
+        "string"  = "#12345Z"
+        "comment" = "#+12345"
+    )");
+
+    auto theme = HelixTheme::load("test_badhex", tmp.path().string());
+    CHECK(theme.resolve_fg("keyword", 0) == 0xFF0000);
+    // std::stoul used to accept these ("#12345Z" -> 0x12345, "#+12345" ->
+    // 0x12345); they must now be rejected, leaving the scope unstyled.
+    CHECK(!theme.resolve("string").has_value());
+    CHECK(!theme.resolve("comment").has_value());
 }
 
 TEST_CASE("HelixTheme load: inherits from parent theme") {

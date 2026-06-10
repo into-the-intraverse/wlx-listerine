@@ -32,12 +32,14 @@ public:
 
     // Non-const: the renderer may lazily materialize visible blocks
     // (layout.materialize_block) before drawing them.
-    void paint(layout::LayoutDocument& layout, float scroll_y,
-               layout::TextPosition sel_start = {}, layout::TextPosition sel_end = {},
-               const std::wstring* goto_input = nullptr, int goto_total = 0);
+    // Returns the EndDraw HRESULT (D2DERR_RECREATE_TARGET also sets
+    // needs_recreate()). Interactive hosts may ignore it; offscreen tools
+    // must fail on FAILED(hr) or they save a corrupt bitmap.
+    HRESULT paint(layout::LayoutDocument& layout, float scroll_y,
+                  layout::TextPosition sel_start = {}, layout::TextPosition sel_end = {},
+                  const std::wstring* goto_input = nullptr, int goto_total = 0);
 
     void set_dark_mode(bool dark);
-    void set_hovered_span(int index) { hovered_span_ = index; }
     void set_hovered_code_block(int index) { hovered_code_block_ = index; }
     void set_copied_code_block(int index) { copied_code_block_ = index; }
     void set_search_matches(const std::vector<search::SearchMatch>& matches, int current_index);
@@ -92,7 +94,6 @@ private:
     ComPtr<IDWriteTextFormat> line_number_format_;
     ComPtr<IDWriteTextFormat> prompt_format_;
 
-    int hovered_span_ = -1;
     int hovered_code_block_ = -1;
     int copied_code_block_ = -1;
     std::vector<search::SearchMatch> search_matches_;
@@ -101,5 +102,15 @@ private:
     UINT width_ = 0;
     UINT height_ = 0;
 };
+
+// Copy-button geometry for a code-fence block. Single source of truth shared by
+// RenderEngine::paint_copy_button and the host's hit-test (is_in_copy_button).
+inline D2D1_RECT_F copy_button_rect(const layout::LayoutBlock& block) {
+    constexpr float btn_size = 24.0f;
+    constexpr float pad = 6.0f;
+    const float bx = block.rect.right - btn_size - pad;
+    const float by = block.rect.top + pad;
+    return D2D1_RECT_F{bx, by, bx + btn_size, by + btn_size};
+}
 
 }  // namespace wlx::runtime::render

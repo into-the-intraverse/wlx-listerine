@@ -26,9 +26,12 @@ namespace wlx::core::theme {
 class WLX_CORE_API HelixTheme {
 public:
     // Load a theme by name from the given directory.
-    // Follows `inherits` chains.  Returns a default theme on failure.
+    // Follows `inherits` chains.  Returns a default theme on failure —
+    // dark or light per `dark_fallback`, so a failed light-theme load
+    // doesn't yield dark colors on a light background.
     static HelixTheme load(const std::string& theme_name,
-                           const std::filesystem::path& theme_dir);
+                           const std::filesystem::path& theme_dir,
+                           bool dark_fallback = true);
 
     // Hierarchical scope lookup.  Tries exact match, then strips last
     // dot-segment repeatedly.  Returns nullopt if no scope matches.

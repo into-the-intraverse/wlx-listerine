@@ -3,10 +3,11 @@
   "language": "html",
   "theme": "default_dark",
   "config_hash": "900a7fa8e381226e",
-  "token_count": 72,
+  "token_count": 73,
   "tokens": [
     { "line": 1, "col": 1, "len": 2, "color": "#D4D4D4", "mods": [] },
-    { "line": 1, "col": 3, "len": 13, "color": "#9CDCFE", "mods": [] },
+    { "line": 1, "col": 3, "len": 12, "color": "#9CDCFE", "mods": [] },
+    { "line": 1, "col": 15, "len": 1, "color": "#D4D4D4", "mods": [] },
     { "line": 2, "col": 1, "len": 1, "color": "#D4D4D4", "mods": [] },
     { "line": 2, "col": 2, "len": 4, "color": "#569CD6", "mods": [] },
     { "line": 2, "col": 7, "len": 4, "color": "#9CDCFE", "mods": [] },

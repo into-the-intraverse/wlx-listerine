@@ -1,5 +1,11 @@
 // Note: WLX_CORE_BUILDING is set by CMake target_compile_definitions; do not
 // redefine here.
+//
+// Every export whose body enters C++ machinery wraps it in try/catch(...): an
+// exception escaping an export would cross the C ABI into Total Commander and
+// terminate it (the two sides need not even share a CRT). Failures map onto
+// the ABI's error convention (negative return / null pointer). The pure
+// malloc/free-style exports cannot throw and stay unwrapped.
 
 #include "wlx_core/abi.h"
 #include "core_dll/registry/core_registry.h"
@@ -13,8 +19,12 @@ extern "C" WLX_CORE_API int wlx_core_abi_version(void) {
 }
 
 extern "C" WLX_CORE_API WlxCore* wlx_core_acquire(void) {
-    auto& reg = wlx::core::registry::CoreRegistry::instance();
-    return reinterpret_cast<WlxCore*>(&reg);
+    try {
+        auto& reg = wlx::core::registry::CoreRegistry::instance();
+        return reinterpret_cast<WlxCore*>(&reg);
+    } catch (...) {
+        return nullptr;
+    }
 }
 
 extern "C" WLX_CORE_API void wlx_core_release(WlxCore*) {
@@ -26,13 +36,21 @@ extern "C" WLX_CORE_API void wlx_core_release(WlxCore*) {
 extern "C" WLX_CORE_API int
 wlx_core_supports(WlxCore* h, const char* language) {
     if (!h || !language) return -1;
-    return reinterpret_cast<wlx::core::registry::CoreRegistry*>(h)->supports(language) ? 1 : 0;
+    try {
+        return reinterpret_cast<wlx::core::registry::CoreRegistry*>(h)->supports(language) ? 1 : 0;
+    } catch (...) {
+        return -1;
+    }
 }
 
 extern "C" WLX_CORE_API void
 wlx_core_prewarm(WlxCore* h, const char* language) {
     if (!h || !language) return;
-    reinterpret_cast<wlx::core::registry::CoreRegistry*>(h)->prewarm(language);
+    try {
+        reinterpret_cast<wlx::core::registry::CoreRegistry*>(h)->prewarm(language);
+    } catch (...) {
+        // Best-effort warm-up; swallow.
+    }
 }
 
 // Marshal colored spans into a freshly malloc'd C array (caller frees with
@@ -73,13 +91,17 @@ wlx_core_colorize(WlxCore* h,
                   uint32_t range_start, uint32_t range_end,
                   WlxColorSpan** out_spans, uint32_t* out_count) {
     if (!h || !source || !language || !out_spans || !out_count) return -1;
-    auto& reg = *reinterpret_cast<wlx::core::registry::CoreRegistry*>(h);
+    try {
+        auto& reg = *reinterpret_cast<wlx::core::registry::CoreRegistry*>(h);
 
-    // View the caller's buffer directly — colorize() is synchronous and reads
-    // it only for the duration of this call, so no owning copy is needed.
-    auto result = reg.colorize(std::string_view(source, len), language,
-                               dark_mode != 0, range_start, range_end);
-    return marshal_spans(result, out_spans, out_count);
+        // View the caller's buffer directly — colorize() is synchronous and reads
+        // it only for the duration of this call, so no owning copy is needed.
+        auto result = reg.colorize(std::string_view(source, len), language,
+                                   dark_mode != 0, range_start, range_end);
+        return marshal_spans(result, out_spans, out_count);
+    } catch (...) {
+        return -2;
+    }
 }
 
 extern "C" WLX_CORE_API void wlx_core_free_spans(WlxColorSpan* spans) {
@@ -89,8 +111,12 @@ extern "C" WLX_CORE_API void wlx_core_free_spans(WlxColorSpan* spans) {
 extern "C" WLX_CORE_API WlxTree*
 wlx_core_parse(WlxCore* h, const char* source, uint32_t len, const char* language) {
     if (!h || !source || !language) return nullptr;
-    auto& reg = *reinterpret_cast<wlx::core::registry::CoreRegistry*>(h);
-    return reg.parse_tree(std::string_view(source, len), language);
+    try {
+        auto& reg = *reinterpret_cast<wlx::core::registry::CoreRegistry*>(h);
+        return reg.parse_tree(std::string_view(source, len), language);
+    } catch (...) {
+        return nullptr;
+    }
 }
 
 extern "C" WLX_CORE_API int
@@ -98,62 +124,80 @@ wlx_core_highlight_range(WlxCore* h, WlxTree* t, int dark_mode,
                          uint32_t range_start, uint32_t range_end,
                          WlxColorSpan** out_spans, uint32_t* out_count) {
     if (!h || !t || !out_spans || !out_count) return -1;
-    auto& reg = *reinterpret_cast<wlx::core::registry::CoreRegistry*>(h);
+    try {
+        auto& reg = *reinterpret_cast<wlx::core::registry::CoreRegistry*>(h);
 
-    auto result = reg.highlight_tree_range(t, dark_mode != 0, range_start, range_end);
-    return marshal_spans(result, out_spans, out_count);
+        auto result = reg.highlight_tree_range(t, dark_mode != 0, range_start, range_end);
+        return marshal_spans(result, out_spans, out_count);
+    } catch (...) {
+        return -2;
+    }
 }
 
 extern "C" WLX_CORE_API void wlx_core_free_tree(WlxCore* h, WlxTree* t) {
     if (!h) return;
-    reinterpret_cast<wlx::core::registry::CoreRegistry*>(h)->free_tree(t);
+    try {
+        reinterpret_cast<wlx::core::registry::CoreRegistry*>(h)->free_tree(t);
+    } catch (...) {
+        // Nothing the caller can do; swallow.
+    }
 }
 
 extern "C" WLX_CORE_API int
 wlx_core_theme_color(WlxCore* h, const char* scope, int dark_mode,
                      uint32_t* out_rgb, uint8_t* out_modifiers) {
     if (!h || !scope || !out_rgb) return -1;
-    auto& reg = *reinterpret_cast<wlx::core::registry::CoreRegistry*>(h);
-    const wlx::core::theme::HelixTheme& t = reg.theme(dark_mode != 0);
-    auto resolved = t.resolve(scope);
-    if (!resolved) return -1;
-    *out_rgb = resolved->fg;
-    if (out_modifiers) *out_modifiers = resolved->modifiers;
-    return 0;
+    try {
+        auto& reg = *reinterpret_cast<wlx::core::registry::CoreRegistry*>(h);
+        const wlx::core::theme::HelixTheme& t = reg.theme(dark_mode != 0);
+        auto resolved = t.resolve(scope);
+        if (!resolved) return -1;
+        *out_rgb = resolved->fg;
+        if (out_modifiers) *out_modifiers = resolved->modifiers;
+        return 0;
+    } catch (...) {
+        return -1;
+    }
 }
 
 extern "C" WLX_CORE_API int
 wlx_core_list_languages(WlxCore* h, WlxLanguageList* out_list) {
     if (!h || !out_list) return -1;
-    auto& reg = *reinterpret_cast<wlx::core::registry::CoreRegistry*>(h);
+    try {
+        auto& reg = *reinterpret_cast<wlx::core::registry::CoreRegistry*>(h);
 
-    auto langs = reg.available_languages();
+        auto langs = reg.available_languages();
 
-    if (langs.empty()) {
-        out_list->ids = nullptr;
-        out_list->count = 0;
-        return 0;
-    }
-
-    auto** arr = static_cast<char**>(std::malloc(sizeof(char*) * langs.size()));
-    if (!arr) return -2;
-
-    for (size_t i = 0; i < langs.size(); ++i) {
-        const auto& s = langs[i];
-        arr[i] = static_cast<char*>(std::malloc(s.size() + 1));
-        if (!arr[i]) {
-            // Roll back: free what we've allocated so far.
-            for (size_t j = 0; j < i; ++j) std::free(arr[j]);
-            std::free(arr);
-            return -2;
+        if (langs.empty()) {
+            out_list->ids = nullptr;
+            out_list->count = 0;
+            out_list->_reserved = 0;
+            return 0;
         }
-        std::memcpy(arr[i], s.data(), s.size());
-        arr[i][s.size()] = '\0';
-    }
 
-    out_list->ids = arr;
-    out_list->count = static_cast<uint32_t>(langs.size());
-    return 0;
+        auto** arr = static_cast<char**>(std::malloc(sizeof(char*) * langs.size()));
+        if (!arr) return -2;
+
+        for (size_t i = 0; i < langs.size(); ++i) {
+            const auto& s = langs[i];
+            arr[i] = static_cast<char*>(std::malloc(s.size() + 1));
+            if (!arr[i]) {
+                // Roll back: free what we've allocated so far.
+                for (size_t j = 0; j < i; ++j) std::free(arr[j]);
+                std::free(arr);
+                return -2;
+            }
+            std::memcpy(arr[i], s.data(), s.size());
+            arr[i][s.size()] = '\0';
+        }
+
+        out_list->ids = arr;
+        out_list->count = static_cast<uint32_t>(langs.size());
+        out_list->_reserved = 0;
+        return 0;
+    } catch (...) {
+        return -2;
+    }
 }
 
 extern "C" WLX_CORE_API void

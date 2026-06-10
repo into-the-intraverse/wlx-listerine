@@ -7,10 +7,11 @@ namespace wlx::runtime::interaction {
 
 namespace {
 
+// file:// is deliberately absent: auto-linking it from untrusted viewed text
+// would let one click launch local/UNC executables via ShellExecuteW.
 constexpr std::wstring_view kSchemes[] = {
     L"https://",
     L"http://",
-    L"file://",
     L"ftp://",
 };
 
@@ -91,10 +92,21 @@ std::vector<UrlMatch> scan_urls(std::wstring_view text) {
         // Refuse degenerate matches (just the scheme with no body).
         if (j == i + scheme_len) { i = j; continue; }
 
-        // Trim trailing punctuation.
+        // Trim trailing punctuation. A ')' is kept when it closes an
+        // unmatched '(' earlier in the body — wiki URLs like
+        // .../Tree_(data_structure) must keep their final paren.
         int end = j;
-        while (end > i + scheme_len && is_trailing_punct(text[end - 1]))
+        while (end > i + scheme_len && is_trailing_punct(text[end - 1])) {
+            if (text[end - 1] == L')') {
+                int balance = 0;
+                for (int k = i + scheme_len; k < end - 1; ++k) {
+                    if (text[k] == L'(') ++balance;
+                    else if (text[k] == L')') --balance;
+                }
+                if (balance > 0) break;
+            }
             --end;
+        }
 
         // Refuse if trim erased the body.
         if (end == i + scheme_len) { i = j; continue; }

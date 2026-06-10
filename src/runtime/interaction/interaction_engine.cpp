@@ -15,8 +15,12 @@ InteractionEngine::HitResult InteractionEngine::hit_test(float x, float y) const
     for (int bi = 0; bi < static_cast<int>(layout_.blocks.size()); bi++) {
         auto& block = layout_.blocks[bi];
 
-        // Quick vertical bounds check
-        if (y < block.rect.top || y > block.rect.bottom)
+        // Quick vertical bounds check. Blocks are laid out in non-decreasing
+        // rect.top order (table cells in a row share a top), so once a block
+        // starts below y nothing later can contain it.
+        if (block.rect.top > y)
+            break;
+        if (y > block.rect.bottom)
             continue;
 
         // Check interactive spans within this block

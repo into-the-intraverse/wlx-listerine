@@ -1,6 +1,7 @@
 #include "core_dll/highlighting/query_highlighter.h"
 #include <algorithm>
 #include <functional>
+#include <mutex>
 #include <regex>
 #include <string>
 #include <string_view>
@@ -60,9 +61,22 @@ static bool evaluate_predicates(const TSQuery* query, const TSQueryMatch& match,
 
     if (step_count == 0) return true;
 
-    // Cache compiled regexes across calls (heterogeneous lookup by string_view)
+    // Cache compiled regexes across calls (heterogeneous lookup by string_view).
+    // Mutex-guarded: production calls serialize through the CoreRegistry mutex,
+    // but this class is dll-exported and e.g. the screenshot tool constructs
+    // its own Colorizer, so concurrent callers are possible. A looked-up regex
+    // stays valid after unlock — entries are never erased and unordered_map
+    // references are stable across inserts.
+    static std::mutex regex_cache_mu;
     static std::unordered_map<std::string, std::regex,
                               TransparentStringHash, std::equal_to<>> regex_cache;
+
+    // Argument scratch buffer, reused across the predicates of this pattern.
+    struct Arg {
+        bool is_capture;
+        uint32_t value_id; // capture index or string index
+    };
+    std::vector<Arg> args;
 
     uint32_t i = 0;
     while (i < step_count) {
@@ -83,11 +97,7 @@ static bool evaluate_predicates(const TSQuery* query, const TSQueryMatch& match,
         i++; // advance past name
 
         // Collect arguments until Done
-        struct Arg {
-            bool is_capture;
-            uint32_t value_id; // capture index or string index
-        };
-        std::vector<Arg> args;
+        args.clear();
         while (i < step_count && steps[i].type != TSQueryPredicateStepTypeDone) {
             args.push_back({
                 steps[i].type == TSQueryPredicateStepTypeCapture,
@@ -128,19 +138,24 @@ static bool evaluate_predicates(const TSQuery* query, const TSQueryMatch& match,
             std::string_view pattern(pat_ptr, pat_len);
 
             // Get or compile regex (lookup by view; allocate only on a miss).
-            auto it = regex_cache.find(pattern);
-            if (it == regex_cache.end()) {
-                try {
-                    it = regex_cache.emplace(std::string(pattern),
-                        std::regex(std::string(pattern),
-                                   std::regex::ECMAScript | std::regex::optimize)).first;
-                } catch (const std::regex_error&) {
-                    // Invalid regex — treat predicate as passing
-                    continue;
+            const std::regex* re = nullptr;
+            {
+                std::lock_guard<std::mutex> lk(regex_cache_mu);
+                auto it = regex_cache.find(pattern);
+                if (it == regex_cache.end()) {
+                    try {
+                        it = regex_cache.emplace(std::string(pattern),
+                            std::regex(std::string(pattern),
+                                       std::regex::ECMAScript | std::regex::optimize)).first;
+                    } catch (const std::regex_error&) {
+                        // Invalid regex — fall through with it == end()
+                    }
                 }
+                if (it != regex_cache.end()) re = &it->second;
             }
+            if (!re) continue; // invalid regex — treat predicate as passing
 
-            bool matched = std::regex_search(text.begin(), text.end(), it->second);
+            bool matched = std::regex_search(text.begin(), text.end(), *re);
             if (pred_name == "match?" && !matched) return false;
             if (pred_name == "not-match?" && matched) return false;
 
@@ -168,40 +183,43 @@ static bool evaluate_predicates(const TSQuery* query, const TSQueryMatch& match,
     return true;
 }
 
+std::vector<ResolvedStyle> QueryHighlighter::resolve_capture_styles(
+    const TSQuery* query, const HelixTheme& theme)
+{
+    if (!query) return {};
+    uint32_t capture_count = ts_query_capture_count(query);
+    std::vector<ResolvedStyle> styles(capture_count);
+    for (uint32_t i = 0; i < capture_count; i++) {
+        uint32_t name_len = 0;
+        const char* name = ts_query_capture_name_for_id(query, i, &name_len);
+        std::string scope(name, name_len);
+        if (auto style = theme.resolve(scope)) styles[i] = *style;
+    }
+    return styles;
+}
+
 std::vector<ColorSpan> QueryHighlighter::highlight(
     const TSTree* tree,
     const TSQuery* query,
     const HelixTheme& theme,
     std::string_view source,
-    uint32_t default_color,
     uint32_t range_start,
     uint32_t range_end)
 {
     if (!tree || !query) return {};
+    return highlight(tree, query, resolve_capture_styles(query, theme), source,
+                     range_start, range_end);
+}
 
-    // Build capture_index -> style lookup via theme resolution
-    uint32_t capture_count = ts_query_capture_count(query);
-    struct CaptureStyle {
-        uint32_t fg = 0;
-        uint32_t bg = 0;
-        bool has_fg = false;
-        bool has_bg = false;
-        uint8_t modifiers = 0;
-    };
-    std::vector<CaptureStyle> capture_styles(capture_count);
-    for (uint32_t i = 0; i < capture_count; i++) {
-        uint32_t name_len = 0;
-        const char* name = ts_query_capture_name_for_id(query, i, &name_len);
-        std::string scope(name, name_len);
-        auto style = theme.resolve(scope);
-        if (style) {
-            capture_styles[i].fg = style->fg;
-            capture_styles[i].has_fg = style->has_fg;
-            capture_styles[i].bg = style->bg;
-            capture_styles[i].has_bg = style->has_bg;
-            capture_styles[i].modifiers = style->modifiers;
-        }
-    }
+std::vector<ColorSpan> QueryHighlighter::highlight(
+    const TSTree* tree,
+    const TSQuery* query,
+    const std::vector<ResolvedStyle>& capture_styles,
+    std::string_view source,
+    uint32_t range_start,
+    uint32_t range_end)
+{
+    if (!tree || !query) return {};
 
     // Execute query
     TSQueryCursor* cursor = ts_query_cursor_new();
@@ -218,28 +236,39 @@ std::vector<ColorSpan> QueryHighlighter::highlight(
     // Collect raw spans
     std::vector<RawSpan> raw;
     raw.reserve(256);  // capacity hint: skip the early geometric-growth churn
+    // Predicate verdicts are per-MATCH, but next_capture yields a match once
+    // per capture — memoize by match.id so each match's predicates evaluate
+    // once instead of once per capture. Only predicated patterns enter the
+    // map, keeping it small on predicate-free grammars.
+    std::unordered_map<uint32_t, bool> predicate_memo;
     TSQueryMatch match;
     uint32_t capture_index;
     while (ts_query_cursor_next_capture(cursor, &match, &capture_index)) {
         // Evaluate predicates — skip this capture if any predicate fails
-        if (!evaluate_predicates(query, match, source)) continue;
+        uint32_t step_count = 0;
+        ts_query_predicates_for_pattern(query, match.pattern_index, &step_count);
+        if (step_count != 0) {
+            auto [it, inserted] = predicate_memo.try_emplace(match.id, false);
+            if (inserted) it->second = evaluate_predicates(query, match, source);
+            if (!it->second) continue;
+        }
 
         const TSQueryCapture& cap = match.captures[capture_index];
         uint32_t start = ts_node_start_byte(cap.node);
         uint32_t end = ts_node_end_byte(cap.node);
-        if (cap.index >= capture_count) continue;
+        if (cap.index >= capture_styles.size()) continue;
         const auto& cs = capture_styles[cap.index];
         if (!cs.has_fg && !cs.has_bg && cs.modifiers == 0) continue;
         // A background-only style — (ERROR)/(MISSING) @diagnostic.error — on a
         // CONTAINER node (one with named children) wraps validly-parsed subtrees.
-        // Emitting its background would suppress every foreground syntax span it
-        // covers in the flatten below (later patterns win, then covered_until
-        // jumps to the node's end). tree-sitter is a fuzzy, preprocessor-unaware
-        // parser: on macro-heavy but VALID C/C++ (e.g. sqlite3.c's SQLITE_API
-        // declarations) it can mark the whole-file root as one ERROR node; without
-        // this guard that single span turns the entire file red and erases all
-        // coloring. Skip container error backgrounds; genuine leaf errors (no
-        // named children) still get their marker.
+        // Emitting its background would paint every gap between the foreground
+        // syntax spans it covers red in the flatten below. tree-sitter is a
+        // fuzzy, preprocessor-unaware parser: on macro-heavy but VALID C/C++
+        // (e.g. sqlite3.c's SQLITE_API declarations) it can mark the whole-file
+        // root as one ERROR node; without this guard that single span turns the
+        // entire file red and erases all coloring. Skip container error
+        // backgrounds; genuine leaf errors (no named children) still get their
+        // marker.
         if (cs.has_bg && !cs.has_fg && ts_node_named_child_count(cap.node) > 0)
             continue;
         raw.push_back({start, end, match.pattern_index, cs.fg, cs.bg, cs.has_bg, cs.modifiers});
@@ -247,20 +276,48 @@ std::vector<ColorSpan> QueryHighlighter::highlight(
 
     ts_query_cursor_delete(cursor);
 
-    // Sort by start position, then by pattern_index descending (later patterns win)
+    // Sort by start asc, then end desc so a container sorts before the spans
+    // nested inside it, then pattern_index desc (later patterns win when the
+    // range is identical).
     std::sort(raw.begin(), raw.end(), [](const RawSpan& a, const RawSpan& b) {
         if (a.start != b.start) return a.start < b.start;
+        if (a.end != b.end) return a.end > b.end;
         return a.pattern_index > b.pattern_index;
     });
 
-    // Flatten overlapping spans: sweep left-to-right
+    // Flatten with an active-span stack (outermost -> innermost): a nested
+    // capture (e.g. escape_sequence inside a string_literal) splits its
+    // container into prefix + inner + suffix instead of being swallowed by it.
+    // Captures are node ranges, so they nest or are disjoint; spans with an
+    // identical range keep the later-pattern-wins rule (the winner sorts
+    // first, duplicates are dropped).
     std::vector<ColorSpan> result;
-    uint32_t covered_until = 0;
+    std::vector<RawSpan> active;
+    uint32_t emitted_until = 0;
+    auto emit = [&](const RawSpan& s, uint32_t to) {
+        if (emitted_until < to)
+            result.push_back({emitted_until, to - emitted_until, s.color,
+                              s.bg_color, s.has_bg, s.modifiers});
+        emitted_until = std::max(emitted_until, to);
+    };
     for (const auto& span : raw) {
-        uint32_t eff_start = std::max(span.start, covered_until);
-        if (eff_start >= span.end) continue;
-        result.push_back({eff_start, span.end - eff_start, span.color, span.bg_color, span.has_bg, span.modifiers});
-        covered_until = span.end;
+        // Close every active span that ends at or before this one, emitting
+        // its uncovered tail.
+        while (!active.empty() && active.back().end <= span.start) {
+            emit(active.back(), active.back().end);
+            active.pop_back();
+        }
+        if (!active.empty()) {
+            if (active.back().start == span.start && active.back().end == span.end)
+                continue;  // identical range: the earlier (winning) span keeps it
+            emit(active.back(), span.start);  // container prefix before the inner span
+        }
+        emitted_until = std::max(emitted_until, span.start);
+        active.push_back(span);
+    }
+    while (!active.empty()) {
+        emit(active.back(), active.back().end);
+        active.pop_back();
     }
 
     return result;

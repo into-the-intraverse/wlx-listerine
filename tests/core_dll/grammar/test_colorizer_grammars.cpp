@@ -543,6 +543,9 @@ public:
     // emits no spans for named-node captures, so `class A {};` (which only
     // hits inherited cpp/c rules) returns 0 spans. Local builds with the same
     // toolset/conan binary do not reproduce. Subcase 2 above already covers
-    // the inherits-chain compilation via Unreal-specific captures.
+    // the inherits-chain compilation via Unreal-specific captures, and the
+    // recursive multi-level resolution itself (unreal-cpp -> cpp -> c) is
+    // unit-tested without grammar DLLs in
+    // tests/core_dll/grammar/test_grammar_cache.cpp.
     // TODO: revisit once tree-sitter-cpp ships an ABI 15 release.
 }

@@ -70,11 +70,12 @@ TEST_CASE("scan_urls - http and https side by side") {
     CHECK(text.substr(m[1].start, m[1].end - m[1].start) == L"https://y.org/");
 }
 
-TEST_CASE("scan_urls - file:// scheme") {
+TEST_CASE("scan_urls - file:// scheme is not auto-linked") {
+    // Security: a clicked file:// link would launch local/UNC executables
+    // via ShellExecuteW, so the scanner must not match it.
     std::wstring text = L"local: file:///C:/tmp/x.txt yes";
     auto m = scan_urls(text);
-    REQUIRE(m.size() == 1);
-    CHECK(text.substr(m[0].start, m[0].end - m[0].start) == L"file:///C:/tmp/x.txt");
+    CHECK(m.empty());
 }
 
 TEST_CASE("scan_urls - ftp:// scheme") {
@@ -135,4 +136,21 @@ TEST_CASE("scan_urls - multiple trailing punctuation chars are all trimmed") {
     auto m = scan_urls(text);
     REQUIRE(m.size() == 1);
     CHECK(text.substr(m[0].start, m[0].end - m[0].start) == L"https://x.com/path");
+}
+
+TEST_CASE("scan_urls - close-paren matching an unmatched open-paren is kept") {
+    std::wstring text = L"https://en.wikipedia.org/wiki/Tree_(data_structure)";
+    auto m = scan_urls(text);
+    REQUIRE(m.size() == 1);
+    CHECK(text.substr(m[0].start, m[0].end - m[0].start) ==
+          L"https://en.wikipedia.org/wiki/Tree_(data_structure)");
+}
+
+TEST_CASE("scan_urls - close-paren after balanced parens is still trimmed") {
+    // Parens inside the body are balanced, so the final ')' belongs to the
+    // surrounding text, not the URL.
+    std::wstring text = L"(see https://x.com/a_(b))";
+    auto m = scan_urls(text);
+    REQUIRE(m.size() == 1);
+    CHECK(text.substr(m[0].start, m[0].end - m[0].start) == L"https://x.com/a_(b)");
 }

@@ -45,6 +45,39 @@ TEST_CASE("GrammarCache: register_entry normalizes CRLF in query source") {
     CHECK(normalized == "; inherits: c\n(call_expression) @function\n");
 }
 
+TEST_CASE("GrammarCache: `; inherits:` resolves recursively through the chain") {
+    // Regression: resolution used to splice only the DIRECT parents' raw
+    // sources, so a parent's own `; inherits:` line became an inert comment
+    // and grandparent rules were lost (shipped chain unreal-cpp -> cpp -> c
+    // dropped all of c's comment/string/number queries under
+    // cpp_grammar="unreal").
+    GrammarCache::SteadyTp now{};
+    int counter = 0;
+    GrammarCache c(8, 5min, [&] { return now; }, make_loader(counter), noop_releaser());
+    c.register_entry("c",   L"c.dll",   "(comment) @comment\n");
+    c.register_entry("cpp", L"cpp.dll", "; inherits: c\n(call_expression) @function\n");
+    c.register_entry("unreal-cpp", L"u.dll", "; inherits: cpp\n(ucall) @keyword\n");
+
+    const std::string resolved = c.resolved_query_source("unreal-cpp");
+    CHECK(resolved.find("(comment) @comment") != std::string::npos);          // from c, 2 levels up
+    CHECK(resolved.find("(call_expression) @function") != std::string::npos); // from cpp
+    CHECK(resolved.find("(ucall) @keyword") != std::string::npos);            // own rules
+}
+
+TEST_CASE("GrammarCache: `; inherits:` cycle resolves each language once") {
+    GrammarCache::SteadyTp now{};
+    int counter = 0;
+    GrammarCache c(8, 5min, [&] { return now; }, make_loader(counter), noop_releaser());
+    c.register_entry("a", L"a.dll", "; inherits: b\n(a) @x\n");
+    c.register_entry("b", L"b.dll", "; inherits: a\n(b) @y\n");
+
+    // Must terminate; both languages' own rules appear exactly once.
+    const std::string resolved = c.resolved_query_source("a");
+    CHECK(resolved.find("(a) @x") != std::string::npos);
+    CHECK(resolved.find("(b) @y") != std::string::npos);
+    CHECK(resolved.find("(a) @x") == resolved.rfind("(a) @x"));
+}
+
 TEST_CASE("GrammarCache: get_grammar loads on first call") {
     GrammarCache::SteadyTp now{};
     int counter = 0;

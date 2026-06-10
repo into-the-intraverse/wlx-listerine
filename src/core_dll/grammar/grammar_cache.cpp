@@ -56,8 +56,8 @@ GrammarCache::Loader GrammarCache::default_loader() {
 void GrammarCache::register_entry(const std::string& language,
                                   std::wstring dll_path,
                                   std::string query_source) {
-    // Normalize CRLF -> LF so the `; inherits:` parser in get_query (which
-    // splits on '\n' alone) doesn't drag a stray '\r' into the parent
+    // Normalize CRLF -> LF so the `; inherits:` parser in resolve_query_source
+    // (which splits on '\n' alone) doesn't drag a stray '\r' into the parent
     // grammar lookup. .scm files arrive with either EOL convention depending
     // on how Git checks them out: core.autocrlf=true on Windows yields CRLF,
     // which previously broke `; inherits: c\r\n` -> `raw_query_source("c\r")`
@@ -140,39 +140,8 @@ const TSQuery* GrammarCache::get_query(const std::string& language) {
     const TSLanguage* lang = get_grammar(language);
     if (!lang) return nullptr;
 
-    // Resolve `; inherits:` chain.
-    std::string source = source_for(e);
-    if (!source.empty()) {
-        auto first_newline = source.find('\n');
-        std::string first_line = (first_newline != std::string::npos)
-                                  ? source.substr(0, first_newline)
-                                  : source;
-        const std::string prefix = "; inherits:";
-        auto pos = first_line.find(prefix);
-        if (pos != std::string::npos) {
-            std::string parents_str = first_line.substr(pos + prefix.size());
-            std::string rest = (first_newline != std::string::npos)
-                                ? source.substr(first_newline + 1)
-                                : std::string{};
-            std::string combined;
-            std::istringstream iss(parents_str);
-            std::string parent;
-            while (std::getline(iss, parent, ',')) {
-                size_t s = parent.find_first_not_of(" \t(");
-                size_t en = parent.find_last_not_of(" \t)");
-                if (s == std::string::npos || en == std::string::npos || s > en)
-                    continue;
-                std::string parent_name = parent.substr(s, en - s + 1);
-                std::string ps = raw_query_source(parent_name);
-                if (!ps.empty()) {
-                    combined += ps;
-                    combined += '\n';
-                }
-            }
-            combined += rest;
-            source = std::move(combined);
-        }
-    }
+    // Resolve the `; inherits:` chain (recursive — see resolved_query_source).
+    std::string source = resolved_query_source(language);
     if (source.empty()) return nullptr;
 
     uint32_t error_offset = 0;
@@ -186,6 +155,60 @@ const TSQuery* GrammarCache::get_query(const std::string& language) {
 std::string GrammarCache::raw_query_source(const std::string& language) const {
     auto it = entries_.find(language);
     return (it == entries_.end()) ? std::string{} : source_for(it->second);
+}
+
+std::string GrammarCache::resolved_query_source(const std::string& language) const {
+    std::vector<std::string> visited;
+    return resolve_query_source(language, visited, 0);
+}
+
+std::string GrammarCache::resolve_query_source(const std::string& language,
+                                               std::vector<std::string>& visited,
+                                               int depth) const {
+    // A `; inherits:` first line names parent grammars whose query sources
+    // are spliced in front of this language's own rules. Each parent is
+    // resolved RECURSIVELY so multi-level chains (unreal-cpp -> cpp -> c)
+    // flatten fully — splicing raw parent sources used to demote a parent's
+    // own `; inherits:` line to an inert comment and silently drop the
+    // grandparents' rules.
+    static constexpr int kMaxInheritDepth = 8;
+    if (depth > kMaxInheritDepth) return {};
+    if (std::find(visited.begin(), visited.end(), language) != visited.end())
+        return {};  // inheritance cycle
+    visited.push_back(language);
+
+    std::string source = raw_query_source(language);
+    if (source.empty()) return source;
+
+    auto first_newline = source.find('\n');
+    std::string first_line = (first_newline != std::string::npos)
+                              ? source.substr(0, first_newline)
+                              : source;
+    const std::string prefix = "; inherits:";
+    auto pos = first_line.find(prefix);
+    if (pos == std::string::npos) return source;
+
+    std::string parents_str = first_line.substr(pos + prefix.size());
+    std::string rest = (first_newline != std::string::npos)
+                        ? source.substr(first_newline + 1)
+                        : std::string{};
+    std::string combined;
+    std::istringstream iss(parents_str);
+    std::string parent;
+    while (std::getline(iss, parent, ',')) {
+        size_t s = parent.find_first_not_of(" \t(");
+        size_t en = parent.find_last_not_of(" \t)");
+        if (s == std::string::npos || en == std::string::npos || s > en)
+            continue;
+        std::string ps = resolve_query_source(parent.substr(s, en - s + 1),
+                                              visited, depth + 1);
+        if (!ps.empty()) {
+            combined += ps;
+            combined += '\n';
+        }
+    }
+    combined += rest;
+    return combined;
 }
 
 void GrammarCache::pin(const std::string& language) {

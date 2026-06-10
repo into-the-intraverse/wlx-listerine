@@ -57,6 +57,16 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the full reference.
 
 - **CPP highlighting on GHA windows-2025** — the upstream tree-sitter-cpp v0.23.4 grammar (ABI 14) emits no named-node spans on the GitHub Actions windows-2025 image, so plain `.cpp` files render only keyword tokens. Local builds with the same MSVC 14.44 toolset and conan binary work fine; root cause not yet pinned. The `Grammar: unreal-cpp` "highlights query loads" subcase is disabled until upstream ships an ABI 15 release or we route cpp through the taku25 fork.
 
+Deferred from the 2026-06 code review (verified real, fix postponed):
+
+- **Cancellable parses in the core DLL** — the process-wide registry mutex is held for the duration of every `colorize()`/`parse()`, and a superseded worker parse runs to completion, so opening a small file while a 100&nbsp;MB parse is in flight blocks `WM_PAINT` until the dead parse finishes. Needs cancellation plumbed through the C ABI (`ts_parser_set_cancellation_flag`) and/or a try-lock viewport highlight.
+- **Unify the UTF-8↔UTF-16 offset converters** — `code_fence_layout.cpp` and `colorizer_layout.cpp` each carry their own byte↔wchar offset mapping (both now correct, still duplicated ~80 lines). Extract one shared offset-map primitive.
+- **Incremental line index for lazy markdown** — `materialize_viewport` rebuilds the whole `line_tops` index per paint that materializes anything; block shifts are batched now, the index rebuild is not. Needs an incremental index design. (`apply_height_delta` is kept alive only by tests since the batching.)
+- **Aligned table cells measure hit-rects pre-alignment** — center/right-aligned cells hit-test span/code-bg rects before `SetTextAlignment`, the same class of bug fixed for header bold; fixing it means passing alignment into `build_inline_layout`.
+- **`/W4 /WX`** — no warning level is configured anywhere (MSVC default /W3); enabling it needs a one-time warning cleanup pass.
+- **Small cleanups** — `search_step` returns the full match vector by value (copied per F3); `layout_source` carries a dead `source` parameter (call sites span both plugins and the screenshot tool); `abi_spans_to_result` is duplicated between the colorizer adapter and the screenshot tool.
+- **Known limitation (accepted)** — on FAT/exFAT volumes the parse cache can serve a stale document for a same-size save within the 2-second mtime granularity window (`ParseCacheKey` is path+size+mtime; no content hash).
+
 ## 📄 License
 
 [MIT](LICENSE)

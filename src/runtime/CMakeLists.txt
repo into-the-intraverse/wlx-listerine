@@ -47,3 +47,7 @@ target_link_libraries(wlx-core
         dwmapi
         uxtheme
 )
+
+if(WLX_TRACE_ENABLE)
+    target_compile_definitions(wlx-core PRIVATE WLX_TRACE_ENABLE)
+endif()

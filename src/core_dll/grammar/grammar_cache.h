@@ -67,8 +67,9 @@ public:
     //
     // Failures are sticky: once load_attempted is set with no handle (e.g.
     // LoadLibraryW returned null, or the export wasn't found), subsequent
-    // calls return nullptr without retrying. An evict-and-reload sequence
-    // is the only way to retry.
+    // calls return nullptr without retrying. Failed entries never enter the
+    // LRU, so eviction can't reset them — the failure persists until process
+    // restart.
     const TSLanguage* get_grammar(const std::string& language);
 
     // Returns compiled query, lazily compiling from the registered
@@ -94,13 +95,24 @@ public:
     std::vector<std::string> available_languages() const;
 
     // Read-only access to the raw, unresolved query source for a language.
-    // Used by get_query to walk `; inherits:` chains.
     std::string raw_query_source(const std::string& language) const;
+
+    // Like raw_query_source, but with the `; inherits:` chain resolved
+    // recursively (each parent's own chain flattens too, so unreal-cpp ->
+    // cpp -> c picks up c's rules). Cycle-guarded and depth-capped. Used by
+    // get_query before compiling.
+    std::string resolved_query_source(const std::string& language) const;
 
 private:
     static Loader default_loader();
     static Releaser default_releaser();
     void evict_locked();
+
+    // Recursive worker for resolved_query_source. `visited` guards
+    // inheritance cycles; `depth` caps pathological chains.
+    std::string resolve_query_source(const std::string& language,
+                                     std::vector<std::string>& visited,
+                                     int depth) const;
 
     struct Entry {
         std::wstring dll_path;

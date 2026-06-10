@@ -36,7 +36,9 @@ public:
     std::function<void(bool backwards)> on_navigate;
 
     // Used by the global WndProc dispatcher. Don't call directly.
-    LRESULT handle_message(UINT msg, WPARAM wp, LPARAM lp);
+    // hwnd is passed explicitly: messages sent inside CreateWindowExW
+    // (WM_NCCALCSIZE, WM_CREATE) arrive before hwnd_ is assigned.
+    LRESULT handle_message(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 
     static void register_class(HMODULE module);
     static void unregister_class(HMODULE module);

@@ -67,13 +67,27 @@ LinkTarget MarkdownParser::classify_link(const char* href, size_t len) {
         };
     }
 
-    // Check for absolute URLs
-    if (u.starts_with("http://") || u.starts_with("https://")) {
-        return LinkTarget{
-            LinkKind::ExternalUrl,
-            utf8_to_wstring(href, len),
-            L""
+    // Check for absolute URLs: an RFC 3986 scheme ([A-Za-z][A-Za-z0-9+.-]*)
+    // terminated by ':' before any '/', '#' or '?'. Schemes are
+    // case-insensitive, so this also catches "HTTP://", "mailto:", "ftp://".
+    auto colon = u.find_first_of(":/#?");
+    if (colon != std::string_view::npos && colon > 0 && u[colon] == ':') {
+        auto alpha = [](char c) {
+            return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
         };
+        bool scheme = alpha(u[0]);
+        for (size_t i = 1; scheme && i < colon; i++) {
+            char c = u[i];
+            scheme = alpha(c) || (c >= '0' && c <= '9') ||
+                     c == '+' || c == '.' || c == '-';
+        }
+        if (scheme) {
+            return LinkTarget{
+                LinkKind::ExternalUrl,
+                utf8_to_wstring(href, len),
+                L""
+            };
+        }
     }
 
     // Relative doc - may contain anchor fragment
@@ -193,9 +207,15 @@ void MarkdownParser::enter_block(MD_BLOCKTYPE type, void* detail) {
             block_stack_.back()->code_language =
                 utf8_to_wstring(code->lang.text, code->lang.size);
         }
-        in_code_block_ = true;
         break;
     }
+
+    case MD_BLOCK_HTML:
+        // Raw HTML block: no node is pushed. on_text drops the MD_TEXT_HTML
+        // chunks inside (tags/comments aren't rendered, but markdown between
+        // them still is).
+        in_html_block_ = true;
+        break;
 
     case MD_BLOCK_TABLE: {
         push_block(BlockType::Table);
@@ -248,9 +268,10 @@ void MarkdownParser::leave_block(MD_BLOCKTYPE type, void* /*detail*/) {
         // no-op
         break;
 
-    case MD_BLOCK_CODE:
-        in_code_block_ = false;
-        pop_block();
+    case MD_BLOCK_HTML:
+        // Symmetric with enter_block: nothing was pushed, so popping here
+        // would pop the parent container instead.
+        in_html_block_ = false;
         break;
 
     default:
@@ -472,8 +493,19 @@ void MarkdownParser::on_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size
         break;
     }
 
+    case MD_TEXT_HTML: {
+        // Raw HTML inside an HTML block is dropped; inline raw HTML in a
+        // paragraph still shows as literal text.
+        if (in_html_block_) break;
+        InlineNode node;
+        node.type = InlineType::Text;
+        node.text = utf8_to_wstring(text, size);
+        add_inline(std::move(node));
+        break;
+    }
+
     default: {
-        // MD_TEXT_HTML, MD_TEXT_LATEXMATH, etc. - treat as normal text
+        // MD_TEXT_LATEXMATH, etc. - treat as normal text
         InlineNode node;
         node.type = InlineType::Text;
         node.text = utf8_to_wstring(text, size);
@@ -494,7 +526,7 @@ Document MarkdownParser::parse(const char* markdown, size_t length) {
     strikethrough_depth_ = 0;
     code_depth_ = 0;
     pending_link_ = std::nullopt;
-    in_code_block_ = false;
+    in_html_block_ = false;
 
     MD_PARSER parser = {};
     parser.abi_version = 0;

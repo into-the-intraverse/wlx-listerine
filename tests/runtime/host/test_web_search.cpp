@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 #include "runtime/host/web_search.h"
+#include "runtime/host/link_actions.h"
 
 using namespace wlx::runtime::host;
 
@@ -56,4 +57,41 @@ TEST_CASE("build_google_search_url truncates over 1500 wchars before encoding") 
     // Prefix + exactly 1500 'a' characters
     std::wstring expected = L"https://www.google.com/search?q=" + std::wstring(1500, L'a');
     CHECK(url == expected);
+}
+
+// search_with_google delegates to open_external_url, which gates every url
+// on this allowlist — tested here, next to its only in-tree delegator.
+
+TEST_CASE("is_openable_url allows the four allowlisted schemes, case-insensitively") {
+    CHECK(is_openable_url(L"https://example.com"));
+    CHECK(is_openable_url(L"http://example.com"));
+    CHECK(is_openable_url(L"ftp://files.example.com/a.zip"));
+    CHECK(is_openable_url(L"mailto:user@example.com"));
+    CHECK(is_openable_url(L"HTTPS://EXAMPLE.COM/PATH"));
+    CHECK(is_openable_url(L"MailTo:user@example.com"));
+}
+
+TEST_CASE("is_openable_url rejects a scheme with no body") {
+    CHECK_FALSE(is_openable_url(L"https://"));
+    CHECK_FALSE(is_openable_url(L"mailto:"));
+}
+
+TEST_CASE("is_openable_url blocks launch-capable schemes and paths") {
+    CHECK_FALSE(is_openable_url(L"file:///C:/Windows/System32/calc.exe"));
+    CHECK_FALSE(is_openable_url(L"file://evil/share/x.exe"));
+    CHECK_FALSE(is_openable_url(L"ms-msdt:id PCWDiagnostic"));
+    CHECK_FALSE(is_openable_url(L"javascript:alert(1)"));
+    CHECK_FALSE(is_openable_url(L"\\\\evil\\share\\x.exe"));
+    CHECK_FALSE(is_openable_url(L"C:/evil.exe"));
+    CHECK_FALSE(is_openable_url(L"C:\\evil.exe"));
+    CHECK_FALSE(is_openable_url(L""));
+}
+
+TEST_CASE("is_openable_url blocks local paths of every shape (no .toml exemption)") {
+    // EditConfig now routes through the trusted open_config_file helper, so
+    // the allowlist carries no content-based exemption a crafted href could hit.
+    CHECK_FALSE(is_openable_url(L"D:\\plugins\\wlx\\wlx-listerine-md.toml"));
+    CHECK_FALSE(is_openable_url(L"c:/plugins/wlx-listerine-colorizer.TOML"));
+    CHECK_FALSE(is_openable_url(L"\\\\server\\share\\wlx-listerine-md.toml"));
+    CHECK_FALSE(is_openable_url(L"D:\\plugins\\wlx\\not-a-config.exe"));
 }

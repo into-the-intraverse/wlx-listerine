@@ -152,6 +152,7 @@ void ThemeService::load(const std::wstring& toml_path) {
 uint64_t ThemeService::theme_hash() const {
     std::hash<uint64_t> h64;
     std::hash<float> hf;
+    std::hash<std::wstring> hws;
 
     // Combine key fields that affect layout/rendering
     uint64_t hash = 0;
@@ -162,13 +163,25 @@ uint64_t ThemeService::theme_hash() const {
         hash ^= hf(val) + 0x9e3779b97f4a7c15ULL + (hash << 6) + (hash >> 2);
     };
 
-    // Font sizes
+    // Fonts
+    combine(hws(config_.fonts.body_family));
+    combine(hws(config_.fonts.code_family));
+    combine(hws(config_.fonts.emoji_family));
     combine_f(config_.fonts.body_size);
     combine_f(config_.fonts.code_size);
 
     // Spacing
     combine_f(config_.spacing.paragraph_spacing);
+    combine_f(config_.spacing.heading_spacing_above);
+    combine_f(config_.spacing.heading_spacing_below);
+    combine_f(config_.spacing.list_indent);
+    combine_f(config_.spacing.quote_indent);
+    combine_f(config_.spacing.quote_border_width);
+    combine_f(config_.spacing.code_padding);
     combine_f(config_.spacing.line_height_factor);
+
+    // Code default language (drives fence highlighting baked into the layout)
+    combine(std::hash<std::string>{}(config_.code_default_language));
 
     // All light palette colors
     combine(config_.light.background);

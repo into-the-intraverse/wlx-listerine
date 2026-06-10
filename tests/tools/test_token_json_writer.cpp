@@ -120,3 +120,50 @@ TEST_CASE("TokenJsonWriter: MOD_STRIKETHROUGH alone emits only \"strikethrough\"
     std::string out = TokenJsonWriter::write(cr, "test", test_opts());
     CHECK(out.find("\"mods\": [\"strikethrough\"]") != std::string::npos);
 }
+
+TEST_CASE("TokenJsonWriter: header strings are JSON-escaped") {
+    ColorizeResult cr;
+    TokenJsonOptions opt = test_opts();
+    opt.source_name = "we\"ird\\name\n.cpp";
+    std::string out = TokenJsonWriter::write(cr, "", opt);
+    CHECK(out.find("\"source\": \"we\\\"ird\\\\name\\u000A.cpp\"") != std::string::npos);
+}
+
+TEST_CASE("TokenJsonWriter: 4-byte UTF-8 advances col in UTF-16 units") {
+    // Source: 'a' + U+1F600 (4-byte) + 'b'; three same-style spans covering
+    // each. They are truly adjacent in UTF-16 units, so they must collapse
+    // into one token of len 1 + 2 + 1 = 4.
+    ColorizeResult cr;
+    cr.spans = {
+        span(0, 1, 0xFF0000, 0),
+        span(1, 4, 0xFF0000, 0),
+        span(5, 1, 0xFF0000, 0),
+    };
+    std::string out = TokenJsonWriter::write(cr, "a\xF0\x9F\x98\x80" "b", test_opts());
+    CHECK(out.find("\"token_count\": 1") != std::string::npos);
+    CHECK(out.find("\"len\": 4") != std::string::npos);
+}
+
+TEST_CASE("TokenJsonWriter: no false merge across a gap after a 4-byte char") {
+    // 'a' + emoji (UTF-16 cols 1..3), unstyled 'b' (col 4), styled 'c'
+    // (col 5). With code-point col counting, prev.col + prev.len landed on
+    // 'c' and falsely merged across the gap.
+    ColorizeResult cr;
+    cr.spans = {
+        span(0, 5, 0x00FF00, 0),   // 'a' + emoji -> col 1, len 3
+        span(6, 1, 0x00FF00, 0),   // 'c'         -> col 5
+    };
+    std::string out = TokenJsonWriter::write(cr, "a\xF0\x9F\x98\x80" "bc", test_opts());
+    CHECK(out.find("\"token_count\": 2") != std::string::npos);
+}
+
+TEST_CASE("TokenJsonWriter: truncated multibyte tail does not underflow len") {
+    // "ab" + a truncated 4-byte lead (2 of 4 bytes present). A span ending at
+    // EOF must clamp: previously sites[src.size()] stayed zero-initialized
+    // and len underflowed to ~4e9, emitting a garbage token.
+    ColorizeResult cr;
+    cr.spans = { span(2, 2, 0x0000FF, 0) };
+    std::string out = TokenJsonWriter::write(cr, "ab\xF0\x9F", test_opts());
+    CHECK(out.find("\"token_count\": 1") != std::string::npos);
+    CHECK(out.find("\"len\": 1") != std::string::npos);
+}

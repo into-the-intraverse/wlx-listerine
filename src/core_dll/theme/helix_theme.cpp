@@ -3,6 +3,7 @@
 #include "runtime/util/string_util.h"
 #include <toml++/toml.hpp>
 #include <algorithm>
+#include <charconv>
 #include <set>
 
 namespace wlx::core::theme {
@@ -60,9 +61,11 @@ static std::optional<uint32_t> resolve_color(
             h = expanded;
         }
         if (h.size() == 6) {
-            try {
-                return static_cast<uint32_t>(std::stoul(h, nullptr, 16));
-            } catch (...) {}
+            // Require exactly six hex digits, fully consumed — std::stoul
+            // accepted signs and trailing garbage ("#12345Z" -> 0x12345).
+            uint32_t v = 0;
+            auto [end, ec] = std::from_chars(h.data(), h.data() + h.size(), v, 16);
+            if (ec == std::errc{} && end == h.data() + h.size()) return v;
         }
     }
 
@@ -213,14 +216,17 @@ static void load_impl(
 // ---------------------------------------------------------------------------
 
 HelixTheme HelixTheme::load(const std::string& theme_name,
-                            const std::filesystem::path& theme_dir) {
+                            const std::filesystem::path& theme_dir,
+                            bool dark_fallback) {
     HelixTheme theme;
     std::set<std::string> visited;
     load_impl(theme_name, theme_dir, theme.styles_, visited);
 
-    // If loading failed entirely, fall back to built-in dark defaults
+    // If loading failed entirely, fall back to the requested mode's built-in
+    // defaults (a dark fallback for a failed light theme would put dark
+    // colors on a light background).
     if (theme.styles_.empty()) {
-        theme = make_default(true);
+        theme = make_default(dark_fallback);
     }
 
     return theme;

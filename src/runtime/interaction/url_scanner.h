@@ -12,11 +12,13 @@ struct UrlMatch {
     int end   = 0;  // exclusive
 };
 
-// Hand-rolled URL scanner — recognizes http://, https://, ftp://, file://
-// schemes (case-insensitive). Refuses to start a match inside an alphanumeric
-// run (so `parsehttp://` does NOT match). Trims a trailing run of
-// .,;:!?)]}> from each match (so `See https://x/y.` doesn't capture the
-// trailing period and `(see https://x/y)` doesn't capture the closing paren).
+// Hand-rolled URL scanner — recognizes http://, https://, ftp://
+// schemes (case-insensitive; file:// is deliberately not auto-linked).
+// Refuses to start a match inside an alphanumeric run (so `parsehttp://`
+// does NOT match). Trims a trailing run of .,;:!?)]}> from each match (so
+// `See https://x/y.` doesn't capture the trailing period and
+// `(see https://x/y)` doesn't capture the closing paren), except that a ')'
+// closing an unmatched '(' in the body is kept (wiki-style URLs).
 //
 // std::wregex is intentionally avoided: lookbehind support varies, and a
 // linear scan is faster and more predictable for this shape.

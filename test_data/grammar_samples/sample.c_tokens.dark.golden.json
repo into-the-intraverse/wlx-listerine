@@ -1,9 +1,9 @@
 {
   "source": "sample.c",
-  "language": "c",
+  "language": "cpp",
   "theme": "default_dark",
   "config_hash": "900a7fa8e381226e",
-  "token_count": 48,
+  "token_count": 50,
   "tokens": [
     { "line": 1, "col": 1, "len": 21, "color": "#6A9955", "mods": ["italic"] },
     { "line": 2, "col": 1, "len": 8, "color": "#C586C0", "mods": ["bold"] },
@@ -43,7 +43,9 @@
     { "line": 11, "col": 19, "len": 1, "color": "#D4D4D4", "mods": [] },
     { "line": 12, "col": 5, "len": 6, "color": "#DCDCAA", "mods": [] },
     { "line": 12, "col": 11, "len": 1, "color": "#D4D4D4", "mods": [] },
-    { "line": 12, "col": 12, "len": 9, "color": "#CE9178", "mods": [] },
+    { "line": 12, "col": 12, "len": 6, "color": "#CE9178", "mods": [] },
+    { "line": 12, "col": 18, "len": 2, "color": "#D7BA7D", "mods": [] },
+    { "line": 12, "col": 20, "len": 1, "color": "#CE9178", "mods": [] },
     { "line": 12, "col": 21, "len": 1, "color": "#D4D4D4", "mods": [] },
     { "line": 12, "col": 23, "len": 3, "color": "#9CDCFE", "mods": [] },
     { "line": 12, "col": 26, "len": 1, "color": "#D4D4D4", "mods": [] },

@@ -3,7 +3,6 @@
 #include "runtime/parser/document.h"
 #include "runtime/parser/inline_node.h"
 #include "runtime/parser/link_target.h"
-#include "runtime/parser/source_range.h"
 
 using namespace wlx::runtime::parser;
 
@@ -111,7 +110,6 @@ TEST_CASE("Nested list structure") {
 
 TEST_CASE("InlineNode with link") {
     InlineNode link_node;
-    link_node.type = InlineType::Link;
     link_node.text = L"click here";
     link_node.link = LinkTarget{LinkKind::ExternalUrl, L"https://example.com", L""};
 

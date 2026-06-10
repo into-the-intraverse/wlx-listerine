@@ -88,13 +88,4 @@ void spawn_parse_worker(std::unique_ptr<ParseJob> job, ParseFn parse_fn) {
     }).detach();
 }
 
-// Synchronous bypass: parse + adopt inline (for any non-interactive caller that
-// can't run a message pump). Returns the heap Result (caller adopts immediately).
-// Deliberately skips the g_shutting_down / closed gates — there's no pump to drain
-// and the caller must not invoke it after detach.
-template <class Result, class ParseFn>
-std::unique_ptr<Result> run_sync(const ParseJob& job, ParseFn parse_fn) {
-    return parse_fn(job);
-}
-
 }  // namespace wlx::runtime::host

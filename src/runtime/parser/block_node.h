@@ -1,7 +1,6 @@
 #pragma once
 
 #include "runtime/parser/inline_node.h"
-#include "runtime/parser/source_range.h"
 
 #include <string>
 #include <vector>
@@ -54,8 +53,6 @@ struct BlockNode {
     bool is_header = false;
     enum class CellAlign { Default, Left, Center, Right };
     CellAlign cell_align = CellAlign::Default;
-
-    SourceRange source;
 };
 
 }  // namespace wlx::runtime::parser

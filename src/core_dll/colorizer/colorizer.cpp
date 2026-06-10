@@ -36,13 +36,14 @@ HelixTheme Colorizer::load_theme_for(bool dark_mode) const {
         return HelixTheme::load(theme_name_, dir);
     }
     // Light theme: explicit override, or "<theme>_light" convention, or default.
+    // A failed load must fall back to the LIGHT defaults, not the dark ones.
     if (!theme_light_name_.empty()) {
-        return HelixTheme::load(theme_light_name_, dir);
+        return HelixTheme::load(theme_light_name_, dir, /*dark_fallback=*/false);
     }
     std::string light_candidate = theme_name_ + "_light";
     auto light_path = dir / (light_candidate + ".toml");
     if (std::filesystem::exists(light_path)) {
-        return HelixTheme::load(light_candidate, dir);
+        return HelixTheme::load(light_candidate, dir, /*dark_fallback=*/false);
     }
     return HelixTheme::make_default(false);
 }
@@ -74,10 +75,9 @@ ColorizeResult Colorizer::highlight_tree_range(WlxTree* t, bool dark_mode,
     if (!t || !t->tree) return result;
     const TSQuery* query = grammar_registry_->get_query(t->language); // grammar pinned => loaded
     if (!query) return result;
-    const auto& th = theme(dark_mode);
-    uint32_t default_color = dark_mode ? 0xD4D4D4 : 0x1F2328;        // match colorize()'s default
+    const auto& styles = capture_styles_for(t->language, query, dark_mode);
     result.spans = QueryHighlighter::highlight(
-        t->tree, query, th, t->source_copy, default_color, range_start, range_end);
+        t->tree, query, styles, t->source_copy, range_start, range_end);
     return result;
 }
 
@@ -100,6 +100,16 @@ const HelixTheme& Colorizer::theme(bool dark_mode) const {
         ready = true;
     }
     return slot;
+}
+
+const std::vector<ResolvedStyle>& Colorizer::capture_styles_for(
+    const std::string& language, const TSQuery* query, bool dark_mode) const {
+    auto& memo = style_memo_[dark_mode ? 1 : 0][language];
+    if (memo.query != query) {
+        memo.styles = QueryHighlighter::resolve_capture_styles(query, theme(dark_mode));
+        memo.query = query;
+    }
+    return memo.styles;
 }
 
 ColorizeResult Colorizer::colorize(std::string_view source,
@@ -131,24 +141,21 @@ ColorizeResult Colorizer::colorize(std::string_view source,
     auto t1 = clock::now();
     if (!tslang) return result;
 
-    auto* tree = grammar_registry_->parse(language, source);
+    // RAII over the parse tree so a throw from highlight (e.g. bad_alloc)
+    // can't leak it.
+    std::unique_ptr<TSTree, decltype(&ts_tree_delete)> tree(
+        grammar_registry_->parse(language, source), ts_tree_delete);
     auto t2 = clock::now();
     if (!tree) return result;
 
     auto* query = grammar_registry_->get_query(language);
     auto t3 = clock::now();
-    if (!query) {
-        ts_tree_delete(tree);
-        return result;
-    }
+    if (!query) return result;
 
-    const auto& t = theme(dark_mode);
-    uint32_t default_color = dark_mode ? 0xD4D4D4 : 0x1F2328;
-    result.spans = QueryHighlighter::highlight(tree, query, t, source, default_color,
+    const auto& styles = capture_styles_for(language, query, dark_mode);
+    result.spans = QueryHighlighter::highlight(tree.get(), query, styles, source,
                                                range_start, range_end);
     auto t4 = clock::now();
-
-    ts_tree_delete(tree);
 
     if (timings) {
         timings->grammar_load_ms  = ms(t0, t1);

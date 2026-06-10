@@ -18,6 +18,7 @@
 #include <wrl/client.h>
 #include <algorithm>
 #include <unordered_map>
+#include <optional>
 #include <string>
 #include <memory>
 #include <vector>
@@ -62,8 +63,6 @@
 #include "runtime/host/window_class.h"
 
 #include <toml++/toml.hpp>
-
-using namespace wlx::core::colorizer;
 
 using namespace wlx::runtime::diagnostics;
 using namespace wlx::runtime::host;
@@ -201,8 +200,9 @@ static UINT wm_colorizer_parse_done() {
 // Plugin-local async parse result. Carries ONLY copyable/move-only COM-free data:
 // built on the worker thread, adopted on the UI thread. The TreePtr makes this
 // move-only — fine for unique_ptr<ParseResultColor>. A dropped/closed/post-failed
-// worker frees the TreePtr locally (wlx_core_free_tree takes the core mutex; the
-// spawn helper gates that free behind g_shutting_down so it never runs at detach).
+// worker frees the TreePtr locally (wlx_core_free_tree takes the core mutex on
+// the worker thread — never under the loader lock, since detach never joins
+// workers).
 struct ParseResultColor {
     uint64_t generation = 0;
     std::shared_ptr<wlx::runtime::host::ViewLiveToken> live;  // same control block as the spawning view
@@ -210,6 +210,7 @@ struct ParseResultColor {
     std::wstring text;        // -> cached_text
     std::string  raw_utf8;    // -> cached_raw_utf8
     std::string  language;    // -> tree_language
+    bool wrap = false;        // wrap mode the tree path was decided with (B3.4)
     wlx_core::TreePtr tree;   // null => UI runs the whole-doc fallback colorize
 };
 
@@ -225,7 +226,6 @@ static WlxCore*   g_colorizer_handle = nullptr;
 static ColorizerDisplayConfig g_display_cfg;
 static std::unordered_map<HWND, ColorViewState*> g_views;
 static ATOM g_window_class = 0;
-static std::string g_default_ini_path;
 
 // Forward decl so the HostView<ColorViewState> concept is satisfied at the
 // point where HostIntegration<ColorViewState> is instantiated (below).
@@ -251,6 +251,23 @@ using wlx::runtime::host::apply_dark_mode;
 
 static std::wstring get_module_dir() {
     return wlx::runtime::host::get_module_dir(g_hModule);
+}
+
+// Hard cap on file size. The byte pipeline is int-typed (line_byte_starts,
+// viewport byte math), so a multi-GB file would wrap negative — and long before
+// that the worker's read would die with bad_alloc -> std::terminate, killing TC.
+// Oversize files are refused in ListLoadW/ListLoadNextW (TC falls back to its
+// default lister) and on the worker read path (covers an F2 reload of a file
+// that grew past the cap).
+static constexpr ULONGLONG kMaxFileBytes = 512ull * 1024 * 1024;
+
+static bool file_too_large(const wchar_t* path) {
+    WIN32_FILE_ATTRIBUTE_DATA fad{};
+    if (!GetFileAttributesExW(path, GetFileExInfoStandard, &fad))
+        return false;   // missing/unreadable -> let the normal read path fail it
+    const ULONGLONG size =
+        (static_cast<ULONGLONG>(fad.nFileSizeHigh) << 32) | fad.nFileSizeLow;
+    return size > kMaxFileBytes;
 }
 
 
@@ -495,6 +512,7 @@ static std::unique_ptr<ParseResultColor> color_parse_body(
     r->text = std::move(text);
     r->raw_utf8 = std::move(raw_utf8);
     r->language = language;
+    r->wrap = wrap_text;
 
     if (!language.empty() && core)
         wlx_core_prewarm(core, language.c_str());   // folds in the old prewarm jthread
@@ -522,8 +540,13 @@ static void begin_load_reset(ColorViewState* vs, bool reset_force) {
     vs->live->generation.store(vs->current_gen, std::memory_order_release);
     vs->state = wlx::runtime::host::LoadState::Loading;
 
-    vs->scroll_y = 0;
-    if (reset_force) vs->force_grammar_id.clear();
+    // Scroll resets only on a full reload (new file). A cached recolor (force-
+    // language / dark / wrap) keeps the reading position; adoption's
+    // update_scrollbar clamps it against the new layout height.
+    if (reset_force) {
+        vs->scroll_y = 0;
+        vs->force_grammar_id.clear();
+    }
     vs->sel_anchor = TextPosition{};
     vs->sel_active = TextPosition{};
     vs->selecting = false;
@@ -563,7 +586,9 @@ static void begin_async_load(ColorViewState* vs, const wchar_t* path) {
         [language, wrap, core](const wlx::runtime::host::ParseJob& j)
             -> std::unique_ptr<ParseResultColor> {
             wlx::runtime::io::FileService fs;             // worker-LOCAL, stateless
-            auto content = fs.read(j.path.c_str());
+            std::optional<wlx::runtime::io::FileContent> content;
+            if (!file_too_large(j.path.c_str()))   // re-check: F2 reload may have grown the file
+                content = fs.read(j.path.c_str());
             if (!content) {
                 auto r = std::make_unique<ParseResultColor>();
                 r->generation = j.generation;
@@ -608,9 +633,12 @@ static void begin_async_recolor(ColorViewState* vs) {
     job->done_msg = wm_colorizer_parse_done();
     wlx::runtime::host::spawn_parse_worker<ParseResultColor>(std::move(job),
         [language, wrap, core, text_copy = std::move(text_copy),
-         raw_copy = std::move(raw_copy)](const wlx::runtime::host::ParseJob& j)
+         raw_copy = std::move(raw_copy)](const wlx::runtime::host::ParseJob& j) mutable
             -> std::unique_ptr<ParseResultColor> {
-            return color_parse_body(j, text_copy, raw_copy, language, wrap, core);
+            // mutable + move: the worker runs this exactly once, so hand the
+            // file-sized strings to color_parse_body instead of copying them.
+            return color_parse_body(j, std::move(text_copy), std::move(raw_copy),
+                                    language, wrap, core);
         });
     InvalidateRect(vs->hwnd, nullptr, FALSE);
 }
@@ -644,15 +672,6 @@ static void resize_widths_nowrap(ColorViewState* vs) {
     update_scrollbar(vs);
 }
 
-// Re-tokenize the in-memory cached source using the current force_grammar_id
-// (or the extension fallback when the override is empty), then re-layout and
-// invalidate — all off the UI thread via the cached-recolor funnel. Does NOT read
-// from disk. (cached_raw_utf8 is always populated alongside cached_text; the empty
-// guard inside begin_async_recolor treats "no file loaded" as a no-op.)
-static void recolorize_with_force(ColorViewState* vs) {
-    begin_async_recolor(vs);
-}
-
 static void reload_view(ColorViewState& vs, const wchar_t* path) {
     begin_async_load(&vs, path);   // funnel arranges the repaint (loading frame)
 }
@@ -671,8 +690,6 @@ static constexpr UINT_PTR TIMER_AUTOSCROLL = 1;
 
 using wlx::runtime::host::block_text_length;
 using wlx::runtime::host::hit_test_position;
-
-using wlx::runtime::host::copy_to_clipboard;
 
 static void clear_selection(ColorViewState* vs) {
     wlx::runtime::host::clear_selection(*vs);
@@ -707,12 +724,20 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         v->state = wlx::runtime::host::LoadState::Ready;
         if (res->failed) {
             v->layout.reset();
+            v->interaction.reset();                   // held a reference into the dead layout
             v->cached_text.clear();
             v->cached_raw_utf8.clear();
             v->cached_colors = {};
             v->tree.reset();                          // unpin old grammar on a failed reload
             v->colored_lo = v->colored_hi = 0;
-            update_scrollbar(v);
+            // update_scrollbar early-returns on a null layout, so collapse the
+            // scrollbar explicitly — it would otherwise keep the dead file's range.
+            v->scroll_y = 0;
+            v->max_scroll_y = 0;
+            SCROLLINFO si = {};
+            si.cbSize = sizeof(si);
+            si.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
+            SetScrollInfo(hwnd, SB_VERT, &si, TRUE);
             InvalidateRect(hwnd, nullptr, FALSE);
             return 0;
         }
@@ -721,6 +746,13 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         v->tree_language = std::move(res->language);
         v->tree = std::move(res->tree);               // may be null (free old via move-assign)
         v->colored_lo = v->colored_hi = 0;
+        // Wrap toggled while this load was in flight (lc_newparams can't recolor
+        // before the first adoption — no cached source yet — so the worker was
+        // not superseded): the tree was built for the spawn-time wrap mode, but
+        // do_layout reads the CURRENT wrap_text. Drop it and take the whole-doc
+        // fallback below (Invariant B3.4: never a tree under word-wrap).
+        if (v->tree && res->wrap != v->wrap_text)
+            v->tree.reset();
         if (v->tree) {
             // Skeleton layout (empty colors); colorize the first viewport now.
             do_layout(v, v->cached_text, v->cached_raw_utf8, /*colors=*/{});
@@ -760,7 +792,13 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
                 rt->BeginDraw();
                 rt->Clear(ThemeService::to_d2d_color(
                     g_theme.palette(vs->dark_mode).background));
-                rt->EndDraw();
+                if (rt->EndDraw() == D2DERR_RECREATE_TARGET) {
+                    // Device lost mid-clear: rebuild the target now, same as
+                    // RenderEngine::paint's recreate handling (its needs_recreate_
+                    // flag is private, so recreate eagerly instead of deferring).
+                    vs->renderer->discard_device_resources();
+                    vs->renderer->create_device_resources(hwnd);
+                }
             }
         }
         EndPaint(hwnd, &ps);
@@ -877,6 +915,7 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
 
             bool over_text = false;
             for (auto& block : vs->layout->blocks) {
+                if (block.rect.top > doc_y) break;   // blocks are Y-ordered: nothing below can hit
                 if (block.text_runs.empty()) continue;
                 if (doc_y >= block.rect.top && doc_y <= block.rect.bottom &&
                     px >= block.rect.left && px <= block.rect.right) {
@@ -998,14 +1037,26 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
 
         POINT screen_pt = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
 
-        // Convert the screen-space WM_CONTEXTMENU coords into doc coords.
-        POINT client_pt = screen_pt;
-        ScreenToClient(hwnd, &client_pt);
-        float ctx_doc_x = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(client_pt.x))
-                                       : static_cast<float>(client_pt.x);
-        float ctx_doc_y_local = vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(client_pt.y))
-                                             : static_cast<float>(client_pt.y);
-        float ctx_doc_y = ctx_doc_y_local + vs->scroll_y;
+        // Keyboard-invoked menu (VK_APPS / Shift+F10) carries (-1,-1): anchor at
+        // the window center and skip the link hit-test — (-1,-1) doc coords miss
+        // every block, and there is no meaningful point to test.
+        float ctx_doc_x = -1.0f;
+        float ctx_doc_y = -1.0f;
+        if (screen_pt.x == -1 && screen_pt.y == -1) {
+            RECT rc;
+            GetClientRect(hwnd, &rc);
+            screen_pt = { rc.right / 2, rc.bottom / 2 };
+            ClientToScreen(hwnd, &screen_pt);
+        } else {
+            // Convert the screen-space WM_CONTEXTMENU coords into doc coords.
+            POINT client_pt = screen_pt;
+            ScreenToClient(hwnd, &client_pt);
+            ctx_doc_x = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(client_pt.x))
+                                     : static_cast<float>(client_pt.x);
+            float ctx_doc_y_local = vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(client_pt.y))
+                                                 : static_cast<float>(client_pt.y);
+            ctx_doc_y = ctx_doc_y_local + vs->scroll_y;
+        }
 
         auto langs = available_grammars(g_colorizer_handle);
         auto ctx = build_colorizer_menu_context(*vs, std::move(langs), ctx_doc_x, ctx_doc_y);
@@ -1034,13 +1085,15 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         }
 
         case MenuResult::EditConfig:
-            wlx::runtime::host::open_external_url(ctx.config_path);
+            // Trusted path: plugin-computed module-dir config, never doc content.
+            wlx::runtime::host::open_config_file(ctx.config_path);
             break;
 
         case MenuResult::SetLanguage:
-            // Empty language_id = auto-detect.
+            // Empty language_id = auto-detect. Re-tokenize the in-memory cached
+            // source with the new override (no disk re-read) off the UI thread.
             vs->force_grammar_id = result.language_id;
-            recolorize_with_force(vs);
+            begin_async_recolor(vs);
             break;
 
         case MenuResult::OpenLink:
@@ -1107,10 +1160,11 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
 
         bool handled = false;
 
-        // Ctrl+G — open the go-to-line prompt (no-op while a load is in flight;
-        // a Loading view has no layout / line index to jump within).
+        // Ctrl+G — open the go-to-line prompt (no-op while a load is in flight or
+        // after a failed one; Ready alone doesn't imply a layout / line index to
+        // jump within — see the adoption handler's invariant).
         if (wp == 'G' && (GetKeyState(VK_CONTROL) & 0x8000) &&
-            vs->state == LoadState::Ready) {
+            vs->state == LoadState::Ready && vs->layout) {
             vs->goto_prompt.active = true;
             vs->goto_prompt.buffer.clear();
             InvalidateRect(hwnd, nullptr, FALSE);
@@ -1238,10 +1292,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {
         break;
 
     case DLL_PROCESS_DETACH:
-        // Signal in-flight parse workers to bail (they gate on this before any
-        // PostMessage / Result+TreePtr free) BEFORE any other teardown. We never
-        // join — the worker holds no ColorViewState/COM ref, so it can't touch
-        // unmapped state.
+        // Signal in-flight parse workers to bail (they gate PostMessage on this)
+        // BEFORE any other teardown. We never join — the worker holds no
+        // ColorViewState/COM ref, and it can't return into unmapped code because
+        // spawn_parse_worker pins this module for process life (at process exit
+        // the OS terminates worker threads before detach runs).
         wlx::runtime::host::g_shutting_down.store(true, std::memory_order_release);
         // Leak COM objects on detach to avoid deadlocks under loader lock.
         // Same pattern as the md plugin. The ColorViewState* in g_views are
@@ -1272,6 +1327,11 @@ extern "C" {
 HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
     WLX_TRACE(L"ListLoadW parent=%p file=%s flags=0x%X",
               ParentWin, FileToLoad ? FileToLoad : L"(null)", ShowFlags);
+    // Refuse null/empty paths (begin_async_load would crash assigning file_path)
+    // and oversize files (int-typed byte pipeline / worker bad_alloc — see
+    // kMaxFileBytes). Returning null makes TC fall back to its default lister.
+    if (!FileToLoad || !*FileToLoad || file_too_large(FileToLoad))
+        return nullptr;
     ensure_factories();
     if (!d2d_factory() || !dwrite_factory())
         return nullptr;
@@ -1343,6 +1403,10 @@ HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
 int __stdcall ListLoadNextW(HWND ParentWin, HWND PluginWin, wchar_t* FileToLoad, int ShowFlags) {
     WLX_TRACE(L"ListLoadNextW parent=%p plugin=%p file=%s flags=0x%X",
               ParentWin, PluginWin, FileToLoad ? FileToLoad : L"(null)", ShowFlags);
+    // Same null/empty + size-cap gate as ListLoadW; LISTPLUGIN_ERROR makes TC
+    // close this instance and pick another handler.
+    if (!FileToLoad || !*FileToLoad || file_too_large(FileToLoad))
+        return LISTPLUGIN_ERROR;
     auto it = g_views.find(PluginWin);
     if (it == g_views.end()) return LISTPLUGIN_ERROR;
 
@@ -1372,7 +1436,20 @@ void __stdcall ListCloseWindow(HWND ListWin) {
         g_views.erase(it);                 // erase BEFORE delete: adopt's g_views.find
                                            // can never see a being-deleted entry
         vs->live->closed.store(true, std::memory_order_release);  // in-flight worker self-cancels
-        ++wlx::runtime::host::g_load_gen;  // supersede any worker still mid-parse
+        // Fail a mid-parse worker's generation gate too: bumping the global
+        // g_load_gen would change nothing the worker reads — it compares its job
+        // generation against THIS live token's generation.
+        vs->live->generation.fetch_add(1, std::memory_order_release);
+        // Drain parse results already posted to this window: DestroyWindow
+        // discards queued messages undelivered, which would leak each heap
+        // ParseResultColor (text + raw_utf8 + grammar-pinning TreePtr). Residual
+        // race: a worker that passed its closed-gate just before the store above
+        // can still post one more result after this drain — that leaks at most
+        // one payload, and the closed flag makes the window vanishingly small.
+        MSG msg;
+        while (PeekMessageW(&msg, ListWin, wm_colorizer_parse_done(),
+                            wm_colorizer_parse_done(), PM_REMOVE))
+            delete reinterpret_cast<ParseResultColor*>(msg.lParam);
         SetWindowLongPtrW(ListWin, GWLP_USERDATA, 0);  // clear back-pointer before delete
         delete vs;                         // frees the TreePtr off the loader lock
     }
@@ -1396,55 +1473,60 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
     auto* vs = it->second;
 
     switch (Command) {
-    case lc_copy: {
-        if (!vs->layout || !vs->sel_anchor.valid() || vs->sel_anchor == vs->sel_active)
-            return LISTPLUGIN_ERROR;
-        auto lo = std::min(vs->sel_anchor, vs->sel_active);
-        auto hi = std::max(vs->sel_anchor, vs->sel_active);
-        auto text = extract_selected_text(*vs->layout, lo, hi);
-        return copy_to_clipboard(vs->hwnd, text) ? LISTPLUGIN_OK : LISTPLUGIN_ERROR;
-    }
+    case lc_copy:
+        // Same helper as the Ctrl+C / context-menu paths (guards layout + selection).
+        return copy_selection(*vs, vs->hwnd) ? LISTPLUGIN_OK : LISTPLUGIN_ERROR;
 
-    case lc_selectall: {
-        if (!vs->layout || vs->layout->blocks.empty())
+    case lc_selectall:
+        // Same helper as the Ctrl+A / context-menu paths (guards null/empty layout).
+        if (!select_all(*vs))
             return LISTPLUGIN_ERROR;
-        vs->sel_anchor = TextPosition{0, 0};
-        int last = static_cast<int>(vs->layout->blocks.size()) - 1;
-        vs->sel_active = TextPosition{last, block_text_length(vs->layout->blocks[last])};
-        vs->selecting = false;
         InvalidateRect(vs->hwnd, nullptr, FALSE);
         return LISTPLUGIN_OK;
-    }
 
     case lc_newparams: {
         bool new_dark = (Parameter & lcp_darkmode)  != 0;
         bool new_wrap = (Parameter & lcp_wraptext) != 0;
-        bool changed = false;
+        bool dark_changed = false;
+        bool wrap_changed = false;
 
         if (new_dark != vs->dark_mode) {
             vs->dark_mode = new_dark;
             vs->renderer->set_dark_mode(new_dark);
             if (vs->hud) vs->hud->set_dark_mode(new_dark);
             apply_dark_mode(vs->hwnd, new_dark);
-            changed = true;
+            dark_changed = true;
         }
         if (new_wrap != vs->wrap_text) {
             vs->wrap_text = new_wrap;
-            changed = true;
+            wrap_changed = true;
         }
-        if (changed) {
-            // Re-parse + re-color the IN-MEMORY source (no file re-read) off the UI
-            // thread so the new palette / wrap mode takes effect. begin_async_recolor
-            // honors any force-language override (resolve_language), rebuilds the
-            // tree with the right wrap/lang (dark is applied at highlight/fallback
-            // time), and resets vs->tree synchronously so a Loading paint is a no-op
-            // against the stale tree. No-op on empty source (no file loaded); we
-            // still invalidate so the loading/empty frame repaints with the new
-            // dark palette (vs->dark_mode was just updated above).
-            if (!vs->cached_raw_utf8.empty())
-                begin_async_recolor(vs);
-            else
+        if (dark_changed || wrap_changed) {
+            if (vs->cached_raw_utf8.empty()) {
+                // No source yet (loading/empty) — just repaint the frame with the
+                // new dark palette (vs->dark_mode was updated above). NOTE: no
+                // generation bump here, so an in-flight first load still adopts;
+                // the adopt handler re-checks wrap against the result (B3.4).
                 InvalidateRect(vs->hwnd, nullptr, FALSE);
+            } else if (!wrap_changed && vs->tree) {
+                // Dark-only flip on the tree path: the tree is theme-independent
+                // (colors resolve at highlight time), so skip the worker re-parse.
+                // Rebuild the layout against the new palette with empty colors;
+                // do_layout resets the colored interval, so the next paint
+                // re-highlights the viewport from the cached tree with the new
+                // dark flag. Selection/matches stay valid (same block structure).
+                do_layout(vs, vs->cached_text, vs->cached_raw_utf8, /*colors=*/{});
+                InvalidateRect(vs->hwnd, nullptr, FALSE);
+            } else {
+                // Re-parse + re-color the IN-MEMORY source (no file re-read) off
+                // the UI thread so the new palette / wrap mode takes effect.
+                // begin_async_recolor honors any force-language override
+                // (resolve_language), rebuilds the tree with the right wrap/lang
+                // (dark is applied at highlight/fallback time), and resets
+                // vs->tree synchronously so a Loading paint is a no-op against
+                // the stale tree.
+                begin_async_recolor(vs);
+            }
         }
         return LISTPLUGIN_OK;
     }
@@ -1497,9 +1579,8 @@ int __stdcall ListSearchTextW(HWND ListWin, wchar_t* SearchString, int SearchPar
 
 void __stdcall ListSetDefaultParams(ListDefaultParamStruct* dps) {
     WLX_TRACE(L"ListSetDefaultParams dps=%p size=%d", dps, dps ? dps->size : -1);
-    if (dps && dps->size >= sizeof(ListDefaultParamStruct)) {
-        g_default_ini_path = dps->DefaultIniName;
-    }
+    // DefaultIniName is deliberately unused: this plugin reads its own TOML
+    // config next to the DLL (ensure_theme), never TC's ini.
 }
 
 } // extern "C"

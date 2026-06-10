@@ -25,6 +25,15 @@ struct LayoutDocument {
     // layout is already built is left untouched.
     std::function<void(LayoutBlock&, int)> materialize_block;
 
+    // Indices (ascending) of blockquote border-container blocks. Containers are
+    // emitted BEFORE their children with a rect spanning the whole quote, so
+    // block TOPS stay ascending but BOTTOMS are non-monotonic at exactly these
+    // blocks. The renderer's lower_bound visibility seek assumes non-decreasing
+    // bottoms and can land past a still-visible container, so it paints these
+    // in a dedicated pass. Indices stay valid under materialize-time rect
+    // shifts (blocks are never inserted/removed). Empty for colorizer docs.
+    std::vector<int> border_containers;
+
     // Jump-to-line / gutter support.
     // line_tops[n-1] = document-space Y (in DIPs) of the top of logical line n.
     // size() == total logical-line count. Filled by build_line_index().

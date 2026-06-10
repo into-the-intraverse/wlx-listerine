@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace wlx::core::grammar { class GrammarRegistry; }
@@ -108,6 +109,22 @@ private:
     mutable theme::HelixTheme light_theme_;
     mutable bool dark_loaded_ = false;
     mutable bool light_loaded_ = false;
+
+    // Capture-style memo for QueryHighlighter: rebuilding the table costs a
+    // theme resolve (with string allocs) per capture, which adds up on
+    // per-scroll viewport rehighlights. Keyed per language and mode,
+    // revalidated against the query pointer (eviction may recompile a query;
+    // a language always recompiles from the same .scm, so an address reuse
+    // can't yield a stale table). Mutable + serialized under the CoreRegistry
+    // mutex, like the theme slots above.
+    struct CaptureStyleMemo {
+        const TSQuery* query = nullptr;
+        std::vector<theme::ResolvedStyle> styles;
+    };
+    mutable std::unordered_map<std::string, CaptureStyleMemo> style_memo_[2];  // [dark]
+
+    const std::vector<theme::ResolvedStyle>& capture_styles_for(
+        const std::string& language, const TSQuery* query, bool dark_mode) const;
 };
 
 }  // namespace wlx::core::colorizer

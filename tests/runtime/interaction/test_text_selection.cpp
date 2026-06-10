@@ -201,6 +201,27 @@ TEST_CASE("extract_selected_text - cross block") {
     CHECK(text.find(L"\r\n") != std::wstring::npos);
 }
 
+TEST_CASE("extract_selected_text - selection ending at offset 0 of a list item omits its bullet") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    auto doc = parse("Intro\n\n1. first\n2. second");
+    auto layout = do_layout(factory.Get(), doc);
+
+    int para_idx = -1, item_idx = -1;
+    for (int i = 0; i < static_cast<int>(layout.blocks.size()); i++) {
+        if (para_idx < 0 && layout.blocks[i].type == BlockType::Paragraph) para_idx = i;
+        if (layout.blocks[i].type == BlockType::ListItem) { item_idx = i; break; }
+    }
+    REQUIRE(para_idx >= 0);
+    REQUIRE(item_idx > para_idx);
+
+    TextPosition start{para_idx, 0};
+    TextPosition end{item_idx, 0};
+    auto text = extract_selected_text(layout, start, end);
+    // The list item contributes nothing — its bullet ("1. ") must not appear.
+    CHECK(text == L"Intro\r\n");
+}
+
 TEST_CASE("extract_selected_text - invalid positions") {
     LayoutDocument empty_layout;
     TextPosition invalid{};
@@ -241,6 +262,13 @@ TEST_CASE("find_word_boundaries - on whitespace") {
     auto [start, end] = find_word_boundaries(text, 5);
     CHECK(start == 5);
     CHECK(end == 6);
+}
+
+TEST_CASE("find_word_boundaries - space and tab form one whitespace run") {
+    std::wstring text = L"a \tb";
+    auto [start, end] = find_word_boundaries(text, 1);  // on the space
+    CHECK(start == 1);
+    CHECK(end == 3);  // " \t"
 }
 
 TEST_CASE("find_word_boundaries - end of text") {

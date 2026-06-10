@@ -179,9 +179,11 @@ TEST_CASE("wlx_core_list_languages returns a non-empty list including cpp"
     REQUIRE(core != nullptr);
 
     WlxLanguageList list{};
+    list._reserved = 0xDEADBEEFu;  // must be written back to zero (abi.h contract)
     REQUIRE(wlx_core_list_languages(core, &list) == 0);
     REQUIRE(list.count > 0);
     REQUIRE(list.ids != nullptr);
+    CHECK(list._reserved == 0);
 
     bool saw_cpp = false;
     for (uint32_t i = 0; i < list.count; i++) {

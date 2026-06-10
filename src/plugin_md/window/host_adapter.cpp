@@ -141,7 +141,7 @@ struct ParseResultMd {
     std::shared_ptr<wlx::runtime::host::ViewLiveToken> live;  // same control block as the spawning view
     bool failed = false;
     wlx::runtime::io::FileIdentity identity;   // adopt recomputes ParseCacheKey + store_parse
-    std::string raw_utf8;                      // moved out of FileContent; adopt counts source lines
+    int source_line_count = 0;                 // counted in the worker (source '\n' + 1)
     std::shared_ptr<Document> document;
 };
 
@@ -235,6 +235,16 @@ static void do_layout(ViewState* vs) {
         return;
     }
 
+    // Lay out at the CANONICAL bucket width, not the exact viewport width: the
+    // key quantizes to the bucket, so the cached content must too — an exact-
+    // width layout would be served to every other width in the same bucket
+    // (persistent right-edge clip/blank, since entries outlive the resize).
+    // bucket_width FLOORS, so the layout is never wider than the viewport;
+    // the cost is a blank right strip of < 50 DIPs within a bucket (never a
+    // clip). Clamped to >= 1 (bucket 0 covers degenerate viewports < 50),
+    // matching the no-renderer fallback above.
+    const float layout_width = std::max(1.0f, static_cast<float>(lk.viewport_width_bucket));
+
     LayoutEngine engine(dwrite_factory(), g_theme, vs->dark_mode, g_colorizer_handle);
 
     auto gutter_for = [&](int lines) -> float {
@@ -251,7 +261,7 @@ static void do_layout(ViewState* vs) {
     int est_lines = vs->source_line_count > 0 ? vs->source_line_count : 1;
     float gutter_w = gutter_for(est_lines);
     auto layout = std::make_shared<LayoutDocument>(
-        engine.layout(*vs->document, viewport_width, vs->wrap_text, gutter_w, lazy));
+        engine.layout(*vs->document, layout_width, vs->wrap_text, gutter_w, lazy));
     if (auto ctx = engine.take_md_ctx())   // lazy only; keeps recipe-pointed Document alive
         ctx->document = vs->document;
     wlx::runtime::layout::build_line_index(*layout);
@@ -261,7 +271,7 @@ static void do_layout(ViewState* vs) {
         if (std::to_wstring(real).size() != std::to_wstring(std::max(1, est_lines)).size()) {
             gutter_w = gutter_for(real);
             layout = std::make_shared<LayoutDocument>(
-                engine.layout(*vs->document, viewport_width, vs->wrap_text, gutter_w, lazy));
+                engine.layout(*vs->document, layout_width, vs->wrap_text, gutter_w, lazy));
             if (auto ctx = engine.take_md_ctx())   // gutter-resize pass is lazy too -> required
                 ctx->document = vs->document;
             wlx::runtime::layout::build_line_index(*layout);
@@ -292,6 +302,9 @@ static void materialize_viewport(ViewState* vs) {
         update_scrollbar(vs);                     // total_height changed -> max_scroll_y, clamp
 }
 
+static constexpr UINT_PTR TIMER_AUTOSCROLL = 1;
+static constexpr UINT_PTR TIMER_COPY_FEEDBACK = 2;
+
 // The SINGLE load funnel (Lever 2). Runs on the UI thread. "Non-blocking" here
 // means no md4c PARSE on the UI thread — a cheap stat for the parse-cache fast
 // path still happens synchronously. On a cache hit we adopt inline; on a miss we
@@ -301,7 +314,10 @@ static void materialize_viewport(ViewState* vs) {
 // MUST enter here, so the generation bumps (superseding stale workers) and the
 // per-load state reset always happen. Do not parse/relayout a new file elsewhere.
 // It always arranges a repaint (loading frame on a miss, content on a hit).
-static void begin_async_load(ViewState* vs, const wchar_t* path) {
+// `path` is taken BY VALUE on purpose: reload paths pass vs->file_path.c_str(),
+// and the first reset below reassigns vs->file_path — a pointer parameter would
+// dangle through that alias.
+static void begin_async_load(ViewState* vs, std::wstring path) {
     // Bump the generation: supersede any in-flight worker for this view, and stamp
     // the live token so a running worker self-cancels at its next gate.
     vs->current_gen = ++wlx::runtime::host::g_load_gen;
@@ -312,10 +328,14 @@ static void begin_async_load(ViewState* vs, const wchar_t* path) {
     // search_matches_ still holds SearchMatch objects whose block_index values
     // point into the previous file's layout; clear them so a repaint before the
     // next F7 doesn't walk them against the new layout and draw spurious rects.
-    vs->file_path = path;
+    vs->file_path = std::move(path);
     vs->scroll_y = 0;
     vs->sel_anchor = TextPosition{};
     vs->sel_active = TextPosition{};
+    if (vs->selecting) {   // load started mid-drag (F2): end the drag cleanly
+        ReleaseCapture();
+        KillTimer(vs->hwnd, TIMER_AUTOSCROLL);
+    }
     vs->selecting = false;
     vs->hovered_span = -1;
     vs->hovered_code_block = -1;
@@ -330,7 +350,7 @@ static void begin_async_load(ViewState* vs, const wchar_t* path) {
 
     // Parse-cache fast path: cheap stat (NOT a full read) -> ParseCacheKey ->
     // lookup. A hit means an instant revisit — adopt synchronously, no worker.
-    if (auto id = g_file_service.identity(path)) {
+    if (auto id = g_file_service.identity(vs->file_path.c_str())) {
         ParseCacheKey pk;
         pk.path = id->path;
         pk.size = id->size;
@@ -358,7 +378,7 @@ static void begin_async_load(ViewState* vs, const wchar_t* path) {
     // but the job: no vs, no this, no COM, no g_cache, no g_views. FileService and
     // MarkdownParser are worker-local + pure.
     auto job = std::make_unique<wlx::runtime::host::ParseJob>();
-    job->path = path;
+    job->path = vs->file_path;
     job->generation = vs->current_gen;
     job->live = vs->live;
     job->hwnd = vs->hwnd;
@@ -375,7 +395,8 @@ static void begin_async_load(ViewState* vs, const wchar_t* path) {
             r->identity = content->identity;
             r->document = std::make_shared<Document>(
                 parser.parse(content->raw_utf8.c_str(), content->raw_utf8.size()));
-            r->raw_utf8 = std::move(content->raw_utf8);
+            r->source_line_count = static_cast<int>(std::count(
+                content->raw_utf8.begin(), content->raw_utf8.end(), '\n')) + 1;
             return r;
         });
     // Worker spawned: paint the loading frame now (the fast path above invalidated
@@ -402,9 +423,6 @@ static void handle_scroll(ViewState* vs, float delta) {
     wlx::runtime::host::handle_scroll(*vs, delta);
 }
 
-static constexpr UINT_PTR TIMER_AUTOSCROLL = 1;
-static constexpr UINT_PTR TIMER_COPY_FEEDBACK = 2;
-
 using wlx::runtime::host::block_text_length;
 using wlx::runtime::host::hit_test_position;
 
@@ -412,11 +430,9 @@ using wlx::runtime::host::copy_to_clipboard;
 
 static bool is_in_copy_button(const LayoutBlock& block, float x, float y) {
     if (block.type != BlockType::CodeFence) return false;
-    float btn_size = 24.0f;
-    float pad = 6.0f;
-    float bx = block.rect.right - btn_size - pad;
-    float by = block.rect.top + pad;
-    return x >= bx && x <= bx + btn_size && y >= by && y <= by + btn_size;
+    // Geometry shared with RenderEngine::paint_copy_button (copy_button_rect).
+    D2D1_RECT_F r = copy_button_rect(block);
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
 }
 
 static void clear_selection(ViewState* vs) {
@@ -480,6 +496,8 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (res->failed) {
             v->document.reset();
             v->layout.reset();
+            v->interaction.reset();   // references the layout just released above
+            v->parse_key = {};        // don't let the previous file's key seed a lookup
             update_scrollbar(v);
             InvalidateRect(hwnd, nullptr, FALSE);
             return 0;
@@ -491,9 +509,7 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         pk.parser_version = MarkdownParser::parser_version();
         v->parse_key = pk;
         g_cache.store_parse(pk, res->document);        // cache touched ONLY on the UI thread
-        v->source_line_count =
-            static_cast<int>(std::count(res->raw_utf8.begin(),
-                                        res->raw_utf8.end(), '\n')) + 1;
+        v->source_line_count = res->source_line_count;
         v->document = res->document;
         do_layout(v);                                  // Lever 1 lazy layout
         InvalidateRect(hwnd, nullptr, FALSE);
@@ -519,13 +535,19 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             // Loading frame (async parse in flight): no layout yet. Paint a minimal
             // themed clear so light mode doesn't flash raw black before the first
             // result lands. Mirrors RenderEngine::paint's BeginDraw/Clear/EndDraw.
-            if (vs->renderer->needs_recreate())
+            if (vs->renderer->needs_recreate() || !vs->renderer->render_target())
                 vs->renderer->create_device_resources(hwnd);
             if (auto* rt = vs->renderer->render_target()) {
                 rt->BeginDraw();
                 rt->Clear(ThemeService::to_d2d_color(
                     g_theme.palette(vs->dark_mode).background));
-                rt->EndDraw();
+                // Device loss surfaces in EndDraw. needs_recreate_ is only set by
+                // RenderEngine::paint's own EndDraw path, so handle it here: drop
+                // the target (null target re-creates above) and repaint.
+                if (rt->EndDraw() == D2DERR_RECREATE_TARGET) {
+                    vs->renderer->discard_device_resources();
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                }
             }
         }
         EndPaint(hwnd, &ps);
@@ -544,7 +566,11 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
 
-    case WM_DPICHANGED: {
+    // The view is a WS_CHILD: per-monitor DPI changes arrive as
+    // WM_DPICHANGED_AFTERPARENT (carries no params) — WM_DPICHANGED only goes
+    // to top-level windows. Keep both cases; the body uses neither wp nor lp.
+    case WM_DPICHANGED:
+    case WM_DPICHANGED_AFTERPARENT: {
         if (vs && vs->renderer) {
             vs->renderer->discard_device_resources();
             vs->renderer->create_device_resources(hwnd);
@@ -592,6 +618,13 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
     case WM_MOUSEMOVE: {
         if (!vs) break;
+        // Re-arm leave tracking so hover state clears on WM_MOUSELEAVE below
+        // (re-arming while already armed is a no-op).
+        TRACKMOUSEEVENT tme = {};
+        tme.cbSize = sizeof(tme);
+        tme.dwFlags = TME_LEAVE;
+        tme.hwndTrack = hwnd;
+        TrackMouseEvent(&tme);
         float px = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(GET_X_LPARAM(lp)))
                                 : static_cast<float>(GET_X_LPARAM(lp));
         float py = vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(GET_Y_LPARAM(lp)))
@@ -623,6 +656,7 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             // Code block copy button hover
             int new_code_hover = -1;
             for (int i = 0; i < static_cast<int>(vs->layout->blocks.size()); i++) {
+                if (vs->layout->blocks[i].rect.top > doc_y) break;  // blocks are Y-sorted
                 if (is_in_copy_button(vs->layout->blocks[i], doc_x, doc_y)) {
                     new_code_hover = i;
                     break;
@@ -640,6 +674,7 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             else {
                 bool over_text = false;
                 for (auto& block : vs->layout->blocks) {
+                    if (block.rect.top > doc_y) break;              // blocks are Y-sorted
                     if (block.text_runs.empty()) continue;
                     if (doc_y >= block.rect.top && doc_y <= block.rect.bottom &&
                         doc_x >= block.rect.left && doc_x <= block.rect.right) {
@@ -649,6 +684,18 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 }
                 SetCursor(LoadCursorW(nullptr, over_text ? IDC_IBEAM : IDC_ARROW));
             }
+        }
+        return 0;
+    }
+
+    case WM_MOUSELEAVE: {
+        // Cursor left the window: WM_MOUSEMOVE no longer fires, so clear hover
+        // state here (the copy button would otherwise stay lit).
+        if (!vs) break;
+        if (vs->hovered_span != -1 || vs->hovered_code_block != -1) {
+            vs->hovered_span = -1;
+            vs->hovered_code_block = -1;
+            InvalidateRect(hwnd, nullptr, FALSE);
         }
         return 0;
     }
@@ -690,11 +737,16 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
 
     case WM_LBUTTONUP: {
+        // Drag teardown runs BEFORE the readiness guard: a load can start
+        // mid-drag (F2 reload flips state to Loading), and bailing first would
+        // leave mouse capture held and the autoscroll timer armed.
+        bool was_dragging = vs && vs->selecting;
+        if (vs) {
+            vs->selecting = false;
+            ReleaseCapture();
+            KillTimer(hwnd, TIMER_AUTOSCROLL);
+        }
         if (!vs || vs->state != LoadState::Ready || !vs->layout) break;
-        bool was_dragging = vs->selecting;
-        vs->selecting = false;
-        ReleaseCapture();
-        KillTimer(hwnd, TIMER_AUTOSCROLL);
 
         float px = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(GET_X_LPARAM(lp)))
                                 : static_cast<float>(GET_X_LPARAM(lp));
@@ -706,6 +758,7 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         // Code block copy button takes priority
         for (int i = 0; i < static_cast<int>(vs->layout->blocks.size()); i++) {
             auto& block = vs->layout->blocks[i];
+            if (block.rect.top > doc_y) break;                      // blocks are Y-sorted
             if (is_in_copy_button(block, doc_x, doc_y)) {
                 copy_code_block_at_index(vs, i);
                 clear_selection(vs);
@@ -735,7 +788,10 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
 
     case WM_LBUTTONDBLCLK: {
-        if (!vs || !vs->layout) break;
+        // Same readiness guard as LBUTTONDOWN/UP: during an async load the old
+        // layout is still attached, and a selection built against it would
+        // survive adoption as a phantom selection on the new document.
+        if (!vs || vs->state != LoadState::Ready || !vs->layout) break;
         float px = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(GET_X_LPARAM(lp)))
                                 : static_cast<float>(GET_X_LPARAM(lp));
         float py = vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(GET_Y_LPARAM(lp)))
@@ -760,8 +816,21 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
 
+    case WM_CAPTURECHANGED: {
+        // Capture was taken away (WM_CANCELMODE, another SetCapture): end the
+        // drag so `selecting` and the autoscroll timer can't outlive it. No-op
+        // when we released capture ourselves (selecting is already false).
+        if (vs && vs->selecting) {
+            vs->selecting = false;
+            KillTimer(hwnd, TIMER_AUTOSCROLL);
+        }
+        return 0;
+    }
+
     case WM_CONTEXTMENU: {
-        if (!vs || !vs->layout) return 0;
+        // Same readiness guard as the mouse handlers: menu actions (select all,
+        // copy, link hit-tests) must not run against the old layout mid-load.
+        if (!vs || vs->state != LoadState::Ready || !vs->layout) return 0;
 
         // Commit any in-progress drag-select.
         if (vs->selecting) {
@@ -839,7 +908,8 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             break;
 
         case MenuResult::EditConfig:
-            wlx::runtime::host::open_external_url(ctx.config_path);
+            // Trusted path: plugin-computed module-dir config, never doc content.
+            wlx::runtime::host::open_config_file(ctx.config_path);
             break;
 
         case MenuResult::SetLanguage:
@@ -869,6 +939,10 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 if (pos.valid()) vs->sel_active = pos;
             }
             InvalidateRect(hwnd, nullptr, FALSE);
+        } else if (wp == TIMER_AUTOSCROLL) {
+            // Orphaned: the drag ended without WM_LBUTTONUP teardown (capture
+            // lost, load started mid-drag). Stop it instead of firing forever.
+            KillTimer(hwnd, TIMER_AUTOSCROLL);
         } else if (wp == TIMER_COPY_FEEDBACK && vs) {
             KillTimer(hwnd, TIMER_COPY_FEEDBACK);
             vs->copied_code_block = -1;
@@ -910,9 +984,11 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             wlx::runtime::host::copy_selection(*vs, hwnd);
             handled = true;
         }
-        // Ctrl+A — select all
+        // Ctrl+A — select all (no-op mid-load: it would build a selection
+        // against the old layout that survives adoption as a phantom).
         else if (wp == 'A' && (GetKeyState(VK_CONTROL) & 0x8000)) {
-            if (wlx::runtime::host::select_all(*vs))
+            if (vs->state == LoadState::Ready &&
+                wlx::runtime::host::select_all(*vs))
                 InvalidateRect(hwnd, nullptr, FALSE);
             handled = true;
         }
@@ -982,8 +1058,14 @@ static LRESULT CALLBACK ViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         break;
 
     case WM_SETCURSOR:
-        if (LOWORD(lp) == HTCLIENT)
+        if (LOWORD(lp) == HTCLIENT) {
+            // WM_MOUSEMOVE only sets a cursor when a layout exists; with none
+            // (loading/failed) set one here rather than returning TRUE with
+            // whatever cursor happened to be in effect.
+            if (!vs || !vs->layout)
+                SetCursor(LoadCursorW(nullptr, IDC_ARROW));
             return TRUE;
+        }
         break;
 
     case WM_ERASEBKGND:
@@ -1027,9 +1109,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {
         break;
 
     case DLL_PROCESS_DETACH:
-        // Signal in-flight parse workers to bail (they gate on this before any
-        // PostMessage / Result free) BEFORE any other teardown. We never join —
-        // the worker holds no ViewState/COM ref, so it can't touch unmapped state.
+        // Signal in-flight parse workers to bail early (best-effort; they gate
+        // on this before PostMessage). Detach safety does NOT rest on it:
+        // pin_plugin_module_once keeps our code mapped on the FreeLibrary path,
+        // and on process exit the OS terminates worker threads before detach
+        // runs. We never join — the worker holds no ViewState/COM ref.
         wlx::runtime::host::g_shutting_down.store(true, std::memory_order_release);
         // DLL_PROCESS_DETACH runs under the loader lock.  COM Release() calls
         // here can deadlock (terminated threads hold locks, or DWrite shared
@@ -1070,6 +1154,11 @@ extern "C" {
 HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
     WLX_TRACE(L"ListLoadW parent=%p file=%s flags=0x%X",
               ParentWin, FileToLoad ? FileToLoad : L"(null)", ShowFlags);
+    // Refuse null/empty paths — begin_async_load takes std::wstring, and
+    // constructing one from null is UB. Returning null makes TC fall back to
+    // its default lister.
+    if (!FileToLoad || !*FileToLoad)
+        return nullptr;
     ensure_factories();
     if (!d2d_factory() || !dwrite_factory())
         return nullptr;
@@ -1138,6 +1227,10 @@ HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
 int __stdcall ListLoadNextW(HWND ParentWin, HWND PluginWin, wchar_t* FileToLoad, int ShowFlags) {
     WLX_TRACE(L"ListLoadNextW parent=%p plugin=%p file=%s flags=0x%X",
               ParentWin, PluginWin, FileToLoad ? FileToLoad : L"(null)", ShowFlags);
+    // Same null/empty gate as ListLoadW; LISTPLUGIN_ERROR makes TC close this
+    // instance and pick another handler.
+    if (!FileToLoad || !*FileToLoad)
+        return LISTPLUGIN_ERROR;
     auto it = g_views.find(PluginWin);
     if (it == g_views.end()) return LISTPLUGIN_ERROR;
 
@@ -1167,7 +1260,19 @@ void __stdcall ListCloseWindow(HWND ListWin) {
         g_views.erase(it);                 // erase BEFORE delete: adopt's g_views.find
                                            // can never see a being-deleted entry
         vs->live->closed.store(true, std::memory_order_release);  // in-flight worker self-cancels
-        ++wlx::runtime::host::g_load_gen;  // supersede any worker still mid-parse
+        // Workers gate on live->generation (never the global), so stamp the
+        // bumped value into the token: a worker that hasn't started its parse
+        // yet sees a stale generation and skips the work entirely.
+        vs->live->generation.store(++wlx::runtime::host::g_load_gen,
+                                   std::memory_order_release);
+        // A result posted before `closed` was set above would be discarded by
+        // DestroyWindow WITHOUT freeing its lParam payload — drain and free it
+        // now. Residual race: a worker that passed its closed-gate just before
+        // the store can still post after this drain; that one result leaks
+        // (plain heap, no COM) — accepted.
+        MSG m;
+        while (PeekMessageW(&m, ListWin, wm_md_parse_done(), wm_md_parse_done(), PM_REMOVE))
+            delete reinterpret_cast<ParseResultMd*>(m.lParam);
         SetWindowLongPtrW(ListWin, GWLP_USERDATA, 0);  // clear back-pointer before delete
         delete vs;
     }
@@ -1192,25 +1297,13 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
     auto* vs = it->second;
 
     switch (Command) {
-    case lc_copy: {
-        if (!vs->layout || !vs->sel_anchor.valid() || vs->sel_anchor == vs->sel_active)
-            return LISTPLUGIN_ERROR;
-        auto lo = std::min(vs->sel_anchor, vs->sel_active);
-        auto hi = std::max(vs->sel_anchor, vs->sel_active);
-        auto text = extract_selected_text(*vs->layout, lo, hi);
-        return copy_to_clipboard(vs->hwnd, text) ? LISTPLUGIN_OK : LISTPLUGIN_ERROR;
-    }
+    case lc_copy:
+        return copy_selection(*vs, vs->hwnd) ? LISTPLUGIN_OK : LISTPLUGIN_ERROR;
 
-    case lc_selectall: {
-        if (!vs->layout || vs->layout->blocks.empty())
-            return LISTPLUGIN_ERROR;
-        vs->sel_anchor = TextPosition{0, 0};
-        int last = static_cast<int>(vs->layout->blocks.size()) - 1;
-        vs->sel_active = TextPosition{last, block_text_length(vs->layout->blocks[last])};
-        vs->selecting = false;
+    case lc_selectall:
+        if (!select_all(*vs)) return LISTPLUGIN_ERROR;
         InvalidateRect(vs->hwnd, nullptr, FALSE);
         return LISTPLUGIN_OK;
-    }
 
     case lc_newparams: {
         bool new_dark = (Parameter & lcp_darkmode) != 0;

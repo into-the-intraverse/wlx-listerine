@@ -11,9 +11,13 @@ using namespace wlx::core::colorizer;
 using namespace wlx::core::theme;
 
 CoreRegistry& CoreRegistry::instance() {
-    static std::unique_ptr<CoreRegistry> p;
+    // Intentionally leaked (raw new, never deleted): a local static with a
+    // destructor would run as a CRT atexit handler at DLL_PROCESS_DETACH and
+    // tear down the GrammarCache, which ts_query_delete's and FreeLibrary's
+    // grammar DLLs under the loader lock — see dllmain.cpp.
+    static CoreRegistry* p = nullptr;
     static std::once_flag once;
-    std::call_once(once, [] { p.reset(new CoreRegistry()); });
+    std::call_once(once, [] { p = new CoreRegistry(); });
     return *p;
 }
 

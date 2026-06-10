@@ -25,6 +25,10 @@ concept Scrollable = requires(V& v) {
     v.renderer;
 };
 
+// SCROLLINFO fields are int-based; clamp the float layout heights before
+// casting (float -> int conversion of a value > INT_MAX is UB).
+inline constexpr float kMaxScrollUnits = 2.0e9f;  // < INT_MAX
+
 template <Scrollable V>
 void update_scrollbar(V& v) {
     if (!v.layout || !v.hwnd) return;
@@ -38,9 +42,9 @@ void update_scrollbar(V& v) {
     si.cbSize = sizeof(si);
     si.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
     si.nMin = 0;
-    si.nMax = static_cast<int>(v.layout->total_height);
+    si.nMax = static_cast<int>(std::min(v.layout->total_height, kMaxScrollUnits));
     si.nPage = static_cast<UINT>(viewport_h);
-    si.nPos = static_cast<int>(v.scroll_y);
+    si.nPos = static_cast<int>(std::min(v.scroll_y, kMaxScrollUnits));
     SetScrollInfo(v.hwnd, SB_VERT, &si, TRUE);
 }
 
@@ -55,7 +59,7 @@ void handle_scroll(V& v, float delta) {
         SCROLLINFO si = {};
         si.cbSize = sizeof(si);
         si.fMask = SIF_POS;
-        si.nPos = static_cast<int>(v.scroll_y);
+        si.nPos = static_cast<int>(std::min(v.scroll_y, kMaxScrollUnits));
         SetScrollInfo(v.hwnd, SB_VERT, &si, TRUE);
         InvalidateRect(v.hwnd, nullptr, FALSE);
     }

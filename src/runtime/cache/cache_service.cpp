@@ -2,8 +2,6 @@
 
 #include "runtime/layout/layout_document.h"
 
-#include <algorithm>
-
 namespace wlx::runtime::cache {
 
 
@@ -11,36 +9,19 @@ using parser::Document;
 using layout::LayoutDocument;
 
 void CacheService::store_parse(const ParseCacheKey& key, std::shared_ptr<Document> doc) {
-    parse_cache_[key] = std::move(doc);
+    parse_cache_.store(key, std::move(doc));
 }
 
 std::shared_ptr<Document> CacheService::lookup_parse(const ParseCacheKey& key) {
-    auto it = parse_cache_.find(key);
-    if (it != parse_cache_.end())
-        return it->second;
-    return nullptr;
+    return parse_cache_.lookup(key);
 }
 
 void CacheService::store_layout(const LayoutCacheKey& key, std::shared_ptr<LayoutDocument> layout) {
-    layout_cache_[key] = std::move(layout);
+    layout_cache_.store(key, std::move(layout));
 }
 
 std::shared_ptr<LayoutDocument> CacheService::lookup_layout(const LayoutCacheKey& key) {
-    auto it = layout_cache_.find(key);
-    if (it != layout_cache_.end())
-        return it->second;
-    return nullptr;
-}
-
-void CacheService::invalidate(const std::wstring& path) {
-    for (auto it = parse_cache_.begin(); it != parse_cache_.end();) {
-        if (it->first.path == path) it = parse_cache_.erase(it);
-        else ++it;
-    }
-    for (auto it = layout_cache_.begin(); it != layout_cache_.end();) {
-        if (it->first.parse_key.path == path) it = layout_cache_.erase(it);
-        else ++it;
-    }
+    return layout_cache_.lookup(key);
 }
 
 void CacheService::clear() {
@@ -49,7 +30,13 @@ void CacheService::clear() {
 }
 
 int CacheService::bucket_width(int viewport_width) {
-    return ((viewport_width + 24) / 50) * 50;
+    // FLOOR to the 50-DIP bucket below (never round up): do_layout lays out at
+    // the bucket width, so the cached layout must never be WIDER than the
+    // viewport — a wider layout clips wrapped text at the right edge, while
+    // floor's error is only a blank right strip of < 50 DIPs. Degenerate
+    // viewports < 50 floor to bucket 0; do_layout clamps its layout width
+    // to >= 1.
+    return (viewport_width / 50) * 50;
 }
 
 }  // namespace wlx::runtime::cache

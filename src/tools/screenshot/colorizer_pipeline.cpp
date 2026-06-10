@@ -7,7 +7,6 @@
 #include <toml++/toml.hpp>
 
 #include <windows.h>
-#include <psapi.h>
 #include <d2d1.h>
 #include <dwrite.h>
 #include <wincodec.h>
@@ -18,21 +17,26 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cwctype>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
 
+#include "runtime/host/module_path.h"
 #include "runtime/io/file_service.h"
 #include "runtime/render/render_engine.h"
 #include "runtime/theme/theme_service.h"
 #include "runtime/util/string_util.h"
 #include "core_dll/colorizer/colorizer.h"
+#include "core_dll/registry/core_config.h"
 #include "plugin_colorizer/layout/colorizer_layout.h"
 #include "wlx_core/abi.h"
+#include "plugin_colorizer/language/path_to_language.h"
 #include "plugin_colorizer/language/routing.h"
 #include "tools/screenshot/token_json_writer.h"
+#include "tools/screenshot/working_set_sample.h"
 
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
@@ -46,6 +50,10 @@ using wlx::plugin_colorizer::layout::CppGrammar;
 using wlx::plugin_colorizer::layout::layout_source;
 using wlx::plugin_colorizer::layout::apply_spans_to_range;
 using wlx::plugin_colorizer::language::apply_cpp_variant;
+using wlx::plugin_colorizer::language::ext_to_language;
+using wlx::plugin_colorizer::language::filename_to_language;
+using wlx::core::registry::CoreConfig;
+using wlx::runtime::host::get_module_dir;
 using wlx::runtime::io::FileService;
 using wlx::runtime::render::RenderEngine;
 using wlx::runtime::theme::ThemeService;
@@ -54,49 +62,22 @@ namespace wlx::tools::screenshot {
 
 namespace {
 
-// Map common file extensions to tree-sitter grammar IDs. Extensions not in
-// the table fall back to the extension string itself (covers grammars whose
-// id == ext like "lua"). The unreal-cpp swap is handled later via
-// apply_cpp_variant — this map only covers base-language IDs.
-//
-// Extension → tree-sitter grammar id. Entries where grammar_id == extension
-// (e.g. lua, cmake, toml, json, yaml, html, css, php, java, go, rust...)
-// do not need a row here — the fallback at the bottom returns the extension
-// string itself. Only entries where the grammar id differs from the
-// extension (e.g. py → python, js → javascript, sh → bash) belong here.
+// Resolve the grammar id through the plugin's own routing (extension table →
+// filename special-cases in path_to_language.h) so the tool validates the
+// path users actually see (.c → cpp grammar, Dockerfile, CMakeLists.txt, …).
+// --lang wins; paths neither table knows fall back to the lowercased
+// extension as a grammar id (covers grammars whose id == ext that the
+// table omits, e.g. sample.git_rebase). The unreal-cpp swap is handled later
+// via apply_cpp_variant — routing only yields base-language IDs.
 std::string infer_language(const std::wstring& path,
                            const std::wstring& override_lang) {
     if (!override_lang.empty()) return wlx::runtime::util::wstring_to_utf8(override_lang);
-    fs::path p(path);
-    std::wstring ext = p.extension().wstring();
+    std::string lang = ext_to_language(path);
+    if (lang.empty()) lang = filename_to_language(path);
+    if (!lang.empty()) return lang;
+    std::wstring ext = fs::path(path).extension().wstring();
     if (!ext.empty() && ext.front() == L'.') ext.erase(0, 1);
-    static const std::pair<std::wstring, std::string> kMap[] = {
-        {L"c",   "c"},   {L"cpp", "cpp"},  {L"cc",  "cpp"},     {L"cxx", "cpp"},
-        {L"h",   "cpp"}, {L"hpp", "cpp"},  {L"hxx", "cpp"},
-        {L"cs",  "c-sharp"},
-        {L"go",  "go"},
-        {L"py",  "python"}, {L"pyi", "python"},
-        {L"rs",  "rust"},
-        {L"js",  "javascript"}, {L"mjs", "javascript"}, {L"cjs", "javascript"}, {L"jsx", "javascript"},
-        {L"ts",  "typescript"}, {L"tsx", "typescript"}, {L"mts", "typescript"},
-        {L"json","json"}, {L"jsonc","json"},
-        {L"toml","toml"},
-        {L"yaml","yaml"}, {L"yml", "yaml"},
-        {L"sh",  "bash"}, {L"bash","bash"}, {L"zsh", "bash"},
-        {L"ps1", "powershell"}, {L"psm1","powershell"}, {L"psd1","powershell"},
-        {L"lua", "lua"},
-        {L"html","html"}, {L"htm", "html"},
-        {L"css", "css"},
-        {L"php", "php"},
-        {L"java","java"},
-        {L"vim", "vim"}, {L"vimrc","vim"},
-        {L"cmake","cmake"},
-        {L"dockerfile","dockerfile"},
-        {L"gitconfig","git-config"},
-        {L"gitignore","gitignore"},
-        {L"gitattributes","gitattributes"},
-    };
-    for (const auto& [k, v] : kMap) if (k == ext) return v;
+    for (auto& c : ext) c = static_cast<wchar_t>(std::towlower(c));
     return wlx::runtime::util::wstring_to_utf8(ext);  // fall back to the extension itself
 }
 
@@ -192,8 +173,13 @@ std::wstring resolve_config_path(const Options& opts) {
     return opts.config_path;
 }
 
-ColorizerDisplayConfig load_display_config(const std::wstring& path) {
+ColorizerDisplayConfig load_display_config(const std::wstring& path,
+                                           const ThemeService& theme) {
     ColorizerDisplayConfig d;  // defaults
+    // Mirror the plugin's do_layout: line height comes from the theme's
+    // spacing config, not ColorizerDisplayConfig's built-in default. The
+    // flat line_height key below can still override it.
+    d.line_height_factor = theme.spacing().line_height_factor;
     if (path.empty()) return d;
     std::string narrow_path = wlx::runtime::util::wstring_to_utf8(path);
     try {
@@ -226,31 +212,39 @@ ColorizerDisplayConfig load_display_config(const std::wstring& path) {
 
 // ---------- memory stats ----------
 
-size_t process_working_set() {
-    PROCESS_MEMORY_COUNTERS pmc = {};
-    pmc.cb = sizeof(pmc);
-    GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
-    return pmc.WorkingSetSize;
-}
-
-size_t process_peak_working_set() {
-    PROCESS_MEMORY_COUNTERS pmc = {};
-    pmc.cb = sizeof(pmc);
-    GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
-    return pmc.PeakWorkingSetSize;
-}
-
 // Print the memory footprint of opening this file: peak working set (the
 // process high-water mark, path-independent) and the working-set delta vs the
-// pre-work baseline. Shared by the cached-tree and eager bench blocks.
-void print_bench_memory(size_t source_bytes, size_t mem_before) {
-    double peak_mb = static_cast<double>(process_peak_working_set()) / (1024.0 * 1024.0);
+// pre-work baseline. Shared by the cached-tree and eager bench blocks. Takes a
+// pre-taken sample so callers can measure before any bench-only re-runs that
+// would inflate the numbers.
+void print_bench_memory(size_t source_bytes, size_t mem_before, WorkingSetSample ws) {
+    double peak_mb = static_cast<double>(ws.peak) / (1024.0 * 1024.0);
     double delta_mb = static_cast<double>(
-        static_cast<ptrdiff_t>(process_working_set()) -
+        static_cast<ptrdiff_t>(ws.current) -
         static_cast<ptrdiff_t>(mem_before)) / (1024.0 * 1024.0);
     std::fprintf(stderr, "  source size    %8zu bytes UTF-8\n", source_bytes);
     std::fprintf(stderr, "  peak workingset%8.1f MB\n", peak_mb);
     std::fprintf(stderr, "  process delta  %+8.1f MB  (working set vs baseline)\n", delta_mb);
+}
+
+// Shared PNG save epilogue for the cached-tree and eager render paths:
+// ensure the output directory exists and write the bitmap. Returns `out`
+// on success, empty on failure.
+std::wstring save_png(RenderEngine& renderer, IWICImagingFactory* wic,
+                      const std::wstring& out) {
+    std::error_code ec;
+    fs::create_directories(fs::path(out).parent_path(), ec);
+    if (ec) {
+        std::fprintf(stderr, "Cannot create output directory: %s\n",
+                     ec.message().c_str());
+        return {};
+    }
+    HRESULT hr = renderer.save_to_png(wic, out.c_str());
+    if (FAILED(hr)) {
+        std::fprintf(stderr, "Failed to save PNG: 0x%08lx\n", hr);
+        return {};
+    }
+    return out;
 }
 
 }  // namespace
@@ -258,7 +252,7 @@ void print_bench_memory(size_t source_bytes, size_t mem_before) {
 std::wstring run_colorizer_pipeline(const Options& opts) {
     // Baseline working set before any work, so --bench can report the delta
     // attributable to opening this file (factories + grammar + tree + layout).
-    size_t mem_before = opts.bench ? process_working_set() : 0;
+    size_t mem_before = opts.bench ? sample_working_set().current : 0;
 
     // ----- Factories -----
     ComPtr<ID2D1Factory> d2d_factory;
@@ -290,7 +284,16 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
     theme.load(resolve_config_path(opts));
 
     // ----- Colorizer -----
-    Colorizer colorizer(L"grammars", L"config/themes");
+    // Mirror CoreRegistry's setup: grammars/ and themes/ are resolved relative
+    // to the exe (POST_BUILD steps mirror them next to the binary), and the
+    // theme names come from wlx-listerine-core.toml in the same directory —
+    // so the eager path and the --cached-tree/core path resolve the same
+    // colors regardless of CWD.
+    const std::wstring exe_dir = get_module_dir(nullptr);
+    const CoreConfig core_cfg = CoreConfig::load(exe_dir);
+    Colorizer colorizer(exe_dir + L"grammars", exe_dir + L"themes",
+                        core_cfg.theme, core_cfg.theme_light,
+                        core_cfg.cap, core_cfg.ttl_minutes);
 
     // ----- Read source -----
     auto _t0 = std::chrono::steady_clock::now();
@@ -322,13 +325,27 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
     // ----- Build display config (used by both paint and dump-tokens paths) -----
     // Load TOML overrides first, then force cpp_grammar from --cpp-grammar
     // (the flag wins over any value the TOML might set).
-    ColorizerDisplayConfig display = load_display_config(opts.display_config);
+    ColorizerDisplayConfig display = load_display_config(opts.display_config, theme);
     display.cpp_grammar = variant;
 
     // ----- Colorize (eager whole-doc) -----
+    // Deferred in --cached-tree mode: that path parses + highlights via the
+    // core singleton and never reads this result, so an up-front whole-doc
+    // colorize would only contaminate the bench's parse/memory numbers and
+    // waste a full parse. (--dump-tokens needs it and wins over --cached-tree,
+    // matching the branch order below.) If the cached-tree path falls back,
+    // the eager layout section below runs the deferred colorize first.
     ColorizeTimings ctimings;
-    ColorizeResult colors = colorizer.colorize(content->raw_utf8, lang, opts.dark, &ctimings);
-    auto _tcolor = std::chrono::steady_clock::now();
+    ColorizeResult colors;
+    auto _tcolor0 = _tread;
+    auto _tcolor  = _tread;
+    bool colorized = false;
+    if (!opts.cached_tree || opts.dump_tokens) {
+        _tcolor0 = std::chrono::steady_clock::now();
+        colors = colorizer.colorize(content->raw_utf8, lang, opts.dark, &ctimings);
+        _tcolor = std::chrono::steady_clock::now();
+        colorized = true;
+    }
 
     // ----- --dump-tokens branch -----
     if (opts.dump_tokens) {
@@ -341,7 +358,10 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
         // TODO: when HelixTheme::name() lands, replace this literal.
         const std::string theme_name_str = opts.dark ? "default_dark" : "default_light";
         TokenJsonOptions json_opts;
-        json_opts.source_name = fs::path(opts.input_path).filename().string();
+        // wstring_to_utf8, not path::string(): the latter narrows through the
+        // ANSI codepage and corrupts non-ASCII filenames in the JSON header.
+        json_opts.source_name = wlx::runtime::util::wstring_to_utf8(
+            fs::path(opts.input_path).filename().wstring());
         json_opts.language    = lang;
         json_opts.theme_name  = theme_name_str;
         json_opts.config_hash = compute_config_hash(theme_name_str, opts.dark, display);
@@ -476,9 +496,9 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
                     std::fprintf(stderr, "Bitmap target failed: 0x%08lx\n", hr);
                     return {};
                 }
-                renderer_ct.paint(layout_ct, scroll_y_ct);
-                if (renderer_ct.needs_recreate()) {
-                    std::fprintf(stderr, "Render target lost during paint\n");
+                hr = renderer_ct.paint(layout_ct, scroll_y_ct);
+                if (FAILED(hr)) {
+                    std::fprintf(stderr, "Paint failed (EndDraw): 0x%08lx\n", hr);
                     return {};
                 }
                 auto _tpaint_ct = std::chrono::steady_clock::now();
@@ -523,25 +543,14 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
                     std::fprintf(stderr,
                         "  hot total        %8.2f ms  (read+parse+layout+highlight+paint)\n",
                         hot_ct);
-                    print_bench_memory(content->raw_utf8.size(), mem_before);
+                    print_bench_memory(content->raw_utf8.size(), mem_before,
+                                       sample_working_set());
                 }
 
                 // ----- Save (cached-tree path) -----
-                std::wstring out_ct = sibling_path(opts.input_path,
-                                                    opts.dark ? L"_dark.png" : L".png");
-                std::error_code ec_ct;
-                fs::create_directories(fs::path(out_ct).parent_path(), ec_ct);
-                if (ec_ct) {
-                    std::fprintf(stderr, "Cannot create output directory: %s\n",
-                                 ec_ct.message().c_str());
-                    return {};
-                }
-                hr = renderer_ct.save_to_png(wic_factory.Get(), out_ct.c_str());
-                if (FAILED(hr)) {
-                    std::fprintf(stderr, "Failed to save PNG: 0x%08lx\n", hr);
-                    return {};
-                }
-                return out_ct;
+                return save_png(renderer_ct, wic_factory.Get(),
+                                sibling_path(opts.input_path,
+                                             opts.dark ? L"_dark.png" : L".png"));
                 // tree freed here via TreePtr destructor
             }
         }
@@ -552,6 +561,14 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
     }
 
     // ----- Layout (eager whole-doc) -----
+
+    // Reached in --cached-tree mode only via fallback (core unavailable, parse
+    // failure, or word_wrap on) — run the whole-doc colorize deferred above.
+    if (!colorized) {
+        _tcolor0 = std::chrono::steady_clock::now();
+        colors = colorizer.colorize(content->raw_utf8, lang, opts.dark, &ctimings);
+        _tcolor = std::chrono::steady_clock::now();
+    }
 
     LayoutTimings ltimings;
     auto layout = layout_source(dwrite_factory.Get(),
@@ -579,9 +596,9 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
         std::fprintf(stderr, "Bitmap target failed: 0x%08lx\n", hr);
         return {};
     }
-    renderer.paint(layout, scroll_y);
-    if (renderer.needs_recreate()) {
-        std::fprintf(stderr, "Render target lost during paint\n");
+    hr = renderer.paint(layout, scroll_y);
+    if (FAILED(hr)) {
+        std::fprintf(stderr, "Paint failed (EndDraw): 0x%08lx\n", hr);
         return {};
     }
     auto _tpaint = std::chrono::steady_clock::now();
@@ -592,6 +609,10 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
         };
         int lines = 1;
         for (char c : content->raw_utf8) if (c == '\n') ++lines;
+
+        // Sample memory BEFORE the warm re-run below: the bench-only second
+        // whole-doc colorize would otherwise inflate the peak/delta numbers.
+        WorkingSetSample ws = sample_working_set();
 
         // Warm colorize: the grammar DLL + compiled query are now cached
         // process-wide, so this re-run measures the steady-state cost every
@@ -604,7 +625,7 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
 
         std::fprintf(stderr, "Colorizer timing (%d lines, lang=%s):\n", lines, lang.c_str());
         std::fprintf(stderr, "  file read        %8.2f ms\n", ms(_t0, _tread));
-        std::fprintf(stderr, "  colorize (cold)  %8.2f ms\n", ms(_tread, _tcolor));
+        std::fprintf(stderr, "  colorize (cold)  %8.2f ms\n", ms(_tcolor0, _tcolor));
         std::fprintf(stderr, "    grammar load   %8.2f ms  (LoadLibrary, cold only)\n", ctimings.grammar_load_ms);
         std::fprintf(stderr, "    query compile  %8.2f ms  (ts_query_new, cold only)\n", ctimings.query_compile_ms);
         std::fprintf(stderr, "    parse          %8.2f ms  (tree-sitter)\n", ctimings.parse_ms);
@@ -620,23 +641,12 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
         std::fprintf(stderr, "  paint            %8.2f ms\n", ms(_tlayout, _tpaint));
         std::fprintf(stderr, "  hot total        %8.2f ms  (read+colorize+layout+paint)\n", ms(_t0, _tpaint));
         std::fprintf(stderr, "  per line         %8.3f ms\n", ms(_tcolor, _tlayout) / std::max(1, lines));
-        print_bench_memory(content->raw_utf8.size(), mem_before);
+        print_bench_memory(content->raw_utf8.size(), mem_before, ws);
     }
 
     // ----- Save -----
-    std::wstring out = sibling_path(opts.input_path, opts.dark ? L"_dark.png" : L".png");
-    std::error_code ec;
-    fs::create_directories(fs::path(out).parent_path(), ec);
-    if (ec) {
-        std::fprintf(stderr, "Cannot create output directory: %s\n", ec.message().c_str());
-        return {};
-    }
-    hr = renderer.save_to_png(wic_factory.Get(), out.c_str());
-    if (FAILED(hr)) {
-        std::fprintf(stderr, "Failed to save PNG: 0x%08lx\n", hr);
-        return {};
-    }
-    return out;
+    return save_png(renderer, wic_factory.Get(),
+                    sibling_path(opts.input_path, opts.dark ? L"_dark.png" : L".png"));
 }
 
 }  // namespace wlx::tools::screenshot

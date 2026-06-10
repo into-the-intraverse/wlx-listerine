@@ -25,7 +25,8 @@ struct TokenJsonOptions {
 //
 // Output keys appear in fixed order: source, language, theme, config_hash,
 // token_count, tokens. Each token has keys (line, col, len, color, mods) in
-// that order.
+// that order. Header strings are JSON-escaped (backslash, quote, and control
+// characters as \uXXXX).
 //
 // Tokens are sorted by (line, col, -len) and adjacent tokens with identical
 // (color, mods) collapse into one. Modifier names appear sorted alphabetically
@@ -58,6 +59,7 @@ private:
         const std::vector<ByteSite>& sites,
         std::string_view src);
     static void sort_and_collapse(std::vector<Token>& tokens);
+    static std::string escape_json(std::string_view s);
     static std::string mods_array(uint8_t modifiers);
     static std::string color_hex(uint32_t rgb);
 };
@@ -78,11 +80,18 @@ TokenJsonWriter::index_source(std::string_view src) {
         else if ((c & 0xE0) == 0xC0) step = 2;
         else if ((c & 0xF0) == 0xE0) step = 3;
         else if ((c & 0xF8) == 0xF0) step = 4;
-        for (size_t k = 1; k < step && i + k < src.size(); ++k)
+        // Clamp a truncated multibyte tail so the final pass still writes
+        // sites[src.size()] — otherwise it stays zero-initialized and token
+        // lengths ending there underflow.
+        step = std::min(step, src.size() - i);
+        for (size_t k = 1; k < step; ++k)
             sites[i + k] = { wch, line, col };
-        if (step == 4) wch += 2; else wch += 1;
+        // col advances in the same UTF-16 units as wchar_off, so token len
+        // (a wchar_off difference) composes with col in sort_and_collapse.
+        const uint32_t units = (step == 4) ? 2u : 1u;
+        wch += units;
         if (c == '\n') { ++line; col = 1; }
-        else           { ++col; }
+        else           { col += units; }
         i += step;
     }
     return sites;
@@ -138,6 +147,23 @@ inline void TokenJsonWriter::sort_and_collapse(std::vector<Token>& tokens) {
     tokens.swap(merged);
 }
 
+inline std::string TokenJsonWriter::escape_json(std::string_view s) {
+    std::string out;
+    out.reserve(s.size());
+    for (unsigned char c : s) {
+        if      (c == '"')  out += "\\\"";
+        else if (c == '\\') out += "\\\\";
+        else if (c < 0x20) {
+            char buf[8];
+            std::snprintf(buf, sizeof(buf), "\\u%04X", c);
+            out += buf;
+        } else {
+            out += static_cast<char>(c);
+        }
+    }
+    return out;
+}
+
 inline std::string TokenJsonWriter::mods_array(uint8_t modifiers) {
     std::vector<const char*> names;
     // The check order below is hand-tuned so the resulting names appear in
@@ -177,10 +203,10 @@ inline std::string TokenJsonWriter::write(
 
     std::ostringstream ss;
     ss << "{\n";
-    ss << "  \"source\": \""       << opts.source_name << "\",\n";
-    ss << "  \"language\": \""     << opts.language    << "\",\n";
-    ss << "  \"theme\": \""        << opts.theme_name  << "\",\n";
-    ss << "  \"config_hash\": \""  << opts.config_hash << "\",\n";
+    ss << "  \"source\": \""       << escape_json(opts.source_name) << "\",\n";
+    ss << "  \"language\": \""     << escape_json(opts.language)    << "\",\n";
+    ss << "  \"theme\": \""        << escape_json(opts.theme_name)  << "\",\n";
+    ss << "  \"config_hash\": \""  << escape_json(opts.config_hash) << "\",\n";
     ss << "  \"token_count\": "    << tokens.size()    << ",\n";
     if (tokens.empty()) {
         ss << "  \"tokens\": []\n";

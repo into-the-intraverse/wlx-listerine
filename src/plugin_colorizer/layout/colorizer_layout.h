@@ -38,8 +38,9 @@ struct LayoutTimings {
 // Convert source code lines + color spans into a LayoutDocument the RenderEngine can paint.
 //
 // NOTE: Color span offsets from ColorizeResult are UTF-8 byte offsets in the original source.
-// This implementation assumes ASCII-compatible source (byte offset == wchar offset for BMP chars).
-// Non-ASCII files will have slightly misaligned highlights but will still render correctly as text.
+// They are converted to per-line wchar offsets via a byte->wchar prefix table built from the
+// MultiByteToWideChar-decoded line (pure-ASCII lines take an identity fast path), then mapped
+// to tab-expanded offsets for the rendered text.
 //
 // When `out_line_byte_starts` is non-null it is filled with one entry per built
 // block: the UTF-8 byte offset in `raw_utf8` where that block's source line
@@ -115,8 +116,12 @@ ColoredDecision colored_interval_update(uint32_t vlo, uint32_t vhi,
 // re-color preserving URLs requires materialize to re-run — the host clears the
 // per-line layout when recoloring an already-materialized block (see host).
 //
-// The renderer applies color_ranges every paint, so callers only InvalidateRect
-// afterwards; no re-materialize is needed for an unmaterialized block.
+// The renderer re-applies color_ranges' foreground BRUSHES every paint, so for
+// colors callers only InvalidateRect afterwards; no re-materialize is needed
+// for an unmaterialized block. Font modifiers (bold/italic/underline/strike)
+// are different: they are baked into the IDWriteTextLayout when the block
+// materializes, so showing changed modifiers on an already-materialized block
+// needs the host's layout-clear on recolor (above) to force a re-materialize.
 void apply_spans_to_range(
     wlx::runtime::layout::LayoutDocument& doc,
     const std::string& raw_utf8,

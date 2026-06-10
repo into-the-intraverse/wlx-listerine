@@ -64,7 +64,7 @@ void md_materialize(MdMaterializeCtx& ctx, LayoutBlock& lb, int idx) {
         in.wrap_code = rcp.wrap_code;
         in.dark_mode = ctx.dark_mode;
         in.core = ctx.core;
-        auto r = build_code_fence_layout(ctx.dwrite.Get(), ctx.code_format.Get(), in, ctx.colors);
+        auto r = build_code_fence_layout(ctx.dwrite.Get(), ctx.code_format.Get(), in);
         if (!r.layout) return;
         auto& run = lb.text_runs[0];
         run.layout = r.layout;
@@ -102,9 +102,16 @@ bool materialize_viewport(LayoutDocument& doc, float scroll_y, float viewport_h)
     float vp_top = scroll_y;
     float vp_bottom = vp_top + viewport_h * 2.0f;  // one screenful of overscan below
 
+    // Accumulate height deltas and translate each block once as it is visited
+    // (plus one tail pass below), instead of an O(later blocks)
+    // apply_height_delta per materialized block. Incremental anchor shifts are
+    // skipped entirely — the absolute re-derive below supersedes them.
     bool changed = false;
-    for (int i = 0; i < static_cast<int>(doc.blocks.size()); ++i) {
+    float delta_sum = 0.0f;
+    int i = 0;
+    for (; i < static_cast<int>(doc.blocks.size()); ++i) {
         auto& b = doc.blocks[i];
+        if (delta_sum != 0.0f) shift_block_y(b, delta_sum);
         if (b.rect.bottom < vp_top) continue;        // above viewport
         if (b.rect.top > vp_bottom) break;           // below (blocks are Y-sorted by index)
         if (b.text_runs.empty() || b.text_runs[0].layout) continue;  // no runs to build, or already materialized
@@ -112,16 +119,21 @@ bool materialize_viewport(LayoutDocument& doc, float scroll_y, float viewport_h)
         doc.materialize_block(b, i);
         float delta = b.rect.bottom - old_bottom;
         if (delta != 0.0f) {
-            apply_height_delta(doc, i, delta);
+            delta_sum += delta;
             changed = true;
         }
+    }
+    if (delta_sum != 0.0f) {
+        for (int j = i + 1; j < static_cast<int>(doc.blocks.size()); ++j)
+            shift_block_y(doc.blocks[j], delta_sum);
+        doc.total_height += delta_sum;
     }
 
     if (changed) {
         build_line_index(doc);
-        // Re-derive anchor Y absolutely from corrected block tops. This supersedes
-        // apply_height_delta's incremental anchor shifts and also fixes an owning
-        // heading's own anchor (block_index == i), which apply_height_delta skips.
+        // Re-derive anchor Y absolutely from corrected block tops (the loop
+        // above shifts blocks but not anchors); this also covers an owning
+        // heading's own anchor, not just anchors of later blocks.
         for (auto& a : doc.anchors)
             if (a.block_index >= 0 && a.block_index < static_cast<int>(doc.blocks.size()))
                 a.y_offset = doc.blocks[a.block_index].rect.top;

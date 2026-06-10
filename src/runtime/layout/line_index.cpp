@@ -21,6 +21,10 @@ void build_line_index(LayoutDocument& doc) {
     };
 
     for (const auto& block : doc.blocks) {
+        // Blockquote containers span their children (same top as the first
+        // child) and carry no text of their own — skip them so they can't add
+        // a phantom line when the first child's run is inset (code fences).
+        if (block.type == BlockType::BlockQuote) continue;
         if (block.text_runs.empty()) {
             push(block.rect.top);
             continue;

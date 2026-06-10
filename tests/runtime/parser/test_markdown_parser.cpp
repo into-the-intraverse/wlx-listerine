@@ -176,6 +176,65 @@ TEST_CASE("Relative link with anchor") {
     CHECK(found);
 }
 
+TEST_CASE("Link - mailto is external") {
+    auto doc = parse("[mail](mailto:user@example.com)");
+    REQUIRE(doc.blocks.size() == 1);
+    auto& inlines = doc.blocks[0].inlines;
+    bool found = false;
+    for (auto& n : inlines) {
+        if (n.text == L"mail" && n.link.has_value()) {
+            CHECK(n.link->kind == LinkKind::ExternalUrl);
+            CHECK(n.link->url == L"mailto:user@example.com");
+            found = true;
+        }
+    }
+    CHECK(found);
+}
+
+TEST_CASE("Link - uppercase scheme is external") {
+    auto doc = parse("[text](HTTP://EXAMPLE.COM)");
+    REQUIRE(doc.blocks.size() == 1);
+    auto& inlines = doc.blocks[0].inlines;
+    bool found = false;
+    for (auto& n : inlines) {
+        if (n.text == L"text" && n.link.has_value()) {
+            CHECK(n.link->kind == LinkKind::ExternalUrl);
+            CHECK(n.link->url == L"HTTP://EXAMPLE.COM");
+            found = true;
+        }
+    }
+    CHECK(found);
+}
+
+TEST_CASE("Link - ftp is external") {
+    auto doc = parse("[text](ftp://host/file)");
+    REQUIRE(doc.blocks.size() == 1);
+    auto& inlines = doc.blocks[0].inlines;
+    bool found = false;
+    for (auto& n : inlines) {
+        if (n.text == L"text" && n.link.has_value()) {
+            CHECK(n.link->kind == LinkKind::ExternalUrl);
+            found = true;
+        }
+    }
+    CHECK(found);
+}
+
+TEST_CASE("Link - colon after slash stays relative") {
+    auto doc = parse("[text](docs/a:b.md)");
+    REQUIRE(doc.blocks.size() == 1);
+    auto& inlines = doc.blocks[0].inlines;
+    bool found = false;
+    for (auto& n : inlines) {
+        if (n.text == L"text" && n.link.has_value()) {
+            CHECK(n.link->kind == LinkKind::RelativeDoc);
+            CHECK(n.link->url == L"docs/a:b.md");
+            found = true;
+        }
+    }
+    CHECK(found);
+}
+
 TEST_CASE("Unordered list") {
     auto doc = parse("- item1\n- item2");
     REQUIRE(doc.blocks.size() == 1);
@@ -478,4 +537,44 @@ TEST_CASE("Reuse parser instance") {
 
     REQUIRE(doc2.blocks.size() == 1);
     CHECK(doc2.blocks[0].inlines[0].text == L"Second");
+}
+
+TEST_CASE("HTML block at top level is dropped") {
+    auto doc = parse("<div>x</div>\n\nafter");
+    REQUIRE(doc.blocks.size() == 1);
+    CHECK(doc.blocks[0].type == BlockType::Paragraph);
+    REQUIRE(!doc.blocks[0].inlines.empty());
+    CHECK(doc.blocks[0].inlines[0].text == L"after");
+}
+
+TEST_CASE("HTML block inside blockquote does not pop the quote") {
+    auto doc = parse("> <div>x</div>\n>\n> tail");
+    REQUIRE(doc.blocks.size() == 1);
+    auto& quote = doc.blocks[0];
+    CHECK(quote.type == BlockType::BlockQuote);
+    REQUIRE(quote.children.size() == 1);
+    auto& para = quote.children[0];
+    CHECK(para.type == BlockType::Paragraph);
+    REQUIRE(!para.inlines.empty());
+    CHECK(para.inlines[0].text == L"tail");
+}
+
+TEST_CASE("HTML block inside list item does not pop the item") {
+    auto doc = parse("- <div>x</div>\n- second");
+    REQUIRE(doc.blocks.size() == 1);
+    auto& list = doc.blocks[0];
+    CHECK(list.type == BlockType::List);
+    REQUIRE(list.children.size() == 2);
+    CHECK(list.children[0].type == BlockType::ListItem);
+    CHECK(list.children[1].type == BlockType::ListItem);
+    REQUIRE(!list.children[1].inlines.empty());
+    CHECK(list.children[1].inlines[0].text == L"second");
+}
+
+TEST_CASE("Inline raw HTML still renders as literal text") {
+    auto doc = parse("a <b>c</b> d");
+    REQUIRE(doc.blocks.size() == 1);
+    std::wstring all;
+    for (auto& n : doc.blocks[0].inlines) all += n.text;
+    CHECK(all == L"a <b>c</b> d");
 }

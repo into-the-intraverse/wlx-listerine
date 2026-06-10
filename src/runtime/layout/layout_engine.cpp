@@ -370,10 +370,12 @@ void LayoutEngine::layout_heading(const BlockNode& node, float& y, float left, f
         lb.bottom_rule_color = colors_.rule;
     }
 
-    // Anchor
+    // Anchor — record the owning block index (the block pushed below) so lazy
+    // reflow can re-derive y_offset; eager headings inside a lazy document take
+    // this path too and would otherwise go stale once earlier blocks reflow.
     std::wstring slug = slugify(node.inlines);
     if (!slug.empty()) {
-        result_.anchors.push_back({slug, y});
+        result_.anchors.push_back({slug, y, static_cast<int>(result_.blocks.size())});
     }
 
     y += tlr.height + spacing_.heading_spacing_below;
@@ -446,12 +448,12 @@ void LayoutEngine::layout_list_item(const BlockNode& node, float& y, float left,
     // For loose lists, node.inlines is empty and content is in child Paragraphs.
     // Use the first child paragraph's inlines for the bullet line.
     const std::vector<InlineNode>* first_inlines = &node.inlines;
-    size_t first_child_skip = 0;
+    size_t first_child_consumed = node.children.size();  // sentinel: none consumed
     if (node.inlines.empty()) {
         for (size_t i = 0; i < node.children.size(); i++) {
             if (node.children[i].type == BlockType::Paragraph) {
                 first_inlines = &node.children[i].inlines;
-                first_child_skip = i + 1;
+                first_child_consumed = i;
                 break;
             }
         }
@@ -492,13 +494,17 @@ void LayoutEngine::layout_list_item(const BlockNode& node, float& y, float left,
     y += item_height + spacing_.paragraph_spacing * 0.5f;
     result_.blocks.push_back(std::move(lb));
 
-    // Layout children (nested lists and continuation paragraphs)
-    for (size_t i = (first_child_skip > 0 ? first_child_skip : 0); i < node.children.size(); i++) {
+    // Layout children (nested lists, continuation paragraphs, code fences,
+    // quotes, tables, …) — everything except the child consumed as the bullet
+    // line. The parser nests e.g. MD_BLOCK_CODE under MD_BLOCK_LI, so an
+    // unhandled type here would silently never render.
+    for (size_t i = 0; i < node.children.size(); i++) {
+        if (i == first_child_consumed) continue;
         auto& child = node.children[i];
         if (child.type == BlockType::List)
             layout_list(child, y, left, right, list_depth + 1);
-        else if (child.type == BlockType::Paragraph)
-            layout_paragraph(child, y, indent, right);
+        else
+            layout_block_dispatch(child, y, indent, right, list_depth);
     }
 }
 
@@ -509,6 +515,23 @@ void LayoutEngine::layout_blockquote(const BlockNode& node, float& y, float left
     float border_x = left + spacing_.quote_border_width;
 
     float start_y = y;
+
+    // Reserve the bordered container's slot BEFORE its children so block tops
+    // stay ascending (the paint cull and build_line_index rely on that); the
+    // rect is patched once the children's extent is known. Re-index by position
+    // after the children — they push into result_.blocks and may reallocate it.
+    size_t container_idx = result_.blocks.size();
+    {
+        LayoutBlock lb;
+        lb.type = BlockType::BlockQuote;
+        lb.has_left_border = true;
+        lb.left_border_color = colors_.quote_border;
+        result_.blocks.push_back(std::move(lb));
+    }
+    // The container's spanning rect makes block BOTTOMS non-monotonic, which
+    // the paint cull's lower_bound seek can't tolerate — register it so the
+    // renderer paints it in its dedicated container pass.
+    result_.border_containers.push_back(static_cast<int>(container_idx));
 
     // Layout children (paragraphs, etc.)
     for (auto& child : node.children) {
@@ -525,13 +548,7 @@ void LayoutEngine::layout_blockquote(const BlockNode& node, float& y, float left
         }
     }
 
-    // Add a container block with left border
-    LayoutBlock lb;
-    lb.type = BlockType::BlockQuote;
-    lb.rect = D2D1::RectF(left, start_y, right, y);
-    lb.has_left_border = true;
-    lb.left_border_color = colors_.quote_border;
-    result_.blocks.push_back(std::move(lb));
+    result_.blocks[container_idx].rect = D2D1::RectF(left, start_y, right, y);
 }
 
 // ---------- horizontal rule ----------
@@ -572,7 +589,7 @@ void LayoutEngine::layout_code_fence(const BlockNode& node, float& y, float left
     in.wrap_code = wrap_code_;
     in.dark_mode = dark_mode_;
     in.core = core_;
-    auto res = build_code_fence_layout(dwrite_, code_format_.Get(), in, colors_);
+    auto res = build_code_fence_layout(dwrite_, code_format_.Get(), in);
     if (!res.layout) return;
 
     float block_height = res.height + padding * 2;
@@ -615,17 +632,11 @@ void LayoutEngine::layout_table(const BlockNode& node, float& y, float left, flo
             if (cell.type != BlockType::TableCell || col >= col_count) break;
 
             float cell_width = col_width - spacing_.code_padding * 2;
-            auto tlr = create_text_layout(cell.inlines, cell_width, colors_.text);
-
-            // Bold header cells
-            if (cell.is_header && tlr.layout) {
-                DWRITE_TEXT_RANGE all = {0, static_cast<UINT32>(tlr.full_text.size())};
-                tlr.layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, all);
-                // Re-measure after bolding
-                DWRITE_TEXT_METRICS m;
-                tlr.layout->GetMetrics(&m);
-                tlr.height = m.height;
-            }
+            // Header cells bold via force_bold so span/code-bg rects (and the
+            // measured height) reflect the bold glyph positions — same as
+            // headings.
+            auto tlr = create_text_layout(cell.inlines, cell_width, colors_.text,
+                                          nullptr, /*force_bold=*/cell.is_header);
 
             // Apply column alignment
             if (tlr.layout) {
@@ -669,6 +680,16 @@ void LayoutEngine::layout_table(const BlockNode& node, float& y, float left, flo
                 run.color_ranges = std::move(tlr.color_ranges);
                 run.code_bg_rects = std::move(tlr.code_bg_rects);
                 lb.text_runs.push_back(std::move(run));
+
+                // Offset interactive span rects to document coordinates so
+                // links in cells are hit-testable.
+                for (auto& s : tlr.spans) {
+                    s.rect.left += cell_x;
+                    s.rect.right += cell_x;
+                    s.rect.top += cell_y;
+                    s.rect.bottom += cell_y;
+                    lb.spans.push_back(std::move(s));
+                }
             }
 
             result_.blocks.push_back(std::move(lb));

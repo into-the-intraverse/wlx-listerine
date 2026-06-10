@@ -4,8 +4,11 @@
 
 namespace wlx::runtime::io {
 
+// Hard upper bound at this layer: refuse absurd sizes as a read failure
+// instead of trying to buffer them (a DWORD-sized ReadFile couldn't anyway).
+constexpr uint64_t kMaxReadBytes = 1ull << 30;  // 1 GiB
 
-std::string FileService::read_bytes(const wchar_t* path, FileIdentity& out_identity) {
+std::optional<std::string> FileService::read_bytes(const wchar_t* path, FileIdentity& out_identity) {
     out_identity.path = path;
     out_identity.size = 0;
     out_identity.mtime = 0;
@@ -21,13 +24,14 @@ std::string FileService::read_bytes(const wchar_t* path, FileIdentity& out_ident
     );
 
     if (hFile == INVALID_HANDLE_VALUE)
-        return {};
+        return std::nullopt;
 
-    DWORD file_size = GetFileSize(hFile, nullptr);
-    if (file_size == INVALID_FILE_SIZE) {
+    LARGE_INTEGER li{};
+    if (!GetFileSizeEx(hFile, &li) || static_cast<uint64_t>(li.QuadPart) > kMaxReadBytes) {
         CloseHandle(hFile);
-        return {};
+        return std::nullopt;
     }
+    DWORD file_size = static_cast<DWORD>(li.QuadPart);
 
     FILETIME ft{};
     GetFileTime(hFile, nullptr, nullptr, &ft);
@@ -36,7 +40,7 @@ std::string FileService::read_bytes(const wchar_t* path, FileIdentity& out_ident
 
     if (file_size == 0) {
         CloseHandle(hFile);
-        return {};
+        return std::string{};
     }
 
     // Read straight into the std::string we'll keep as raw_utf8 — no separate
@@ -48,7 +52,7 @@ std::string FileService::read_bytes(const wchar_t* path, FileIdentity& out_ident
     CloseHandle(hFile);
 
     if (!ok || bytes_read != file_size)
-        return {};
+        return std::nullopt;
 
     return buffer;
 }
@@ -107,12 +111,14 @@ std::string FileService::to_utf8(std::string raw) {
 std::wstring FileService::to_wstring(const std::string& utf8) {
     if (utf8.empty()) return {};
 
-    int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()),
-                                   nullptr, 0);
+    // Strict: invalid sequences fail outright instead of silently becoming
+    // U+FFFD — read() falls back to the ANSI code page on failure.
+    int wlen = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(),
+                                   static_cast<int>(utf8.size()), nullptr, 0);
     if (wlen <= 0) return {};
 
     std::wstring result(wlen, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()),
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(), static_cast<int>(utf8.size()),
                         result.data(), wlen);
     return result;
 }
@@ -142,40 +148,40 @@ std::optional<FileContent> FileService::read(const wchar_t* path) {
     FileIdentity ident;
     auto bytes = read_bytes(path, ident);
 
-    if (bytes.empty()) {
-        if (ident.size > 0) {
-            // File exists but read failed
-            return std::nullopt;
-        }
-        if (ident.mtime == 0 && ident.size == 0) {
-            // Could be a genuinely empty file or a failed open.
-            // If mtime is 0 and size is 0, check if the file was actually opened
-            // by looking at whether the path was set (read_bytes always sets it).
-            // A failed CreateFileW still sets the path but mtime stays 0.
-            // We need to distinguish "empty file" from "open failed".
-            // Re-check: read_bytes returns {} for INVALID_HANDLE_VALUE,
-            // and out_identity has mtime=0 in that case.
-            // For a real empty file, mtime will be non-zero.
-            if (ident.mtime == 0) {
-                // Could be open failure — try to verify
-                HANDLE hCheck = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ,
-                                           nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-                if (hCheck == INVALID_HANDLE_VALUE)
-                    return std::nullopt; // File doesn't exist or can't be opened
-                CloseHandle(hCheck);
-            }
-        }
-        // Empty file — return empty content
+    if (!bytes)
+        return std::nullopt;
+
+    if (bytes->empty()) {
+        // Genuinely empty file (failures are nullopt) — return empty content
         FileContent content;
         content.identity = std::move(ident);
         return content;
     }
 
-    std::string utf8 = to_utf8(std::move(bytes));
+    std::string utf8 = to_utf8(std::move(*bytes));
     normalize_line_endings(utf8);
 
     FileContent content;
     content.text = to_wstring(utf8);     // reads utf8
+    if (content.text.empty() && !utf8.empty()) {
+        // Not valid UTF-8 (no BOM, legacy bytes — e.g. Windows-1252): decode
+        // via the system ANSI code page and regenerate raw_utf8 from the
+        // decoded text so md4c/tree-sitter see valid UTF-8 bytes.
+        int wlen = MultiByteToWideChar(CP_ACP, 0, utf8.data(),
+                                       static_cast<int>(utf8.size()), nullptr, 0);
+        if (wlen > 0) {
+            content.text.assign(static_cast<size_t>(wlen), L'\0');
+            MultiByteToWideChar(CP_ACP, 0, utf8.data(), static_cast<int>(utf8.size()),
+                                content.text.data(), wlen);
+            int u8len = WideCharToMultiByte(CP_UTF8, 0, content.text.data(), wlen,
+                                            nullptr, 0, nullptr, nullptr);
+            if (u8len > 0) {
+                utf8.assign(static_cast<size_t>(u8len), '\0');
+                WideCharToMultiByte(CP_UTF8, 0, content.text.data(), wlen,
+                                    utf8.data(), u8len, nullptr, nullptr);
+            }
+        }
+    }
     content.raw_utf8 = std::move(utf8);  // move LAST, after to_wstring consumed it
     content.identity = std::move(ident);
     return content;
@@ -195,8 +201,8 @@ std::optional<FileIdentity> FileService::identity(const wchar_t* path) {
     if (hFile == INVALID_HANDLE_VALUE)
         return std::nullopt;
 
-    DWORD file_size = GetFileSize(hFile, nullptr);
-    if (file_size == INVALID_FILE_SIZE) {
+    LARGE_INTEGER li{};
+    if (!GetFileSizeEx(hFile, &li)) {
         CloseHandle(hFile);
         return std::nullopt;
     }
@@ -207,7 +213,7 @@ std::optional<FileIdentity> FileService::identity(const wchar_t* path) {
 
     FileIdentity ident;
     ident.path = path;
-    ident.size = file_size;
+    ident.size = static_cast<uint64_t>(li.QuadPart);
     ident.mtime = (static_cast<uint64_t>(ft.dwHighDateTime) << 32) | ft.dwLowDateTime;
     return ident;
 }

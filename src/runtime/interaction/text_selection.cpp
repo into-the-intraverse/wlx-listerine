@@ -46,8 +46,10 @@ std::wstring extract_selected_text(const LayoutDocument& layout,
 
         if (!result.empty()) result += L"\r\n";
 
+        // to == 0 happens when a multi-block selection ends at the very start
+        // of this block — none of it is selected, so don't emit its bullet.
         if ((block.type == BlockType::ListItem || block.type == BlockType::TaskList)
-            && !block.bullet_text.empty() && from == 0) {
+            && !block.bullet_text.empty() && from == 0 && to > 0) {
             result += block.bullet_text;
         }
 
@@ -78,7 +80,8 @@ std::pair<int, int> find_word_boundaries(const std::wstring& text, int offset) {
         while (end < len && is_word_char(text[end])) end++;
     } else {
         auto same_class = [&](wchar_t c) {
-            return !is_word_char(c) && iswspace(c) == iswspace(text[offset]);
+            // iswspace only guarantees zero/nonzero — normalize before comparing.
+            return !is_word_char(c) && (iswspace(c) != 0) == (iswspace(text[offset]) != 0);
         };
         while (start > 0 && same_class(text[start - 1])) start--;
         while (end < len && same_class(text[end])) end++;

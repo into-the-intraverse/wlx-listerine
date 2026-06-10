@@ -125,9 +125,12 @@ void append_label(HMENU menu, MenuItemKind kind, bool enabled,
         case MenuItemKind::LanguageSubmenuRoot: {
             HMENU sub = build_language_submenu(ctx);
             if (sub) {
-                AppendMenuW(menu, MF_STRING | MF_POPUP,
-                            reinterpret_cast<UINT_PTR>(sub),
-                            L"&Force Language");
+                // On AppendMenuW failure the submenu was never adopted by
+                // `menu`, so DestroyMenu(menu) wouldn't reach it — free it here.
+                if (!AppendMenuW(menu, MF_STRING | MF_POPUP,
+                                 reinterpret_cast<UINT_PTR>(sub),
+                                 L"&Force Language"))
+                    DestroyMenu(sub);
             }
             return;
         }

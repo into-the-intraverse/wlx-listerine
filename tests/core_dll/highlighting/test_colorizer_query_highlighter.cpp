@@ -261,7 +261,6 @@ TEST_CASE("highlight with a byte range only returns spans inside the range"
 
     auto full  = QueryHighlighter::highlight(tree, query, theme, src);
     auto line2 = QueryHighlighter::highlight(tree, query, theme, src,
-                    /*default_color=*/0xD4D4D4,
                     /*range_start=*/11, /*range_end=*/21);  // "int b = 2;"
 
     REQUIRE(!full.empty());
@@ -286,12 +285,78 @@ TEST_CASE("highlight default range reproduces whole-document spans"
     REQUIRE(query != nullptr);
 
     auto a = QueryHighlighter::highlight(tree, query, theme, src);
-    auto b = QueryHighlighter::highlight(tree, query, theme, src, 0xD4D4D4, 0, 0);
+    auto b = QueryHighlighter::highlight(tree, query, theme, src, 0, 0);
     REQUIRE(a.size() == b.size());
     for (size_t i = 0; i < a.size(); ++i) {
         CHECK(a[i].start == b[i].start);
         CHECK(a[i].length == b[i].length);
         CHECK(a[i].color == b[i].color);
+    }
+
+    ts_tree_delete(tree);
+}
+
+// ---------------------------------------------------------------------------
+// Nested-capture splitting and precomputed capture styles
+// ---------------------------------------------------------------------------
+
+TEST_CASE("QueryHighlighter: escape sequence splits its containing string span"
+    * doctest::skip(!has_c_grammar())) {
+    GrammarRegistry reg(L"grammars");
+    auto theme = HelixTheme::make_default(true);
+
+    // string_literal spans [10,16); the nested escape_sequence "\n" spans [13,15).
+    const char* source = "char* s = \"hi\\n\";";
+    auto* tree = reg.parse("c", source);
+    auto* query = reg.get_query("c");
+    REQUIRE(tree != nullptr);
+    REQUIRE(query != nullptr);
+
+    auto spans = QueryHighlighter::highlight(tree, query, theme, source);
+    check_non_overlapping(spans);
+
+    // Regression: the containing @string capture used to swallow the nested
+    // @constant.character.escape capture entirely. The escape must surface
+    // with its own color, and the string prefix before it must keep the
+    // string color.
+    uint32_t string_color = theme.resolve("string")->fg;
+    uint32_t escape_color = theme.resolve("constant.character.escape")->fg;
+    REQUIRE(string_color != escape_color);
+
+    bool found_escape = false;
+    bool found_string_prefix = false;
+    for (const auto& s : spans) {
+        if (s.start == 13 && s.length == 2 && s.color == escape_color)
+            found_escape = true;
+        if (s.start <= 11 && 11 < s.start + s.length && s.color == string_color)
+            found_string_prefix = true;
+    }
+    CHECK(found_escape);
+    CHECK(found_string_prefix);
+
+    ts_tree_delete(tree);
+}
+
+TEST_CASE("QueryHighlighter: precomputed capture styles match the theme overload"
+    * doctest::skip(!has_c_grammar())) {
+    GrammarRegistry reg(L"grammars");
+    auto theme = HelixTheme::make_default(true);
+
+    const char* source = "// hi\nint main() { return 0; }";
+    auto* tree = reg.parse("c", source);
+    auto* query = reg.get_query("c");
+    REQUIRE(tree != nullptr);
+    REQUIRE(query != nullptr);
+
+    auto styles = QueryHighlighter::resolve_capture_styles(query, theme);
+    auto a = QueryHighlighter::highlight(tree, query, theme, source);
+    auto b = QueryHighlighter::highlight(tree, query, styles, source);
+    REQUIRE(a.size() == b.size());
+    for (size_t i = 0; i < a.size(); ++i) {
+        CHECK(a[i].start == b[i].start);
+        CHECK(a[i].length == b[i].length);
+        CHECK(a[i].color == b[i].color);
+        CHECK(a[i].modifiers == b[i].modifiers);
     }
 
     ts_tree_delete(tree);

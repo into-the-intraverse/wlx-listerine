@@ -1,7 +1,5 @@
 #include "runtime/render/render_engine.h"
 
-#include "wlx_core/text_modifier.h"
-
 #include <algorithm>
 
 namespace wlx::runtime::render {
@@ -191,7 +189,8 @@ ID2D1SolidColorBrush* RenderEngine::get_brush(uint32_t color) {
     if (!rt_) return nullptr;
 
     ComPtr<ID2D1SolidColorBrush> brush;
-    rt_->CreateSolidColorBrush(ThemeService::to_d2d_color(color), brush.GetAddressOf());
+    if (FAILED(rt_->CreateSolidColorBrush(ThemeService::to_d2d_color(color), brush.GetAddressOf())))
+        return nullptr;  // don't cache a transient failure as a permanent null
     auto* ptr = brush.Get();
     brush_cache_[color] = std::move(brush);
     return ptr;
@@ -208,16 +207,17 @@ ID2D1SolidColorBrush* RenderEngine::get_brush(uint32_t color, float alpha) {
     if (!rt_) return nullptr;
 
     ComPtr<ID2D1SolidColorBrush> brush;
-    rt_->CreateSolidColorBrush(ThemeService::to_d2d_color(color, alpha), brush.GetAddressOf());
+    if (FAILED(rt_->CreateSolidColorBrush(ThemeService::to_d2d_color(color, alpha), brush.GetAddressOf())))
+        return nullptr;  // don't cache a transient failure as a permanent null
     auto* ptr = brush.Get();
     brush_cache_[key] = std::move(brush);
     return ptr;
 }
 
-void RenderEngine::paint(LayoutDocument& layout, float scroll_y,
-                          TextPosition sel_start, TextPosition sel_end,
-                          const std::wstring* goto_input, int goto_total) {
-    if (!rt_) return;
+HRESULT RenderEngine::paint(LayoutDocument& layout, float scroll_y,
+                             TextPosition sel_start, TextPosition sel_end,
+                             const std::wstring* goto_input, int goto_total) {
+    if (!rt_) return E_FAIL;
 
     const auto& colors = theme_.palette(dark_mode_);
     float viewport_h = dip_height();
@@ -232,16 +232,37 @@ void RenderEngine::paint(LayoutDocument& layout, float scroll_y,
     rt_->SetTransform(D2D1::Matrix3x2F::Translation(0, -scroll_y));
 
     size_t search_cursor = 0;
-    // Blocks are emitted in ascending Y (and stack non-overlapping, with table
-    // rows sharing a Y span), so the visible window is a contiguous run. Binary-
-    // search the first block whose bottom edge reaches the viewport, then stop
-    // at the first block past the bottom — O(visible + log N) instead of O(N)
-    // per frame. paint_search_highlights re-seeds its own cursor, so starting
-    // mid-vector is safe.
+    // Block TOPS are emitted in ascending Y (blocks stack non-overlapping, with
+    // table rows sharing a Y span), so the visible window is a contiguous run.
+    // Block BOTTOMS are non-decreasing too, EXCEPT blockquote border containers
+    // (emitted before their children with a rect spanning the whole quote) —
+    // the lower_bound seek below requires non-decreasing bottoms, so it can
+    // land past a still-visible container (never past a text block: all
+    // non-container bottoms ascend). The container pass below repaints those.
+    // Binary-search the first block whose bottom edge reaches the viewport,
+    // then stop at the first block past the bottom — O(visible + log N)
+    // instead of O(N) per frame. paint_search_highlights re-seeds its own
+    // cursor, so starting mid-vector is safe.
     auto first_visible = std::lower_bound(
         layout.blocks.begin(), layout.blocks.end(), scroll_y,
         [](const LayoutBlock& b, float sy) { return b.rect.bottom < sy; });
-    for (int block_idx = static_cast<int>(first_visible - layout.blocks.begin());
+    const int first_idx = static_cast<int>(first_visible - layout.blocks.begin());
+
+    // Blockquote border containers the seek landed past but whose rect still
+    // crosses the viewport. They carry no text — only the left-border
+    // decoration (plus the whole-rect selection fill an empty-text block gets
+    // when a selection spans it). Containers at/after first_idx are painted by
+    // the main loop; border_containers is tiny (one entry per blockquote).
+    for (int idx : layout.border_containers) {
+        if (idx >= first_idx) break;  // ascending indices
+        auto& block = layout.blocks[idx];
+        if (block.rect.bottom >= scroll_y && block.rect.top - scroll_y <= viewport_h) {
+            paint_selection_highlight(block, idx, 0, sel_start, sel_end);
+            paint_block_decoration(block, 0);
+        }
+    }
+
+    for (int block_idx = first_idx;
          block_idx < static_cast<int>(layout.blocks.size()); block_idx++) {
         auto& block = layout.blocks[block_idx];
         // Visibility culling
@@ -252,6 +273,12 @@ void RenderEngine::paint(LayoutDocument& layout, float scroll_y,
 
         // Lazy layout: build this visible block's IDWriteTextLayout +
         // decorations on first paint (no-op for fully-eager documents).
+        // WARNING: unlike md_materialize::materialize_viewport, this raw call
+        // does NO height-delta reflow. Hosts with lazy MD layouts (estimated
+        // block heights) MUST run materialize_viewport with this same scroll_y
+        // before paint — this call is then a no-op safety net. The colorizer
+        // skips that pre-pass legitimately: its materializer never changes
+        // block heights (fixed line grid).
         if (layout.materialize_block)
             layout.materialize_block(block, block_idx);
 
@@ -282,6 +309,7 @@ void RenderEngine::paint(LayoutDocument& layout, float scroll_y,
         discard_device_resources();
         needs_recreate_ = true;
     }
+    return hr;
 }
 
 void RenderEngine::paint_selection_highlight(const LayoutBlock& block, int block_index,
@@ -308,8 +336,9 @@ void RenderEngine::paint_selection_highlight(const LayoutBlock& block, int block
     auto& run = block.text_runs[0];
     if (!run.layout) return;
 
-    int text_len = 0;
-    for (auto& tr : block.text_runs) text_len += static_cast<int>(tr.text.size());
+    // Selection offsets come from hit-testing run 0 (hit_test_position), and
+    // every layout builder emits at most one run per block — run 0 IS the block.
+    int text_len = static_cast<int>(run.text.size());
 
     int from = 0;
     int to = text_len;
@@ -392,6 +421,7 @@ void RenderEngine::paint_search_highlights(const LayoutBlock& block, int block_i
                                               : pal.search_highlight;
             const float alpha = is_current ? 0.60f : 0.30f;
             auto* brush = get_brush(color, alpha);
+            if (!brush) continue;
 
             for (UINT32 j = 0; j < actual; j++) {
                 const auto& mm = metrics[j];
@@ -495,23 +525,15 @@ void RenderEngine::paint_text_runs(const LayoutBlock& block, float offset_y) {
         auto* brush = get_brush(run.color);
         if (!brush) continue;
 
-        // Apply per-range overrides: foreground brush + bold/italic/underline/strikethrough.
+        // Apply per-range foreground brushes: device-bound, so they must be
+        // (re)applied each frame. Font modifiers (bold/italic/underline/
+        // strikethrough) are NOT applied here — every layout builder sets them
+        // at IDWriteTextLayout creation time, before height measurement, so
+        // styled glyphs never rewrap or shift after the block was measured.
         for (auto& cr : run.color_ranges) {
             DWRITE_TEXT_RANGE range = {cr.start, cr.length};
             if (auto* cr_brush = get_brush(cr.color)) {
                 run.layout->SetDrawingEffect(cr_brush, range);
-            }
-            if (cr.modifiers & MOD_BOLD) {
-                run.layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, range);
-            }
-            if (cr.modifiers & MOD_ITALIC) {
-                run.layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, range);
-            }
-            if (cr.modifiers & MOD_UNDERLINE) {
-                run.layout->SetUnderline(TRUE, range);
-            }
-            if (cr.modifiers & MOD_STRIKETHROUGH) {
-                run.layout->SetStrikethrough(TRUE, range);
             }
         }
 
@@ -527,10 +549,12 @@ void RenderEngine::paint_copy_button(const LayoutBlock& block, int block_index, 
     if (block.type != BlockType::CodeFence) return;
 
     const auto& colors = theme_.palette(dark_mode_);
-    float btn_size = 24.0f;
-    float pad = 6.0f;
-    float bx = block.rect.right - btn_size - pad;
-    float by = block.rect.top + pad + offset_y;
+    D2D1_RECT_F btn = copy_button_rect(block);
+    btn.top += offset_y;
+    btn.bottom += offset_y;
+    float btn_size = btn.right - btn.left;
+    float bx = btn.left;
+    float by = btn.top;
 
     bool copied = (copied_code_block_ == block_index);
     bool hovered = (hovered_code_block_ == block_index);
@@ -540,7 +564,7 @@ void RenderEngine::paint_copy_button(const LayoutBlock& block, int block_index, 
     uint32_t bg_color = copied ? colors.link : colors.code_bg;
     auto* bg_brush = get_brush(bg_color);
     if (bg_brush) {
-        D2D1_ROUNDED_RECT rr = {D2D1::RectF(bx, by, bx + btn_size, by + btn_size), 4.0f, 4.0f};
+        D2D1_ROUNDED_RECT rr = {btn, 4.0f, 4.0f};
         rt_->FillRoundedRectangle(rr, bg_brush);
     }
 
@@ -549,13 +573,10 @@ void RenderEngine::paint_copy_button(const LayoutBlock& block, int block_index, 
     if (!icon_brush) return;
 
     // Apply opacity for non-hovered state
-    ComPtr<ID2D1SolidColorBrush> faded_brush;
     ID2D1SolidColorBrush* draw_brush = icon_brush;
     if (icon_opacity < 1.0f) {
-        auto color = ThemeService::to_d2d_color(colors.text);
-        color.a = icon_opacity;
-        if (SUCCEEDED(rt_->CreateSolidColorBrush(color, faded_brush.GetAddressOf())))
-            draw_brush = faded_brush.Get();
+        if (auto* faded = get_brush(colors.text, icon_opacity))
+            draw_brush = faded;
     }
 
     float cx = bx + btn_size * 0.5f;
@@ -705,9 +726,15 @@ void RenderEngine::paint_line_numbers(const LayoutDocument& layout, float scroll
     float line_h = theme_.fonts().code_size * 1.6f;
     float right = layout.gutter_width - 8.0f;  // small right gap before the text column
 
-    for (size_t i = 0; i < layout.line_tops.size(); ++i) {
+    // line_tops is ascending — binary-search the first line whose bottom edge
+    // reaches the viewport instead of scanning from line 0 every frame
+    // (mirrors the block loop in paint()).
+    auto first_visible = std::lower_bound(
+        layout.line_tops.begin(), layout.line_tops.end(), scroll_y - line_h);
+    for (size_t i = static_cast<size_t>(first_visible - layout.line_tops.begin());
+         i < layout.line_tops.size(); ++i) {
         float y = layout.line_tops[i];
-        if (y - scroll_y + line_h < 0.0f) continue;       // above viewport
+        if (y - scroll_y + line_h < 0.0f) continue;       // above viewport (defensive)
         if (y - scroll_y > viewport_h) break;             // below viewport (line_tops ascending)
 
         wchar_t buf[16];

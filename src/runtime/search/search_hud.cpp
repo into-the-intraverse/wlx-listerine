@@ -32,7 +32,7 @@ LRESULT CALLBACK SearchHudWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto* self = reinterpret_cast<SearchHud*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     if (msg == WM_MOUSEACTIVATE) return MA_NOACTIVATE;
     if (!self) return DefWindowProcW(hwnd, msg, wp, lp);
-    return self->handle_message(msg, wp, lp);
+    return self->handle_message(hwnd, msg, wp, lp);
 }
 } // namespace
 
@@ -186,7 +186,7 @@ void SearchHud::paint() {
     ValidateRect(hwnd_, nullptr);
 }
 
-LRESULT SearchHud::handle_message(UINT msg, WPARAM wp, LPARAM lp) {
+LRESULT SearchHud::handle_message(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_SETCURSOR:
         // Parent's WlxListerineMdView serves an I-beam for text selection;
@@ -230,7 +230,9 @@ LRESULT SearchHud::handle_message(UINT msg, WPARAM wp, LPARAM lp) {
         rt_.Reset();
         return 0;
     }
-    return DefWindowProcW(hwnd_, msg, wp, lp);
+    // Use the wndproc's hwnd, not hwnd_ — creation-time messages reach this
+    // default before the constructor's hwnd_ assignment.
+    return DefWindowProcW(hwnd, msg, wp, lp);
 }
 
 }  // namespace wlx::runtime::search

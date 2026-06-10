@@ -6,7 +6,7 @@
 #define lc_copy        1
 #define lc_newparams   2
 #define lc_selectall   3
-#define lc_setpercent  7
+#define lc_setpercent  4
 
 // ShowFlags for ListLoad
 #define lcp_wraptext        1

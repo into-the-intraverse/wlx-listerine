@@ -10,18 +10,6 @@
 
 using namespace wlx::runtime::host;
 
-namespace {
-
-// A minimal fake Result that mirrors what a real plugin Result must carry so
-// run_sync's plumbing can be exercised without any COM / Direct2D.
-struct FakeResult {
-    int parsed_value = 0;
-    std::shared_ptr<ViewLiveToken> live;
-    uint64_t generation = 0;
-};
-
-}  // namespace
-
 TEST_CASE("should_adopt_result accepts a matching token + generation") {
     ViewLiveToken tok;
     CHECK(should_adopt_result(&tok, /*result_gen*/ 5, &tok, /*current_gen*/ 5));
@@ -74,27 +62,6 @@ TEST_CASE("a token whose generation < g_load_gen is superseded") {
     CHECK_FALSE(should_adopt_result(&tok, gen_a, &tok, gen_b));
     // While B's result is still adoptable.
     CHECK(should_adopt_result(&tok, gen_b, &tok, gen_b));
-}
-
-TEST_CASE("run_sync returns the parsed result inline") {
-    auto live = std::make_shared<ViewLiveToken>();
-    ParseJob job;
-    job.path = L"C:\\fake\\doc.md";
-    job.generation = 42;
-    job.live = live;
-
-    auto result = run_sync<FakeResult>(job, [](const ParseJob& j) {
-        auto r = std::make_unique<FakeResult>();
-        r->parsed_value = static_cast<int>(j.generation);
-        r->live = j.live;
-        r->generation = j.generation;
-        return r;
-    });
-
-    REQUIRE(result != nullptr);
-    CHECK(result->parsed_value == 42);
-    CHECK(result->generation == 42);
-    CHECK(result->live.get() == live.get());
 }
 
 // ---------------------------------------------------------------------------

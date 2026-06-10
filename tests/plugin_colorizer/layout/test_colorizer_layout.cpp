@@ -7,6 +7,7 @@
 #include "runtime/layout/line_index.h"
 #include "runtime/parser/link_target.h"
 #include "runtime/theme/theme_service.h"
+#include "wlx_core/text_modifier.h"
 
 #include <dwrite.h>
 #include <wrl/client.h>
@@ -194,6 +195,39 @@ TEST_CASE("layout_source + build_line_index: one line_top per source line") {
     CHECK(layout.line_tops[2] < layout.line_tops[3]);
 }
 
+TEST_CASE("layout_source: tab_width 0 from unvalidated config is clamped, not a crash") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    // The host and the screenshot tool cast the raw TOML int64 straight into
+    // tab_width, so 0 (or negatives) can reach layout. expand_tabs' column
+    // math divides by tab_width; the clamp must keep it >= 1.
+    ThemeService theme;
+    ColorizeResult colors;
+    ColorizerDisplayConfig display;
+    display.tab_width = 0;
+    auto doc = layout_source(factory.Get(), L"\tx", "\tx", colors, theme,
+                             /*dark_mode=*/false, /*viewport_width=*/800.0f, display);
+    REQUIRE(doc.blocks.size() == 1);
+    CHECK(doc.blocks[0].text_runs[0].text == L" x");  // tab expanded with width 1
+    materialize_all(doc);  // ctx.tab_width is also clamped (indent-guide stride)
+}
+
+TEST_CASE("materialize: tabbed line keeps its pre-expansion text for decorations") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    // "\tx " -> boundary whitespace = the leading tab + the trailing space.
+    // materialize must see the PRE-expansion text (the tab), not the expanded
+    // run.text (tab-free lines fall back to run.text; tabbed lines must not).
+    auto doc = run_layout(factory.Get(), L"\tx ");
+    REQUIRE(doc.blocks.size() == 1);
+    CHECK(doc.blocks[0].text_runs[0].text == L"    x ");  // tab expanded (width 4)
+    materialize_all(doc);
+    const auto& markers = doc.blocks[0].ws_markers;
+    REQUIRE(markers.size() == 2);
+    CHECK(markers[0].is_tab);
+    CHECK_FALSE(markers[1].is_tab);
+}
+
 // ---- apply_spans_to_range (incremental viewport recoloring) -----------------
 
 namespace {
@@ -347,6 +381,200 @@ TEST_CASE("apply_spans_to_range: whole-doc window matches the eager whole-doc bu
             CHECK(e[k].color == i[k].color);
         }
     }
+}
+
+TEST_CASE("apply_spans_to_range: multi-line span starting before the window colors only the in-window tail") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    const std::string raw = "int a;\nint b;\nint c;";  // starts 0/7/14
+    std::vector<int> starts;
+    auto doc = run_skeleton(factory.Get(), raw, starts);
+
+    // One span covering ALL three lines (bytes [0, 20)).
+    ColorizeResult all;
+    all.spans.push_back(make_span(0, 20, 0x123456));
+
+    // Window = the middle line only.
+    apply_spans_to_range(doc, raw, starts, all,
+                         static_cast<uint32_t>(starts[1]),
+                         static_cast<uint32_t>(starts[2]), 4);
+
+    CHECK(doc.blocks[0].text_runs[0].color_ranges.empty());  // before window
+    CHECK(doc.blocks[2].text_runs[0].color_ranges.empty());  // after window
+    REQUIRE(doc.blocks[1].text_runs[0].color_ranges.size() == 1);
+    const auto& cr = doc.blocks[1].text_runs[0].color_ranges[0];
+    CHECK(cr.start == 0);    // span's in-window tail covers the whole line
+    CHECK(cr.length == 6);   // "int b;"
+    CHECK(cr.color == 0x123456);
+}
+
+TEST_CASE("non-ASCII line: multiple spans keep correct wchar offsets") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    // "// <e-acute>t<e-acute> abc" — U+00E9 is 2 UTF-8 bytes, so byte offsets
+    // diverge from wchar offsets after byte 3. Both spans must convert
+    // independently on the same line.
+    const std::string raw = "// \xC3\xA9t\xC3\xA9 abc";
+    const std::wstring source = L"// \x00E9t\x00E9 abc";
+
+    ColorizeResult colors;
+    colors.spans.push_back(make_span(3, 5, 0x111111));  // the accented word -> wchar [3,6)
+    colors.spans.push_back(make_span(9, 3, 0x222222));  // bytes of "abc" -> wchar [7,10)
+
+    ThemeService theme;
+    ColorizerDisplayConfig display;
+    auto doc = layout_source(factory.Get(), source, raw, colors, theme,
+                             /*dark_mode=*/false, /*viewport_width=*/800.0f, display);
+    REQUIRE(doc.blocks.size() == 1);
+    const auto& crs = doc.blocks[0].text_runs[0].color_ranges;
+    REQUIRE(crs.size() == 2);
+    CHECK(crs[0].start == 3);
+    CHECK(crs[0].length == 3);
+    CHECK(crs[0].color == 0x111111);
+    CHECK(crs[1].start == 7);
+    CHECK(crs[1].length == 3);
+    CHECK(crs[1].color == 0x222222);
+
+    // The incremental (windowed) path must use the same byte->wchar mapping.
+    std::vector<int> starts;
+    ColorizeResult empty;
+    auto incr = layout_source(factory.Get(), source, raw, empty, theme,
+                              false, 800.0f, display, /*timings=*/nullptr, &starts);
+    apply_spans_to_range(incr, raw, starts, colors, 0,
+                         static_cast<uint32_t>(raw.size()), 4);
+    const auto& icrs = incr.blocks[0].text_runs[0].color_ranges;
+    REQUIRE(icrs.size() == 2);
+    CHECK(icrs[0].start == 3);
+    CHECK(icrs[0].length == 3);
+    CHECK(icrs[1].start == 7);
+    CHECK(icrs[1].length == 3);
+}
+
+TEST_CASE("non-ASCII line: 4-byte emoji (surrogate pair) span offsets") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    // "a<U+1F600>b": the emoji is 4 UTF-8 bytes but TWO wchars (a surrogate pair).
+    const std::string raw = "a\xF0\x9F\x98\x80""b";
+    const std::wstring source = L"a\U0001F600b";
+
+    ColorizeResult colors;
+    colors.spans.push_back(make_span(1, 4, 0x111111));  // the emoji -> wchar [1,3)
+    colors.spans.push_back(make_span(5, 1, 0x222222));  // 'b' -> wchar [3,4)
+
+    ThemeService theme;
+    ColorizerDisplayConfig display;
+    auto doc = layout_source(factory.Get(), source, raw, colors, theme,
+                             /*dark_mode=*/false, /*viewport_width=*/800.0f, display);
+    REQUIRE(doc.blocks.size() == 1);
+    const auto& crs = doc.blocks[0].text_runs[0].color_ranges;
+    REQUIRE(crs.size() == 2);
+    CHECK(crs[0].start == 1);
+    CHECK(crs[0].length == 2);  // both halves of the surrogate pair
+    CHECK(crs[1].start == 3);
+    CHECK(crs[1].length == 1);
+}
+
+// ---- font modifiers baked into the layout at creation, not at paint ---------
+
+TEST_CASE("modifiers: lazy materialize bakes bold/strikethrough into the line layout") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    const std::string raw = "int a;";
+    const std::wstring source = L"int a;";
+
+    ColorizeResult colors;
+    ColorSpan s = make_span(0, 3, 0xAA0000);  // "int"
+    s.modifiers = static_cast<uint8_t>(MOD_BOLD | MOD_STRIKETHROUGH);
+    colors.spans.push_back(s);
+
+    ThemeService theme;
+    ColorizerDisplayConfig display;  // word_wrap off -> lazy path
+    auto doc = layout_source(factory.Get(), source, raw, colors, theme,
+                             /*dark_mode=*/false, /*viewport_width=*/800.0f, display);
+    REQUIRE(doc.blocks.size() == 1);
+    materialize_all(doc);
+
+    auto* layout = doc.blocks[0].text_runs[0].layout.Get();
+    REQUIRE(layout);
+    DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_REGULAR;
+    layout->GetFontWeight(0, &weight, nullptr);
+    CHECK(weight == DWRITE_FONT_WEIGHT_BOLD);
+    BOOL strike = FALSE;
+    layout->GetStrikethrough(1, &strike, nullptr);
+    CHECK(strike == TRUE);
+    // Past the span, the base format is untouched.
+    layout->GetFontWeight(4, &weight, nullptr);
+    CHECK(weight == DWRITE_FONT_WEIGHT_REGULAR);
+}
+
+TEST_CASE("modifiers: eager (word-wrap) path applies them at creation, before measuring") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    const std::string raw = "int a;";
+    const std::wstring source = L"int a;";
+
+    ColorizeResult colors;
+    ColorSpan s = make_span(0, 3, 0xAA0000);
+    s.modifiers = MOD_BOLD;
+    colors.spans.push_back(s);
+
+    ThemeService theme;
+    ColorizerDisplayConfig display;
+    display.word_wrap = true;  // eager: layouts built (and measured) up front
+    auto doc = layout_source(factory.Get(), source, raw, colors, theme,
+                             /*dark_mode=*/false, /*viewport_width=*/800.0f, display);
+    REQUIRE(doc.blocks.size() == 1);
+    CHECK(!doc.materialize_block);  // eager docs install no hook
+
+    auto* layout = doc.blocks[0].text_runs[0].layout.Get();
+    REQUIRE(layout);
+    DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_REGULAR;
+    layout->GetFontWeight(0, &weight, nullptr);
+    CHECK(weight == DWRITE_FONT_WEIGHT_BOLD);
+}
+
+TEST_CASE("modifiers: URL underline is set on the layout at materialize") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    auto doc = run_layout(factory.Get(), L"// see https://example.com/x");
+    materialize_all(doc);
+
+    REQUIRE(doc.blocks.size() == 1);
+    auto* layout = doc.blocks[0].text_runs[0].layout.Get();
+    REQUIRE(layout);
+    BOOL underline = TRUE;
+    layout->GetUnderline(0, &underline, nullptr);   // before the URL
+    CHECK(underline == FALSE);
+    layout->GetUnderline(7, &underline, nullptr);   // 'h' of https://
+    CHECK(underline == TRUE);
+}
+
+TEST_CASE("modifiers: recoloring a materialized block re-bakes them on re-materialize") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    const std::string raw = "int a;";
+    std::vector<int> starts;
+    auto doc = run_skeleton(factory.Get(), raw, starts);
+    REQUIRE(doc.blocks.size() == 1);
+    materialize_all(doc);  // layout built with no syntax ranges yet
+    REQUIRE(doc.blocks[0].text_runs[0].layout);
+
+    ColorizeResult colors;
+    ColorSpan s = make_span(0, 3, 0xAA0000);
+    s.modifiers = MOD_BOLD;
+    colors.spans.push_back(s);
+    apply_spans_to_range(doc, raw, starts, colors, 0,
+                         static_cast<uint32_t>(raw.size()), 4);
+
+    // The materialized layout was dropped so the next paint rebuilds it with
+    // the new ranges (and their modifiers).
+    CHECK(!doc.blocks[0].text_runs[0].layout);
+    materialize_all(doc);
+    auto* layout = doc.blocks[0].text_runs[0].layout.Get();
+    REQUIRE(layout);
+    DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_REGULAR;
+    layout->GetFontWeight(0, &weight, nullptr);
+    CHECK(weight == DWRITE_FONT_WEIGHT_BOLD);
 }
 
 // ---- viewport_byte_range (visible blocks -> source byte range) --------------

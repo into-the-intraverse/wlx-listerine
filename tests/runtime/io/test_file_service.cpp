@@ -3,6 +3,11 @@
 #include <fstream>
 #include <cstdio>
 
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+
 using namespace wlx::runtime::io;
 
 TEST_CASE("read existing markdown file") {
@@ -164,5 +169,54 @@ TEST_CASE("read empty file returns empty content") {
     CHECK(result->text.empty());
     CHECK(result->identity.size == 0);
 
+    std::remove(path);
+}
+
+TEST_CASE("BOM-less non-UTF-8 bytes fall back to the ANSI code page") {
+    const char* path = "test_data/temp_test_cp1252.txt";
+
+    {
+        std::ofstream f(path, std::ios::binary);
+        // "caf\xE9" — 0xE9 is e-acute in Windows-1252 but an invalid UTF-8 sequence
+        f << "caf" << '\xE9';
+    }
+
+    FileService fs;
+    auto result = fs.read(L"test_data/temp_test_cp1252.txt");
+
+    REQUIRE(result.has_value());
+    CHECK(result->text.substr(0, 3) == L"caf");
+    if (GetACP() == 1252)
+        CHECK(result->text == L"caf\xE9");  // caf + e-acute (U+00E9)
+    // raw_utf8 must be regenerated as valid UTF-8 so downstream byte offsets
+    // (md4c, tree-sitter) stay consistent with the decoded text.
+    CHECK(result->raw_utf8.substr(0, 3) == "caf");
+    int wlen = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+                                   result->raw_utf8.data(),
+                                   static_cast<int>(result->raw_utf8.size()), nullptr, 0);
+    CHECK(wlen > 0);
+
+    std::remove(path);
+}
+
+TEST_CASE("read returns nullopt when the file cannot be opened") {
+    const char* path = "test_data/temp_test_locked.txt";
+
+    {
+        std::ofstream f(path, std::ios::binary);
+        f << "locked content";
+    }
+
+    // Hold the file open with no sharing so FileService's open fails —
+    // this must surface as a failure, not as a silently empty document.
+    HANDLE h = CreateFileW(L"test_data/temp_test_locked.txt", GENERIC_READ, 0,
+                           nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    REQUIRE(h != INVALID_HANDLE_VALUE);
+
+    FileService fs;
+    auto result = fs.read(L"test_data/temp_test_locked.txt");
+    CHECK_FALSE(result.has_value());
+
+    CloseHandle(h);
     std::remove(path);
 }
