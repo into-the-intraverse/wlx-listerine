@@ -124,10 +124,18 @@ def run_scenario(key: str, input_path: Path, extra: list, runs: int) -> dict | N
     """Median per metric across runs; None (after printing why) on any failure."""
     samples = []
     for i in range(runs):
-        proc = subprocess.run(
-            [str(TOOL), str(input_path), *COMMON_ARGS, *extra],
-            cwd=REPO_ROOT, capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=600)
+        try:
+            proc = subprocess.run(
+                [str(TOOL), str(input_path), *COMMON_ARGS, *extra],
+                cwd=REPO_ROOT, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=600)
+        except subprocess.TimeoutExpired as e:
+            stderr = e.stderr or ""
+            if isinstance(stderr, bytes):
+                stderr = stderr.decode("utf-8", errors="replace")
+            print(f"FAIL {key} run {i + 1}: timeout 600s\n{stderr[-2000:]}",
+                  file=sys.stderr)
+            return None
         if proc.returncode != 0:
             print(f"FAIL {key} run {i + 1}: exit {proc.returncode}\n"
                   f"{proc.stderr[-2000:]}", file=sys.stderr)
@@ -147,6 +155,139 @@ def run_scenario(key: str, input_path: Path, extra: list, runs: int) -> dict | N
             "delta_mb": med("delta_mb")}
 
 
+# ---- README baseline block -------------------------------------------------
+
+def fmt_open(v) -> str:
+    return "—" if v is None else f"{v:.0f}"
+
+
+def fmt_mb(v) -> str:
+    return "—" if v is None else f"{v:.1f}"
+
+
+def scenario_label(key: str, input_path: Path) -> str:
+    size_mb = input_path.stat().st_size / (1024 * 1024)
+    return f"{key} ({size_mb:.1f} MB)"
+
+
+def read_readme_block() -> str:
+    text = README.read_text(encoding="utf-8")
+    begin = text.find(MARK_BEGIN)
+    end = text.find(MARK_END)
+    if begin == -1 or end == -1 or end < begin:
+        sys.exit(f"README markers {MARK_BEGIN} / {MARK_END} missing or malformed"
+                 " — restore the Performance section from git history")
+    return text[begin + len(MARK_BEGIN):end]
+
+
+def write_readme_block(block: str) -> None:
+    text = README.read_text(encoding="utf-8")
+    begin = text.find(MARK_BEGIN) + len(MARK_BEGIN)
+    end = text.find(MARK_END)
+    README.write_text(text[:begin] + "\n" + block + "\n" + text[end:],
+                      encoding="utf-8")
+
+
+def parse_baseline(block: str) -> dict:
+    """Table rows between the markers -> {scenario key: metrics dict}."""
+    def num(s: str):
+        return None if s == "—" else float(s)
+
+    baseline = {}
+    for line in block.splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) != 4 or cells[0] in ("Scenario", "") or set(cells[0]) <= {"-"}:
+            continue
+        for key, _input, _extra in SCENARIOS:
+            if cells[0].startswith(key):
+                baseline[key] = {"open_ms": num(cells[1]),
+                                 "peak_mb": num(cells[2]),
+                                 "delta_mb": num(cells[3])}
+    return baseline
+
+
+def render_block(results: dict, runs: int) -> str:
+    lines = [
+        f"Measured on: {cpu_name()}, {ram_gb()} GB RAM, {os_name()}",
+        f"Baseline: commit `{git_commit()}`, {date.today().isoformat()},"
+        f" median of {runs} runs (`scripts/bench.py`)",
+        "",
+        "| Scenario | Open (ms) | Peak WS (MB) | Δ WS (MB) |",
+        "|----------|-----------|--------------|-----------|",
+    ]
+    for key, input_path, _extra in SCENARIOS:
+        r = results[key]
+        lines.append(f"| {scenario_label(key, input_path)} | {fmt_open(r['open_ms'])}"
+                     f" | {fmt_mb(r['peak_mb'])} | {fmt_mb(r['delta_mb'])} |")
+    return "\n".join(lines)
+
+
+# ---- machine info ----------------------------------------------------------
+
+def cpu_name() -> str:
+    import winreg
+    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                        r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as k:
+        return winreg.QueryValueEx(k, "ProcessorNameString")[0].strip()
+
+
+def ram_gb() -> int:
+    class MemoryStatusEx(ctypes.Structure):
+        _fields_ = [
+            ("dwLength", ctypes.c_uint32), ("dwMemoryLoad", ctypes.c_uint32),
+            ("ullTotalPhys", ctypes.c_uint64), ("ullAvailPhys", ctypes.c_uint64),
+            ("ullTotalPageFile", ctypes.c_uint64),
+            ("ullAvailPageFile", ctypes.c_uint64),
+            ("ullTotalVirtual", ctypes.c_uint64),
+            ("ullAvailVirtual", ctypes.c_uint64),
+            ("ullAvailExtendedVirtual", ctypes.c_uint64),
+        ]
+    st = MemoryStatusEx()
+    st.dwLength = ctypes.sizeof(st)
+    ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st))
+    return round(st.ullTotalPhys / (1 << 30))
+
+
+def os_name() -> str:
+    import platform
+    return f"Windows build {platform.version()}"
+
+
+def git_commit() -> str:
+    short = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                           cwd=REPO_ROOT, capture_output=True, text=True,
+                           check=True).stdout.strip()
+    dirty = subprocess.run(["git", "status", "--porcelain"],
+                           cwd=REPO_ROOT, capture_output=True, text=True,
+                           check=True).stdout.strip()
+    return short + ("-dirty" if dirty else "")
+
+
+# ---- compare ----------------------------------------------------------------
+
+def fmt_compare(cur, base) -> str:
+    if cur is None:
+        return "—"
+    if base is None:
+        return f"{cur:.1f} (no baseline)"
+    pct = (cur - base) / base * 100.0 if base else 0.0
+    flag = "  <<<" if abs(pct) > FLAG_THRESHOLD_PCT else ""
+    return f"{cur:.1f} vs {base:.1f} ({pct:+.1f}%){flag}"
+
+
+def print_compare(results: dict, baseline: dict) -> None:
+    print(f"\n{'scenario':<30} {'open ms':<36} {'peak MB':<32} {'Δ MB':<32}")
+    for key, _input, _extra in SCENARIOS:
+        if key not in results:
+            continue
+        r = results[key]
+        b = baseline.get(key, {})
+        print(f"{key:<30} "
+              f"{fmt_compare(r['open_ms'], b.get('open_ms')):<36} "
+              f"{fmt_compare(r['peak_mb'], b.get('peak_mb')):<32} "
+              f"{fmt_compare(r['delta_mb'], b.get('delta_mb')):<32}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--runs", type=int, default=DEFAULT_RUNS,
@@ -157,12 +298,18 @@ def main() -> int:
                     help="rewrite the README baseline table")
     args = ap.parse_args()
 
+    if args.runs < 1:
+        ap.error("--runs must be >= 1")
+    if args.update and (args.only is not None or args.runs != DEFAULT_RUNS):
+        sys.exit("--update requires the full default suite"
+                 " (no --only, default --runs)")
     if not TOOL.exists():
         sys.exit(f"{TOOL} not found — build first:\n"
                  "  conan install . --output-folder=build --build=missing"
                  " -s build_type=Release -s compiler.cppstd=20\n"
                  "  cmake --preset conan-default && cmake --build --preset conan-release")
 
+    baseline = parse_baseline(read_readme_block())  # validates markers up front
     ensure_inputs()
 
     selected = [(k, p, e) for k, p, e in SCENARIOS
@@ -178,13 +325,17 @@ def main() -> int:
             failed.append(key)
         else:
             results[key] = r
-            peak = "—" if r["peak_mb"] is None else f"{r['peak_mb']:.1f}"
-            print(f"  open {r['open_ms']:.1f} ms  peak {peak} MB"
-                  f"  delta {r['delta_mb']:.1f} MB")
+
+    print_compare(results, baseline)
 
     if failed:
         print(f"\nFAILED scenarios: {', '.join(failed)}", file=sys.stderr)
         return 1
+    if args.update:
+        write_readme_block(render_block(results, args.runs))
+        print(f"\nREADME baseline updated ({README})")
+    elif not baseline:
+        print("\nno baseline in README yet — run with --update to record one")
     return 0
 
 
