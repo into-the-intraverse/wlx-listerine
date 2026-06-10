@@ -43,3 +43,7 @@ staging/
 
 # Superpowers plugin cache
 .superpowers/
+
+# Bench inputs (fetched sources) and bench output artifacts
+test_data/bench/fetched/
+test_data/bench/*.png
