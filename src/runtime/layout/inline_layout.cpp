@@ -17,7 +17,8 @@ InlineLayoutResult build_inline_layout(
     IDWriteTextFormat* format,
     bool force_bold,
     const FontConfig& fonts,
-    const ColorPalette& colors) {
+    const ColorPalette& colors,
+    DWRITE_TEXT_ALIGNMENT alignment) {
 
     InlineLayoutResult result;
 
@@ -88,6 +89,12 @@ InlineLayoutResult build_inline_layout(
         DWRITE_TEXT_RANGE all = {0, static_cast<UINT32>(full_text.size())};
         layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, all);
     }
+
+    // Center/right table-cell alignment shifts glyph positions too, so it must
+    // also be set before the hit-testing below — otherwise the rects stay at
+    // their pre-alignment (left-aligned) positions.
+    if (alignment != DWRITE_TEXT_ALIGNMENT_LEADING)
+        layout->SetTextAlignment(alignment);
 
     // full_text is not read past this point (the hit-test loop below uses range
     // offsets, not the text) — hand it to the result instead of copying it.

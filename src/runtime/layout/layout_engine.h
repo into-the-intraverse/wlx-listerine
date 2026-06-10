@@ -65,7 +65,8 @@ private:
     TextLayoutResult create_text_layout(const std::vector<parser::InlineNode>& inlines,
                                         float max_width, uint32_t default_color,
                                         IDWriteTextFormat* format = nullptr,
-                                        bool force_bold = false);
+                                        bool force_bold = false,
+                                        DWRITE_TEXT_ALIGNMENT alignment = DWRITE_TEXT_ALIGNMENT_LEADING);
 
     // Font helpers
     ComPtr<IDWriteTextFormat> get_body_format(float size);

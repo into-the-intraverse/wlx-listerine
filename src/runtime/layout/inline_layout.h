@@ -33,7 +33,9 @@ struct InlineLayoutResult {
 // inline-code background rects. Free function so callers outside LayoutEngine can
 // build a layout directly. `format` must be non-null. `default_color` is currently
 // unused (the run's base color is applied by the caller on its TextRun); it is kept
-// to mirror create_text_layout's signature.
+// to mirror create_text_layout's signature. `alignment` (table-cell column
+// alignment) is applied BEFORE measuring, like force_bold, so span/code-bg rects
+// land on the final glyph positions.
 InlineLayoutResult build_inline_layout(
     IDWriteFactory* dwrite,
     const std::vector<parser::InlineNode>& inlines,
@@ -42,6 +44,7 @@ InlineLayoutResult build_inline_layout(
     IDWriteTextFormat* format,
     bool force_bold,
     const theme::FontConfig& fonts,
-    const theme::ColorPalette& colors);
+    const theme::ColorPalette& colors,
+    DWRITE_TEXT_ALIGNMENT alignment = DWRITE_TEXT_ALIGNMENT_LEADING);
 
 }  // namespace wlx::runtime::layout

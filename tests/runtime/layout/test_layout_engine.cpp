@@ -322,6 +322,40 @@ TEST_CASE("layout_table - link in a cell produces a hit-testable span") {
     CHECK(span.rect.bottom <= link_cell->rect.bottom);
 }
 
+TEST_CASE("layout_table - code background in a right-aligned cell tracks the aligned glyphs") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+
+    // Regression: column alignment was applied AFTER the cell layout was
+    // measured, so center/right-aligned cells kept span/code-bg rects at their
+    // pre-alignment (left-aligned) positions — same class of bug as the heading
+    // bold case above.
+    auto doc = parse("| a | b |\n| --- | ---: |\n| x | some prefix `cd` |\n");
+    auto layout = do_layout(factory.Get(), doc);
+
+    const TextRun* run = nullptr;
+    for (auto& block : layout.blocks) {
+        if (block.type != BlockType::TableCell || block.text_runs.empty()) continue;
+        if (!block.text_runs[0].code_bg_rects.empty()) {
+            run = &block.text_runs[0];
+            break;
+        }
+    }
+    REQUIRE(run);
+    REQUIRE(run->layout);
+
+    // Where does the code ("cd") actually start in the final (aligned) layout?
+    size_t code_off = run->text.find(L"cd");
+    REQUIRE(code_off != std::wstring::npos);
+    float hx = 0, hy = 0;
+    DWRITE_HIT_TEST_METRICS hm = {};
+    run->layout->HitTestTextPosition(static_cast<UINT32>(code_off), FALSE, &hx, &hy, &hm);
+
+    // The code-bg rect insets the hit by a 2px pad (see build_inline_layout).
+    // It must track the right-aligned glyph position, not the pre-alignment one.
+    CHECK(std::abs(run->code_bg_rects[0].rect.left - (hx - 2.0f)) < 1.0f);
+}
+
 TEST_CASE("Different viewport widths produce different layouts") {
     auto factory = create_dwrite_factory();
     REQUIRE(factory);

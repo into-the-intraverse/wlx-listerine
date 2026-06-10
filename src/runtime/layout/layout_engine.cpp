@@ -106,10 +106,10 @@ std::wstring LayoutEngine::slugify(const std::vector<InlineNode>& inlines) {
 
 LayoutEngine::TextLayoutResult LayoutEngine::create_text_layout(
     const std::vector<InlineNode>& inlines, float max_width, uint32_t default_color,
-    IDWriteTextFormat* format, bool force_bold) {
+    IDWriteTextFormat* format, bool force_bold, DWRITE_TEXT_ALIGNMENT alignment) {
     IDWriteTextFormat* fmt = format ? format : body_format_.Get();
     return build_inline_layout(dwrite_, inlines, max_width, default_color, fmt,
-                               force_bold, fonts_, colors_);
+                               force_bold, fonts_, colors_, alignment);
 }
 
 // ---------- layout entry point ----------
@@ -632,19 +632,17 @@ void LayoutEngine::layout_table(const BlockNode& node, float& y, float left, flo
             if (cell.type != BlockType::TableCell || col >= col_count) break;
 
             float cell_width = col_width - spacing_.code_padding * 2;
-            // Header cells bold via force_bold so span/code-bg rects (and the
-            // measured height) reflect the bold glyph positions — same as
-            // headings.
+            // Header cells bold via force_bold, and column alignment goes in as
+            // a parameter, so span/code-bg rects (and the measured height)
+            // reflect the final glyph positions — same as headings.
+            DWRITE_TEXT_ALIGNMENT cell_alignment = DWRITE_TEXT_ALIGNMENT_LEADING;
+            if (cell.cell_align == BlockNode::CellAlign::Center)
+                cell_alignment = DWRITE_TEXT_ALIGNMENT_CENTER;
+            else if (cell.cell_align == BlockNode::CellAlign::Right)
+                cell_alignment = DWRITE_TEXT_ALIGNMENT_TRAILING;
             auto tlr = create_text_layout(cell.inlines, cell_width, colors_.text,
-                                          nullptr, /*force_bold=*/cell.is_header);
-
-            // Apply column alignment
-            if (tlr.layout) {
-                if (cell.cell_align == BlockNode::CellAlign::Center)
-                    tlr.layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-                else if (cell.cell_align == BlockNode::CellAlign::Right)
-                    tlr.layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
-            }
+                                          nullptr, /*force_bold=*/cell.is_header,
+                                          cell_alignment);
 
             if (tlr.height > row_height) row_height = tlr.height;
             cell_layouts.push_back(std::move(tlr));
