@@ -23,8 +23,9 @@ using ColorsForRange =
 // Build the implicit-grid skeleton for `raw_utf8`: NO per-line blocks, no
 // per-line text decode — just line_byte_starts (byte scan), line_tops
 // (arithmetic), total_height, gutter, grid_line_count, and the build context
-// future slide_grid_window calls need. The eager (word-wrap) path stays in
-// layout_source; this is the no-wrap replacement (consumers switch in M2.9/13).
+// future slide_grid_window calls need. Handles both modes: no-wrap (uniform row
+// grid) and word-wrap (row_starts estimated from a byte scan, corrected to
+// measured values by slide_grid_window).
 //
 // out_line_byte_starts / out_ctx / out_geo are filled for the caller to retain;
 // none may be null. doc.blocks is left EMPTY (the first slide builds them).

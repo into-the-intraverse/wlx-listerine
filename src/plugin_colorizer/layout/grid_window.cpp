@@ -48,7 +48,7 @@ LayoutDocument layout_grid_skeleton(
     const FontConfig& fonts = theme.fonts();
 
     // Code text format — uniform line spacing (so every unwrapped line is
-    // exactly line_height) and NO_WRAP (grid mode is always no-wrap).
+    // exactly line_height) and wrapping honoured from display.word_wrap.
     ComPtr<IDWriteTextFormat> fmt;
     dwrite->CreateTextFormat(
         fonts.code_family.c_str(), nullptr,
