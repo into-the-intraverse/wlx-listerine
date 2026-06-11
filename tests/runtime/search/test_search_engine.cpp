@@ -138,6 +138,50 @@ TEST_CASE("SearchIndex non-overlapping matches") {
     CHECK(m[1].char_start == 2);
 }
 
+TEST_CASE("build_lines matches block-based build") {
+    // Construct a LayoutDocument with 3 blocks, each one TextRun.
+    const std::wstring t0 = L"alpha bravo";
+    const std::wstring t1 = L"charlie delta";
+    const std::wstring t2 = L"echo foxtrot";
+
+    auto doc = make_layout({t0, t1, t2});
+
+    // build() on the layout.
+    SearchIndex idx_block;
+    idx_block.build(doc);
+
+    // build_lines() with the same 3 strings via callback.
+    SearchIndex idx_lines;
+    idx_lines.build_lines(3, [&](int line) -> std::wstring {
+        if (line == 0) return t0;
+        if (line == 1) return t1;
+        return t2;
+    });
+
+    // find_all must return identical match lists for both indices.
+    SearchQuery q;
+    q.needle = L"a";  // hits: "alpha", "bravo", "charlie", "delta", "foxtrot"
+
+    auto m_block = idx_block.find_all(q);
+    auto m_lines = idx_lines.find_all(q);
+
+    REQUIRE(m_block.size() == m_lines.size());
+    for (size_t i = 0; i < m_block.size(); ++i) {
+        CHECK(m_block[i].block_index == m_lines[i].block_index);
+        CHECK(m_block[i].char_start  == m_lines[i].char_start);
+        CHECK(m_block[i].char_end    == m_lines[i].char_end);
+    }
+
+    // A match on line 2 has block_index == 2 (public line-space).
+    SearchQuery q2;
+    q2.needle = L"echo";
+    auto m2 = idx_lines.find_all(q2);
+    REQUIRE(m2.size() == 1);
+    CHECK(m2[0].block_index == 2);
+    CHECK(m2[0].char_start  == 0);
+    CHECK(m2[0].char_end    == 4);
+}
+
 TEST_CASE("SearchIndex empty text_runs block doesn't shift offsets") {
     LayoutDocument doc;
     doc.blocks.resize(3);

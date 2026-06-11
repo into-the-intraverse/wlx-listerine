@@ -7,6 +7,8 @@
 #include "core_dll/colorizer/colorize_result.h"
 #include "runtime/layout/layout_document.h"
 #include "runtime/parser/link_target.h"
+#include "runtime/search/search_index.h"
+#include "runtime/search/search_query.h"
 #include "runtime/theme/theme_service.h"
 #include "wlx_core/text_modifier.h"
 
@@ -40,6 +42,8 @@ using wlx::runtime::layout::LayoutBlock;
 using wlx::runtime::layout::LayoutDocument;
 using wlx::runtime::layout::TextPosition;
 using wlx::runtime::parser::LinkKind;
+using wlx::runtime::search::SearchIndex;
+using wlx::runtime::search::SearchQuery;
 using wlx::runtime::theme::ThemeService;
 
 namespace {
@@ -564,4 +568,36 @@ TEST_CASE("grid selection text: decodes+expands from raw — multi-line, tabs, C
                                               TextPosition{0, 0}, TextPosition{99, 5});
         CHECK(got == want);
     }
+}
+
+// ---- Case 8: build_lines via decode+expand gives tab-expanded offsets --------
+
+TEST_CASE("build_lines: search offsets align with tab-expanded text") {
+    // raw line "a\tb" with tab_width=4: expand_tabs gives "a   b"
+    // (tab at col 1 expands to 3 spaces -> col 4, then 'b' at col 4).
+    // Searching "b" must yield char_start == 4 (expanded offset), NOT 2 (raw).
+    const std::string raw = "a\tb";
+    const std::vector<int> starts = {0};
+    const int tab_width = 4;
+    const int line_count = 1;
+
+    SearchIndex idx;
+    idx.build_lines(line_count, [&raw, &starts, tab_width](int line) {
+        const int raw_size = static_cast<int>(raw.size());
+        const int lcount   = static_cast<int>(starts.size());
+        const int bs = starts[static_cast<size_t>(line)];
+        const int be = (line + 1 < lcount)
+                           ? starts[static_cast<size_t>(line) + 1] - 1
+                           : raw_size;
+        return expand_tabs(decode_line(raw, bs, std::max(bs, be)), tab_width, nullptr);
+    });
+
+    // "a\tb" tab-expanded -> "a   b": 'b' is at char_start == 4.
+    SearchQuery q;
+    q.needle = L"b";
+    auto m = idx.find_all(q);
+    REQUIRE(m.size() == 1);
+    CHECK(m[0].block_index == 0);
+    CHECK(m[0].char_start  == 4);
+    CHECK(m[0].char_end    == 5);
 }

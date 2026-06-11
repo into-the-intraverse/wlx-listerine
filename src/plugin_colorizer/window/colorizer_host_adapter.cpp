@@ -778,7 +778,48 @@ static void clear_selection(ColorViewState* vs) {
 }
 
 static void scroll_to_match(ColorViewState* vs, const SearchMatch& m) {
+    if (vs->layout && vs->layout->is_grid()) {
+        // The match's line may not be materialized; center it arithmetically.
+        // The window slides + the highlight paints on the repaint.
+        if (m.block_index < 0 || m.block_index >= vs->layout->grid_line_count) return;
+        const float line_top =
+            (m.block_index < static_cast<int>(vs->layout->line_tops.size()))
+                ? vs->layout->line_tops[static_cast<size_t>(m.block_index)]
+                : 0.0f;
+        const float viewport_h = vs->renderer ? vs->renderer->dip_height() : 100.0f;
+        vs->scroll_y = std::clamp(line_top - viewport_h * 0.33f, 0.0f, vs->max_scroll_y);
+        InvalidateRect(vs->hwnd, nullptr, FALSE);
+        return;
+    }
     wlx::runtime::host::scroll_to_match(*vs, m);
+}
+
+// Grid-aware search index rebuild. Called before every search_step so the
+// index is in the public (source-line) index space when in grid mode.
+// Classic mode: no-op (search_step's own index_dirty branch runs build()).
+static void ensure_search_index(ColorViewState* vs) {
+    if (!vs->index_dirty) return;
+    if (vs->layout && vs->layout->is_grid()) {
+        const std::string& raw = vs->cached_raw_utf8;
+        const auto& starts = vs->line_byte_starts;
+        const int tab = g_display_cfg.tab_width;
+        vs->search_index.build_lines(
+            vs->layout->grid_line_count,
+            [&raw, &starts, tab](int line) {
+                const int raw_size = static_cast<int>(raw.size());
+                const int line_count = static_cast<int>(starts.size());
+                const int bs = starts[static_cast<size_t>(line)];
+                const int be = (line + 1 < line_count)
+                                   ? starts[static_cast<size_t>(line) + 1] - 1
+                                   : raw_size;
+                return wlx::plugin_colorizer::layout::expand_tabs(
+                    wlx::plugin_colorizer::layout::decode_line(
+                        raw, bs, std::max(bs, be)),
+                    tab, nullptr);
+            });
+        vs->index_dirty = false;
+    }
+    // Classic mode: leave index_dirty = true; search_step handles it.
 }
 
 // Selection text honoring grid mode (decode from raw) vs classic (blocks).
@@ -1541,6 +1582,7 @@ HWND __stdcall ListLoadW(HWND ParentWin, wchar_t* FileToLoad, int ShowFlags) {
         if (vs->matches.empty() || !vs->layout) return;
         SearchQuery q = vs->last_query;
         q.backwards = backwards;
+        ensure_search_index(vs);
         auto r = search_step(*vs, q, /*findfirst=*/false);
         if (!r.has_match) return;
         scroll_to_match(vs, vs->matches[r.cursor]);
@@ -1749,6 +1791,7 @@ int __stdcall ListSearchTextW(HWND ListWin, wchar_t* SearchString, int SearchPar
     q.backwards    = (SearchParameter & lcs_backwards)  != 0;
     const bool findfirst = (SearchParameter & lcs_findfirst) != 0;
 
+    ensure_search_index(vs);
     auto r = search_step(*vs, q, findfirst);
     if (!r.has_match) {
         if (vs->renderer) vs->renderer->set_search_matches({}, -1);

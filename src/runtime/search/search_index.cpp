@@ -41,6 +41,20 @@ void SearchIndex::build(const LayoutDocument& layout) {
     flat_lower_ = to_lower(flat_);
 }
 
+void SearchIndex::build_lines(int line_count,
+                              const std::function<std::wstring(int)>& line_text) {
+    flat_.clear();
+    flat_lower_.clear();
+    block_starts_.clear();
+    block_starts_.reserve(static_cast<size_t>(std::max(0, line_count)));
+    for (int i = 0; i < line_count; ++i) {
+        if (i > 0) flat_.push_back(L'\n');
+        block_starts_.push_back(static_cast<int>(flat_.size()));
+        flat_ += line_text(i);
+    }
+    flat_lower_ = to_lower(flat_);
+}
+
 std::vector<SearchMatch> SearchIndex::find_all(const SearchQuery& q) const {
     std::vector<SearchMatch> out;
     if (q.needle.empty() || flat_.empty()) return out;
