@@ -1544,7 +1544,7 @@ void __stdcall ListCloseWindow(HWND ListWin) {
         vs->live->generation.fetch_add(1, std::memory_order_release);
         // Drain parse results already posted to this window: DestroyWindow
         // discards queued messages undelivered, which would leak each heap
-        // ParseResultColor (text + raw_utf8 + grammar-pinning TreePtr). Residual
+        // ParseResultColor (raw_utf8 + grammar-pinning TreePtr). Residual
         // race: a worker that passed its closed-gate just before the store above
         // can still post one more result after this drain — that leaks at most
         // one payload, and the closed flag makes the window vanishingly small.
