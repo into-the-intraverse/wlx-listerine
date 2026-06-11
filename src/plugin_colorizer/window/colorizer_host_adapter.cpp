@@ -995,8 +995,16 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
                                                    wlx_core::TreeDeleter{g_colorizer_handle});
             else
                 v->tree.reset();
+            // REACHABLE, load-bearing (Invariant B3.4: never a tree under
+            // word-wrap) — NOT just defensive: a wrap toggle during the
+            // read->parse gap routes lc_newparams through the empty-raw or
+            // mid-load branches, which deliberately do NOT bump the generation
+            // (that would orphan this load), so this result still adopts with
+            // a stale spawn-time wrap. Unlike the single-phase twin below,
+            // phase 1 already created a cached source, so the toggle CAN land
+            // between the phases.
             if (v->tree && res->wrap != v->wrap_text)
-                v->tree.reset();   // wrap flipped mid-gap (defensive; gen bump normally catches it)
+                v->tree.reset();
             if (v->tree) {
                 // Window blocks were built plain — drop them; the next paint's
                 // ensure_grid_window rebuilds the visible window through
