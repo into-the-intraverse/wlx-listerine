@@ -1,5 +1,6 @@
 #include "runtime/cache/cache_service.h"
 
+#include "runtime/cache/memory_estimate.h"
 #include "runtime/layout/layout_document.h"
 
 namespace wlx::runtime::cache {
@@ -9,7 +10,8 @@ using parser::Document;
 using layout::LayoutDocument;
 
 void CacheService::store_parse(const ParseCacheKey& key, std::shared_ptr<Document> doc) {
-    parse_cache_.store(key, std::move(doc));
+    size_t bytes = doc ? estimate_document_memory(*doc) : 0;
+    parse_cache_.store(key, std::move(doc), bytes);
 }
 
 std::shared_ptr<Document> CacheService::lookup_parse(const ParseCacheKey& key) {
@@ -17,7 +19,8 @@ std::shared_ptr<Document> CacheService::lookup_parse(const ParseCacheKey& key) {
 }
 
 void CacheService::store_layout(const LayoutCacheKey& key, std::shared_ptr<LayoutDocument> layout) {
-    layout_cache_.store(key, std::move(layout));
+    size_t bytes = layout ? estimate_layout_memory(*layout) : 0;
+    layout_cache_.store(key, std::move(layout), bytes);
 }
 
 std::shared_ptr<LayoutDocument> CacheService::lookup_layout(const LayoutCacheKey& key) {

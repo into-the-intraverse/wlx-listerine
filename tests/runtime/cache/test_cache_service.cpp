@@ -1,8 +1,11 @@
 #include <doctest/doctest.h>
 #include "runtime/cache/cache_service.h"
+#include "runtime/cache/memory_estimate.h"
 #include "runtime/layout/layout_document.h"
 #include "runtime/parser/block_node.h"
 #include "runtime/parser/document.h"
+
+#include <string>
 
 using namespace wlx::runtime::cache;
 using namespace wlx::runtime::layout;
@@ -167,4 +170,52 @@ TEST_CASE("Overwrite existing cache entry") {
 
     CHECK(cache.parse_cache_size() == 1);
     CHECK(cache.lookup_parse(key)->blocks[0].type == BlockType::Paragraph);
+}
+
+// ---------------------------------------------------------------------------
+// Byte-budget helpers and tests
+// ---------------------------------------------------------------------------
+
+// Returns a ParseCacheKey with a distinct path for each index i.
+static ParseCacheKey key_for(int i) {
+    return ParseCacheKey{std::wstring(L"bench") + std::to_wstring(i) + L".md",
+                         /*size=*/100, /*mtime=*/static_cast<uint64_t>(i + 1), /*parser_version=*/1};
+}
+
+// Builds a Document whose estimate_document_memory() is approximately `mb` MiB.
+// One top-level block with one InlineNode holding mb*1024*1024/2 wchar_t chars
+// (each wchar_t is 2 bytes on Windows, so the text alone is ~mb MiB).
+static std::shared_ptr<Document> doc_of_mb(size_t mb) {
+    auto doc = std::make_shared<Document>();
+    BlockNode block;
+    block.type = BlockType::Paragraph;
+    InlineNode inl;
+    inl.type = InlineType::Text;
+    inl.text.assign(mb * 1024 * 1024 / 2, L'x');
+    block.inlines.push_back(std::move(inl));
+    doc->blocks.push_back(std::move(block));
+    return doc;
+}
+
+TEST_CASE("cache byte budget: eviction frees LRU entries until under budget") {
+    CacheService c;
+    for (int i = 0; i < 5; ++i)
+        c.store_parse(key_for(i), doc_of_mb(20));   // 5 x ~20 MB vs 64 MB budget
+    CHECK(c.parse_total_bytes() <= CacheService::kMaxBytesPerCache);
+    CHECK(c.lookup_parse(key_for(4)).get() != nullptr);   // just-stored always survives
+    CHECK(c.lookup_parse(key_for(0)).get() == nullptr);   // LRU tail evicted
+}
+
+TEST_CASE("cache byte budget: an oversize single entry still survives its own store") {
+    CacheService c;
+    c.store_parse(key_for(0), doc_of_mb(100));      // alone over budget
+    CHECK(c.lookup_parse(key_for(0)).get() != nullptr);   // map.size() > 1 guard
+}
+
+TEST_CASE("cache byte budget: overwrite updates the tracked total") {
+    CacheService c;
+    c.store_parse(key_for(0), doc_of_mb(20));
+    const size_t before = c.parse_total_bytes();
+    c.store_parse(key_for(0), doc_of_mb(1));        // same key, smaller doc
+    CHECK(c.parse_total_bytes() < before);
 }

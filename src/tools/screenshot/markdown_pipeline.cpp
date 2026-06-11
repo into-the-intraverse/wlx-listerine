@@ -27,9 +27,11 @@
 #include "runtime/search/search_index.h"
 #include "runtime/search/search_hud_painter.h"
 #include "tools/screenshot/working_set_sample.h"
+#include "runtime/cache/memory_estimate.h"
 
 #include <memory>
 
+using namespace wlx::runtime::cache;
 using namespace wlx::runtime::io;
 using namespace wlx::runtime::layout;
 using namespace wlx::runtime::parser;
@@ -56,35 +58,6 @@ double now_ms() {
     LARGE_INTEGER t;
     QueryPerformanceCounter(&t);
     return static_cast<double>(t.QuadPart) / freq * 1000.0;
-}
-
-// ---------- memory stats ----------
-
-size_t estimate_document_memory(const Document& doc) {
-    size_t bytes = sizeof(Document);
-    for (auto& block : doc.blocks) {
-        bytes += sizeof(BlockNode);
-        for (auto& inl : block.inlines)
-            bytes += sizeof(InlineNode) + inl.text.size() * sizeof(wchar_t);
-        for (auto& child : block.children) {
-            bytes += sizeof(BlockNode);
-            for (auto& inl : child.inlines)
-                bytes += sizeof(InlineNode) + inl.text.size() * sizeof(wchar_t);
-        }
-    }
-    return bytes;
-}
-
-size_t estimate_layout_memory(const LayoutDocument& layout) {
-    size_t bytes = sizeof(LayoutDocument);
-    for (auto& block : layout.blocks) {
-        bytes += sizeof(LayoutBlock);
-        for (auto& run : block.text_runs)
-            bytes += sizeof(TextRun) + run.text.size() * sizeof(wchar_t);
-        bytes += block.spans.size() * sizeof(InteractiveSpan);
-    }
-    bytes += layout.anchors.size() * sizeof(AnchorEntry);
-    return bytes;
 }
 
 }  // namespace
