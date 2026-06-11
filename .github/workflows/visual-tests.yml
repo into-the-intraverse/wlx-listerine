@@ -12,10 +12,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Rewrite SSH GitHub URLs to HTTPS
-        shell: bash
-        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -33,7 +29,7 @@ jobs:
         run: conan install . --output-folder=build --build=missing -s build_type=Release -s compiler.cppstd=20
 
       - name: Configure CMake
-        run: cmake --preset conan-default
+        run: cmake --preset conan-default -DWLX_REQUIRE_ALL_GRAMMARS=ON
 
       - name: Build
         run: cmake --build --preset conan-release

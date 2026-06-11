@@ -14,10 +14,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Rewrite SSH GitHub URLs to HTTPS
-        shell: bash
-        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
-
       - name: Resolve version from tag
         id: version
         shell: bash
@@ -46,7 +42,7 @@ jobs:
         # Run under bash: PowerShell's expression parser mangles dotted args
         # like `-DWLX_VERSION=1.2.0` (it sees `1.2.0` as member-access on a decimal).
         shell: bash
-        run: cmake --preset conan-default -DWLX_VERSION=${{ steps.version.outputs.version }}
+        run: cmake --preset conan-default -DWLX_VERSION=${{ steps.version.outputs.version }} -DWLX_REQUIRE_ALL_GRAMMARS=ON
 
       - name: Build
         run: cmake --build --preset conan-release

@@ -3,15 +3,37 @@
 # Included from the root CMakeLists.txt after find_package(tree-sitter).
 
 include(FetchContent)
-# QUIET=OFF so 25 sequential grammar clones print progress (otherwise the
-# configure step looks frozen for several minutes after "Target declared 'doctest::doctest'").
+# QUIET=OFF so grammar downloads print progress on CMake 3.20-3.29, where each
+# population runs a slow nested sub-build (otherwise the configure step looks
+# frozen after "Target declared 'doctest::doctest'"). CMake 3.30+ with CMP0168
+# NEW ignores this and streams download output directly.
 set(FETCHCONTENT_QUIET OFF)
-set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 # We use FetchContent_Populate (download-only, no add_subdirectory) to avoid
 # target name conflicts from grammar repos' own CMakeLists.txt files.
 if(POLICY CMP0169)
     cmake_policy(SET CMP0169 OLD)
 endif()
+# Populate directly during configure instead of spawning a nested
+# sub-build (configure + build tool) per grammar — 27 of those dominate
+# configure time, especially on Windows. Captured at FetchContent_Declare
+# time, so this must precede the declares below. CMake 3.20-3.29 keep the
+# sub-build path.
+if(POLICY CMP0168)
+    cmake_policy(SET CMP0168 NEW)
+endif()
+# Give extracted archive files fresh timestamps. With OLD behavior they keep
+# the archive's mtimes, so bumping a grammar version in an existing build dir
+# would leave sources older than the previously built .objs and grammar DLLs
+# would silently not rebuild.
+if(POLICY CMP0135)
+    cmake_policy(SET CMP0135 NEW)
+endif()
+
+# CI sets this so a bad archive URL or upstream layout change fails the build
+# instead of silently shipping a bundle with missing grammar DLLs
+# (add_grammar skips quietly and the grammar tests self-skip when a DLL is
+# absent, so nothing else would catch it).
+option(WLX_REQUIRE_ALL_GRAMMARS "Fail configure if any grammar source lacks src/parser.c" OFF)
 
 # add_grammar(LANG SOURCE_DIR
 #             [QUERY_DIR path]
@@ -25,6 +47,9 @@ endif()
 function(add_grammar LANG SOURCE_DIR)
     cmake_parse_arguments(AG "" "QUERY_DIR;UPSTREAM_SYMBOL" "" ${ARGN})
     if(NOT EXISTS "${SOURCE_DIR}/src/parser.c")
+        if(WLX_REQUIRE_ALL_GRAMMARS)
+            message(FATAL_ERROR "Grammar ${LANG}: parser.c not found in ${SOURCE_DIR}/src")
+        endif()
         message(STATUS "Grammar ${LANG}: parser.c not found in ${SOURCE_DIR}/src — skipping")
         return()
     endif()
@@ -91,146 +116,127 @@ macro(fetch_grammar NAME)
     endif()
 endmacro()
 
+# All grammars are fetched as GitHub source archives, not git clones: a tarball
+# is a single fast HTTP download (no git negotiation, no history — the
+# tree-sitter repos carry huge generated parser.c blobs in theirs), and the
+# URL_HASH both verifies integrity and lets CMake reuse an already-downloaded
+# archive without touching the network. Branch-tracking upstreams are pinned
+# to commit SHAs so the archives are reproducible.
+
 # --- Standard grammars (21) ---
 FetchContent_Declare(ts-c
-    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-c.git
-    GIT_TAG        v0.24.1
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/tree-sitter/tree-sitter-c/archive/refs/tags/v0.24.1.tar.gz
+    URL_HASH SHA256=25dd4bb3dec770769a407e0fc803f424ce02c494a56ce95fedc525316dcf9b48
 )
 FetchContent_Declare(ts-cpp
-    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-cpp.git
-    GIT_TAG        v0.23.4
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/tree-sitter/tree-sitter-cpp/archive/refs/tags/v0.23.4.tar.gz
+    URL_HASH SHA256=7a2c55afe3028f4105f25762ea58cc16537d1f5a1dcd9cca90410b3cd5d46051
 )
 FetchContent_Declare(ts-python
-    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-python.git
-    GIT_TAG        v0.25.0
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/tree-sitter/tree-sitter-python/archive/refs/tags/v0.25.0.tar.gz
+    URL_HASH SHA256=4609a3665a620e117acf795ff01b9e965880f81745f287a16336f4ca86cf270c
 )
 FetchContent_Declare(ts-javascript
-    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-javascript.git
-    GIT_TAG        v0.25.0
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/tree-sitter/tree-sitter-javascript/archive/refs/tags/v0.25.0.tar.gz
+    URL_HASH SHA256=9712fc283d3dc01d996d20b6392143445d05867a7aad76fdd723824468428b86
 )
 FetchContent_Declare(ts-rust
-    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-rust.git
-    GIT_TAG        v0.24.2
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/tree-sitter/tree-sitter-rust/archive/refs/tags/v0.24.2.tar.gz
+    URL_HASH SHA256=061e90a539a55a6aa65dceb0ad6425c50ab1a6e3e6d4ba430e2795ed4550f10e
 )
 FetchContent_Declare(ts-go
-    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-go.git
-    GIT_TAG        v0.25.0
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/tree-sitter/tree-sitter-go/archive/refs/tags/v0.25.0.tar.gz
+    URL_HASH SHA256=2dc241b97872c53195e01b86542b411a3c1a6201d9c946c78d5c60c063bba1ef
 )
 FetchContent_Declare(ts-java
-    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-java.git
-    GIT_TAG        v0.23.5
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/tree-sitter/tree-sitter-java/archive/refs/tags/v0.23.5.tar.gz
+    URL_HASH SHA256=cb199e0faae4b2c08425f88cbb51c1a9319612e7b96315a174a624db9bf3d9f0
 )
 FetchContent_Declare(ts-c-sharp
-    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-c-sharp.git
-    GIT_TAG        v0.23.1
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/tree-sitter/tree-sitter-c-sharp/archive/refs/tags/v0.23.1.tar.gz
+    URL_HASH SHA256=c0b008dca3c6820604bf0853b9668ba034f9750d89d170ba834261e94e2cd917
 )
 FetchContent_Declare(ts-json
-    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-json.git
-    GIT_TAG        v0.24.8
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/tree-sitter/tree-sitter-json/archive/refs/tags/v0.24.8.tar.gz
+    URL_HASH SHA256=acf6e8362457e819ed8b613f2ad9a0e1b621a77556c296f3abea58f7880a9213
 )
 FetchContent_Declare(ts-html
-    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-html.git
-    GIT_TAG        v0.23.2
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/tree-sitter/tree-sitter-html/archive/refs/tags/v0.23.2.tar.gz
+    URL_HASH SHA256=21fa4f2d4dcb890ef12d09f4979a0007814f67f1c7294a9b17b0108a09e45ef7
 )
 FetchContent_Declare(ts-xml
-    GIT_REPOSITORY git@github.com:tree-sitter-grammars/tree-sitter-xml.git
-    GIT_TAG        v0.7.0
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/tree-sitter-grammars/tree-sitter-xml/archive/refs/tags/v0.7.0.tar.gz
+    URL_HASH SHA256=4330a6b3685c2f66d108e1df0448eb40c468518c3a66f2c1607a924c262a3eb9
 )
 FetchContent_Declare(ts-css
-    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-css.git
-    GIT_TAG        v0.25.0
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/tree-sitter/tree-sitter-css/archive/refs/tags/v0.25.0.tar.gz
+    URL_HASH SHA256=03965344d8c0435dc54fb45b281578420bb7db8b99df4d34e7e74105a274cb79
 )
 FetchContent_Declare(ts-bash
-    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-bash.git
-    GIT_TAG        v0.25.1
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/tree-sitter/tree-sitter-bash/archive/refs/tags/v0.25.1.tar.gz
+    URL_HASH SHA256=2e785a761225b6c433410ef9c7b63cfb0a4e83a35a19e0f2aec140b42c06b52d
 )
 FetchContent_Declare(ts-toml
-    GIT_REPOSITORY git@github.com:tree-sitter-grammars/tree-sitter-toml.git
-    GIT_TAG        v0.7.0
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/tree-sitter-grammars/tree-sitter-toml/archive/refs/tags/v0.7.0.tar.gz
+    URL_HASH SHA256=7d52a7d4884f307aabc872867c69084d94456d8afcdc63b0a73031a8b29036dc
 )
 FetchContent_Declare(ts-yaml
-    GIT_REPOSITORY git@github.com:tree-sitter-grammars/tree-sitter-yaml.git
-    GIT_TAG        v0.7.2
-    GIT_SHALLOW    TRUE
-    GIT_SUBMODULES ""  # upstream yaml-test-suite submodule only used for testing; we only need the parser
+    URL      https://github.com/tree-sitter-grammars/tree-sitter-yaml/archive/refs/tags/v0.7.2.tar.gz
+    URL_HASH SHA256=aeaff5731bb8b66c7054c8aed33cd5edea5f4cd2ac71654f3f6c2ba2073d8fac
 )
 FetchContent_Declare(ts-lua
-    GIT_REPOSITORY git@github.com:MunifTanjim/tree-sitter-lua.git
-    GIT_TAG        v0.0.19
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/MunifTanjim/tree-sitter-lua/archive/refs/tags/v0.0.19.tar.gz
+    URL_HASH SHA256=974230f212d0049fce8e881b88b18eebbd05f1fd0edd16fe4ba5bdd2bcd78d08
 )
 FetchContent_Declare(ts-dockerfile
-    GIT_REPOSITORY git@github.com:camdencheek/tree-sitter-dockerfile.git
-    GIT_TAG        v0.2.0
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/camdencheek/tree-sitter-dockerfile/archive/refs/tags/v0.2.0.tar.gz
+    URL_HASH SHA256=8cbdf50838cc55e841aa9585a1a09e5b8c41454ae30ce0a93a7bd71adb140818
 )
 FetchContent_Declare(ts-cmake-lang
-    GIT_REPOSITORY git@github.com:uyha/tree-sitter-cmake.git
-    GIT_TAG        v0.7.2
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/uyha/tree-sitter-cmake/archive/refs/tags/v0.7.2.tar.gz
+    URL_HASH SHA256=c9498a31d6462b3eda82ff0988e95109b3853d88cc7c393a5008736e7da527e0
 )
 FetchContent_Declare(ts-gitattributes
-    GIT_REPOSITORY git@github.com:ObserverOfTime/tree-sitter-gitattributes.git
-    GIT_TAG        v0.1.6
-    GIT_SHALLOW    TRUE
-    GIT_SUBMODULES ""  # upstream gitattributes submodule only used for testing; we only need the parser
+    URL      https://github.com/ObserverOfTime/tree-sitter-gitattributes/archive/refs/tags/v0.1.6.tar.gz
+    URL_HASH SHA256=118a66d8b3332593e61f7466ac3f21fd15b580e60eb2436ca3ee70955d6714ae
 )
 FetchContent_Declare(ts-gitconfig
-    GIT_REPOSITORY git@github.com:the-mikedavis/tree-sitter-git-config.git
-    GIT_TAG        main
-    GIT_SHALLOW    TRUE
+    # main @ 2026-06-11 — no upstream tags
+    URL      https://github.com/the-mikedavis/tree-sitter-git-config/archive/0fbc9f99d5a28865f9de8427fb0672d66f9d83a5.tar.gz
+    URL_HASH SHA256=4a008a5392e2696879f60c0490bef6c6fe7f554aecb1d612bb6efec799e45584
 )
 FetchContent_Declare(ts-git-rebase
-    GIT_REPOSITORY git@github.com:the-mikedavis/tree-sitter-git-rebase.git
-    GIT_TAG        main
-    GIT_SHALLOW    TRUE
+    # main @ 2026-06-11 — no upstream tags
+    URL      https://github.com/the-mikedavis/tree-sitter-git-rebase/archive/32686d6b72980b36f876ae2d07719c9c3ed154e2.tar.gz
+    URL_HASH SHA256=951d33ba305003ad3444ea89cb878d63fdee03c376f2f43efb389a0cccd4efea
 )
 
 # --- Special repos ---
 FetchContent_Declare(ts-typescript
-    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-typescript.git
-    GIT_TAG        v0.23.2
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/tree-sitter/tree-sitter-typescript/archive/refs/tags/v0.23.2.tar.gz
+    URL_HASH SHA256=2c4ce711ae8d1218a3b2f899189298159d672870b5b34dff5d937bed2f3e8983
 )
 FetchContent_Declare(ts-php
-    GIT_REPOSITORY git@github.com:tree-sitter/tree-sitter-php.git
-    GIT_TAG        v0.24.2
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/tree-sitter/tree-sitter-php/archive/refs/tags/v0.24.2.tar.gz
+    URL_HASH SHA256=0e73ad63dda67ac12c0e012726a4e1a9811c26b020a0a2dea3e889f8246d9cf4
 )
 FetchContent_Declare(ts-vim
-    GIT_REPOSITORY git@github.com:tree-sitter-grammars/tree-sitter-vim.git
-    GIT_TAG        v0.8.1
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/tree-sitter-grammars/tree-sitter-vim/archive/refs/tags/v0.8.1.tar.gz
+    URL_HASH SHA256=93cafb9a0269420362454ace725a118ff1c3e08dcdfdc228aa86334b54d53c2a
 )
 FetchContent_Declare(ts-powershell
-    GIT_REPOSITORY git@github.com:airbus-cert/tree-sitter-powershell.git
-    GIT_TAG        v0.26.3
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/airbus-cert/tree-sitter-powershell/archive/refs/tags/v0.26.3.tar.gz
+    URL_HASH SHA256=38f9cba3174dc63274336120070cd6a1828fa8eb832360b94ed2ddfe6c3ac226
 )
 FetchContent_Declare(ts-gitignore
-    GIT_REPOSITORY git@github.com:shunsambongi/tree-sitter-gitignore.git
-    GIT_TAG        main
-    GIT_SHALLOW    TRUE
-    GIT_SUBMODULES ""  # upstream test submodule points to deleted toptal/gitignore; we only need the parser
+    # main @ 2026-06-11 — no upstream tags
+    URL      https://github.com/shunsambongi/tree-sitter-gitignore/archive/f4685bf11ac466dd278449bcfe5fd014e94aa504.tar.gz
+    URL_HASH SHA256=15727772801cf49bd85b147dc7f77f6c3ddabbdb3b3d55c6580e7dd8f7aa559c
 )
 FetchContent_Declare(ts-unreal-cpp
-    GIT_REPOSITORY git@github.com:taku25/tree-sitter-unreal-cpp.git
-    GIT_TAG        92eee7d        # 2026-04-10 — pinned SHA, no upstream tags
-    GIT_SHALLOW    FALSE          # GIT_SHALLOW + arbitrary-SHA pin is unreliable
+    # 92eee7d @ 2026-04-10 — pinned SHA, no upstream tags
+    URL      https://github.com/taku25/tree-sitter-unreal-cpp/archive/92eee7d1ac994e408c208bcb1b73170c8746356f.tar.gz
+    URL_HASH SHA256=74aafbaaa43a7a88eb86d220dbd1279ce16b65bcd6d615437b1613424a2a8f88
 )
 
 # Download all grammar sources (no add_subdirectory — we only need the source files)
