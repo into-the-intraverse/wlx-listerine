@@ -74,20 +74,21 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the full reference.
 
 ## 📈 Performance
 
-Both plugins only do work for the visible part of a file — parse once on a background thread, then lay out and color just what's on screen. The **worst case** rows instead force whole-file processing; you only hit them with `word_wrap = true` or an unsupported language (`json.hpp` is a deliberately brutal stress file). "Memory held" is mostly the parsed syntax tree — kept while the file is open so scrolling re-colors instantly, freed on close.
+Both plugins only do work for the visible part of a file — parse once on a background thread, then lay out and color just what's on screen. The colorizer first colors the viewport straight from the syntax tree, while a background sweep extracts *all* colors into a compact span table within ~1–2 s and **frees the tree** (the single biggest retained object); scrolling thereafter re-colors from the table. The no-wrap layout holds only a viewport-sized window of blocks, so memory stays roughly flat as you scroll. The **worst case** rows instead force whole-file processing; you only hit them with `word_wrap = true` or an unsupported language (`json.hpp` is a deliberately brutal stress file).
 
 <!-- bench:begin -->
 Measured on: AMD Ryzen 7 9800X3D 8-Core Processor, 62 GB RAM, Windows build 10.0.26200
-Baseline: commit `123b4a7-dirty`, 2026-06-10, median of 5 runs (`scripts/bench.py`)
+Baseline: commit `bcaf847-dirty`, 2026-06-11, median of 5 runs (`scripts/bench.py`)
 
 | Scenario | Open (ms) | Peak memory (MB) | Memory held (MB) |
 |----------|-----------|------------------|------------------|
-| markdown — [big.md](test_data/bench/big.md) (1.0 MB) | 172 | — | 123.1 |
-| C++ header [json.hpp](https://raw.githubusercontent.com/nlohmann/json/v3.11.3/single_include/nlohmann/json.hpp) (0.9 MB) | 166 | 61.0 | 53.7 |
-| C file [sqlite3.c](https://www.sqlite.org/2025/sqlite-amalgamation-3500100.zip) (8.8 MB) | 1020 | 393.3 | 349.5 |
-| worst case: markdown full layout — [big.md](test_data/bench/big.md) (1.0 MB) | 312 | — | 170.1 |
-| worst case: whole-file highlight [json.hpp](https://raw.githubusercontent.com/nlohmann/json/v3.11.3/single_include/nlohmann/json.hpp) (0.9 MB) | 7355 | 52.5 | 45.2 |
-| worst case: whole-file highlight [sqlite3.c](https://www.sqlite.org/2025/sqlite-amalgamation-3500100.zip) (8.8 MB) | 2041 | 336.2 | 250.7 |
+| markdown — [big.md](test_data/bench/big.md) (1.0 MB) | 166 | — | 123.1 |
+| C++ header [json.hpp](https://raw.githubusercontent.com/nlohmann/json/v3.11.3/single_include/nlohmann/json.hpp) (0.9 MB) | 159 | 62.8 | 28.8 |
+| C file [sqlite3.c](https://www.sqlite.org/2025/sqlite-amalgamation-3500100.zip) (8.8 MB) | 893 | 270.8 | 74.2 |
+| post-scroll [sqlite3.c](https://www.sqlite.org/2025/sqlite-amalgamation-3500100.zip) (20 screens) (8.8 MB) | 897 | 270.7 | 78.1 |
+| worst case: markdown full layout — [big.md](test_data/bench/big.md) (1.0 MB) | 313 | — | 169.9 |
+| worst case: whole-file highlight [json.hpp](https://raw.githubusercontent.com/nlohmann/json/v3.11.3/single_include/nlohmann/json.hpp) (0.9 MB) | 7113 | 52.6 | 45.2 |
+| worst case: whole-file highlight [sqlite3.c](https://www.sqlite.org/2025/sqlite-amalgamation-3500100.zip) (8.8 MB) | 2062 | 336.2 | 250.5 |
 
 <!-- bench:end -->
 
