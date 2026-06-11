@@ -585,6 +585,7 @@ static void begin_load_reset(ColorViewState* vs, bool reset_force) {
 static void begin_async_load(ColorViewState* vs, const wchar_t* path) {
     vs->file_path = path;
     begin_load_reset(vs, /*reset_force=*/true);
+    // NOTE: old tree/span_table/layout stay alive on purpose — they describe the OLD file still on screen during Loading; adoption swaps them atomically (and clears the table).
 
     const std::string language = resolve_language(vs);   // pure, UI-side
     WlxCore* core = g_colorizer_handle;
@@ -665,11 +666,18 @@ static void begin_async_recolor(ColorViewState* vs) {
 // between chunks: close / reload / re-language / dark-flip bumps the generation
 // and the sweep self-cancels at the next chunk edge.
 static void begin_sweep(ColorViewState* vs) {
-    if (!vs->tree || vs->cached_raw_utf8.empty()) return;
+    if (!vs->tree) return;
+    if (vs->cached_raw_utf8.empty()) {
+        // 0-byte file: complete(0) is trivially true and colorize_viewport
+        // never touches the tree — nothing to sweep, free the tree now.
+        vs->tree.reset();
+        return;
+    }
     std::shared_ptr<WlxTree> tree = vs->tree;          // shared keep-alive copy
     WlxCore* core = g_colorizer_handle;
     const bool dark = vs->dark_mode;
     const auto fsize = static_cast<uint32_t>(vs->cached_raw_utf8.size());
+    WLX_TRACE(L"begin_sweep: fsize=%u dark=%d", fsize, dark ? 1 : 0);
 
     auto job = std::make_unique<wlx::runtime::host::ParseJob>();
     job->path = vs->file_path;                          // tracing only
@@ -860,6 +868,7 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         }
         v->span_table = std::move(res->table);
         v->tree.reset();                               // free tree + unpin grammar
+        WLX_TRACE(L"sweep adopted: %zu spans, tree freed", v->span_table.size());
         return 0;
     }
 
@@ -1399,9 +1408,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {
         // Leak COM objects on detach to avoid deadlocks under loader lock.
         // Same pattern as the md plugin. The ColorViewState* in g_views are
         // intentionally leaked (g_views.clear() drops map entries but never
-        // deletes them): their TreePtr would call wlx_core_free_tree (which takes
-        // the core mutex) — forbidden under the loader lock. The OS reclaims on
-        // exit; FreeLibrary callers accept the leak (plugin is unloading anyway).
+        // deletes them): their shared tree ref would drop — and leaking the
+        // ViewState also guarantees a sweep worker can never hold the LAST ref
+        // at detach, so wlx_core_free_tree never runs under the loader lock.
+        // The OS reclaims on exit; FreeLibrary callers accept the leak (plugin
+        // is unloading anyway).
         wlx::runtime::host::leak_factories_on_detach();
         g_views.clear();
 
@@ -1556,7 +1567,7 @@ void __stdcall ListCloseWindow(HWND ListWin) {
                             wm_colorizer_sweep_done(), PM_REMOVE))
             delete reinterpret_cast<SweepResultColor*>(msg.lParam);
         SetWindowLongPtrW(ListWin, GWLP_USERDATA, 0);  // clear back-pointer before delete
-        delete vs;                         // frees the TreePtr off the loader lock
+        delete vs;                         // drops the UI's shared tree ref; the tree frees here OR on the sweep worker, whichever holds the last ref — both off the loader lock
     }
     DestroyWindow(ListWin);
 }
