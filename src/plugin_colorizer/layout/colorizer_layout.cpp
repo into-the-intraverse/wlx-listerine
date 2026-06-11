@@ -69,7 +69,7 @@ std::wstring expand_tabs(const std::wstring& line, int tab_width,
 // Decode one line's UTF-8 byte slice [line_byte_start, line_content_end_byte)
 // into the original (pre-tab-expansion) wstring, stripping a trailing '\r'.
 // Mirrors the per-line decode in layout_source's line-splitting loop so the
-// incremental (apply_spans_to_range) path produces byte-identical line text.
+// grid path (build_grid_line) produces byte-identical line text.
 std::wstring decode_line(const std::string& raw_utf8,
                          int line_byte_start, int line_content_end_byte) {
     int effective_len = line_content_end_byte - line_byte_start;
@@ -133,8 +133,8 @@ static void clamp_span_to_line(int line_byte_start,
 // is indexed WINDOW-RELATIVE and must be sized line_last - line_first + 1. Pass
 // [0, line_count-1] for the whole document. `line_byte_starts[i]` is the byte
 // start of line i; `raw_utf8_size` is the total source length for the last
-// line's content-end. Shared by layout_source (whole-doc) and apply_spans_to_range
-// (a byte window) so both produce identical per-line mappings.
+// line's content-end. Shared by layout_source (whole-doc) and the grid window
+// builder (a line range) so both produce identical per-line mappings.
 void distribute_spans_to_lines(
     const std::string& raw_utf8,
     const std::vector<int>& line_byte_starts,
@@ -563,10 +563,10 @@ wlx::runtime::layout::LayoutDocument layout_source(
 
     // ---- index color spans by starting line ----
     // ColorSpan start/length are UTF-8 byte offsets in raw_utf8. distribute_spans_to_lines
-    // (shared with the incremental apply_spans_to_range path) maps each span to its
-    // line(s) as per-line wchar offsets in the original (pre-expansion) text.
-    // Empty `colors` (the skeleton/viewport-incremental case) yields no per-line
-    // spans, so every block gets empty color_ranges — colored later on demand.
+    // (shared with the grid window builder) maps each span to its line(s) as per-line
+    // wchar offsets in the original (pre-expansion) text. Empty `colors`
+    // (the skeleton/viewport-incremental case) yields no per-line spans, so every
+    // block gets empty color_ranges — colored later on demand.
     std::vector<int> line_byte_starts;
     line_byte_starts.reserve(lines.size());
     for (const auto& li : lines) line_byte_starts.push_back(li.utf8_byte_start);

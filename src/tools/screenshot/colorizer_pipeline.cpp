@@ -386,7 +386,7 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
     }
 
     // ----- --cached-tree path (parse once + viewport highlight_range) -----
-    // Mirrors the host's reparse_and_colorize + colorize_viewport flow.
+    // Mirrors the host's grid flow (layout_grid_skeleton + slide_grid_window).
     // Falls back to the eager whole-doc path when:
     //   - core handle unavailable (ABI mismatch)
     //   - language unsupported in the core

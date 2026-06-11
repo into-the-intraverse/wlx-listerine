@@ -518,7 +518,7 @@ static void apply_whole_doc_fallback(ColorViewState* vs, const std::string& lang
 
 // The shared worker body (pure; runs OFF the UI thread). Captures only copyable,
 // COM-free data — NEVER a ColorViewState. wlx_core_prewarm/parse/supports take
-// the core mutex (fine off-thread); no render target / colorize_viewport here.
+// the core mutex (fine off-thread); no render target / window slide here.
 // `raw_utf8` is the source: from disk (read here) or a cached copy passed in.
 // wlx_core_prewarm folds in the old ListLoadW prewarm jthread.
 static std::unique_ptr<ParseResultColor> color_parse_body(
@@ -668,7 +668,7 @@ static void begin_async_recolor(ColorViewState* vs) {
 static void begin_sweep(ColorViewState* vs) {
     if (!vs->tree) return;
     if (vs->cached_raw_utf8.empty()) {
-        // 0-byte file: complete(0) is trivially true and colorize_viewport
+        // 0-byte file: complete(0) is trivially true and the window builder
         // never touches the tree — nothing to sweep, free the tree now.
         vs->tree.reset();
         return;
