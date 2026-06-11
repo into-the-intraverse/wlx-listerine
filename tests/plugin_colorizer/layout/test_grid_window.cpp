@@ -30,6 +30,7 @@ using wlx::plugin_colorizer::layout::decode_line;
 using wlx::plugin_colorizer::layout::distribute_spans_to_lines;
 using wlx::plugin_colorizer::layout::expand_tabs;
 using wlx::plugin_colorizer::layout::extract_selected_text_grid;
+using wlx::plugin_colorizer::layout::grid_line_rows;
 using wlx::plugin_colorizer::layout::grid_line_top;
 using wlx::plugin_colorizer::layout::grid_total_height;
 using wlx::plugin_colorizer::layout::GridGeometry;
@@ -792,4 +793,54 @@ TEST_CASE("phase-2 window clear: re-slide rebuilds colored at the same scroll") 
     CHECK_FALSE(doc.blocks[5].text_runs[0].color_ranges.empty());  // line 45 colored
     CHECK(doc.line_tops == tops_before);                           // geometry untouched
     CHECK(doc.total_height == doctest::Approx(height_before));
+}
+
+// ---- Case 10: wrap-mode skeleton estimates row_starts, variable line_tops ----
+
+TEST_CASE("layout_grid_skeleton: wrap mode estimates row_starts and variable line_tops") {
+    auto dwrite = create_dwrite_factory();
+    REQUIRE(dwrite);
+    ThemeService theme;
+    ColorizerDisplayConfig cfg;
+    cfg.word_wrap = true;
+    cfg.line_numbers = false;
+
+    // Line 0 short, line 1 long enough to need several rows at 200 DIP width.
+    const std::string src = "short\n" + std::string(400, 'x') + "\nend";
+    std::vector<int> starts;
+    std::shared_ptr<MaterializeCtx> ctx;
+    GridGeometry geo;
+    auto doc = layout_grid_skeleton(dwrite.Get(), src, theme, false, 200.0f, cfg,
+                                    &starts, &ctx, &geo);
+
+    REQUIRE(geo.line_count == 3);
+    CHECK(geo.wrapped());
+    REQUIRE(geo.row_starts.size() == 4);
+    CHECK(grid_line_rows(geo, 0) == 1);
+    CHECK(grid_line_rows(geo, 1) > 1);                       // long line wraps
+    CHECK(doc.line_tops[1] == doctest::Approx(grid_line_top(geo, 1)));
+    CHECK(doc.line_tops[2] == doctest::Approx(grid_line_top(geo, 2)));
+    CHECK(doc.line_tops[2] - doc.line_tops[1] >
+          (doc.line_tops[1] - doc.line_tops[0]) * 1.5f);     // line 1 taller
+    CHECK(doc.total_height == doctest::Approx(grid_total_height(geo)));
+    CHECK(doc.blocks.empty());                               // still a skeleton
+    CHECK(doc.is_grid());
+}
+
+TEST_CASE("layout_grid_skeleton: no-wrap mode keeps an empty row_starts (uniform)") {
+    auto dwrite = create_dwrite_factory();
+    REQUIRE(dwrite);
+    ThemeService theme;
+    ColorizerDisplayConfig cfg;
+    cfg.word_wrap = false;
+    cfg.line_numbers = false;
+
+    const std::string src = "alpha\nbeta\n";
+    std::vector<int> starts;
+    std::shared_ptr<MaterializeCtx> ctx;
+    GridGeometry geo;
+    auto doc = layout_grid_skeleton(dwrite.Get(), src, theme, false, 600.0f, cfg,
+                                    &starts, &ctx, &geo);
+    CHECK(!geo.wrapped());
+    CHECK(doc.line_tops[1] - doc.line_tops[0] == doctest::Approx(geo.line_height));
 }

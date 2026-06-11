@@ -3,6 +3,7 @@
 #endif
 
 #include "plugin_colorizer/layout/grid_window.h"
+#include "plugin_colorizer/layout/wrap_estimate.h"
 
 #include "runtime/parser/block_node.h"
 #include "runtime/theme/color_palette.h"
@@ -58,7 +59,8 @@ LayoutDocument layout_grid_skeleton(
     float line_height = fonts.code_size * display.line_height_factor;
     fmt->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM,
                         line_height, line_height * 0.8f);
-    fmt->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+    fmt->SetWordWrapping(display.word_wrap ? DWRITE_WORD_WRAPPING_WRAP
+                                           : DWRITE_WORD_WRAPPING_NO_WRAP);
 
     // ---- byte-scan source into per-line byte starts (NO decode) ----
     // The whole point of grid mode: skip MultiByteToWideChar entirely. Byte
@@ -112,17 +114,34 @@ LayoutDocument layout_grid_skeleton(
     float code_right = viewport_width - right_margin;
     float max_code_width = std::max(1.0f, code_right - code_left);
 
+    // ---- build GridGeometry (row_starts populated in wrap mode) ----
+    GridGeometry geo{4.0f, line_height, line_count};
+    if (display.word_wrap) {
+        // One-glyph probe for the monospace advance; the estimate is corrected
+        // to measured values by slide_grid_window, so a fallback ratio is fine
+        // for proportional fonts.
+        float advance = fonts.code_size * 0.6f;
+        ComPtr<IDWriteTextLayout> probe;
+        dwrite->CreateTextLayout(L"0", 1, fmt.Get(), 1000.0f, 100.0f,
+                                 probe.GetAddressOf());
+        if (probe) {
+            DWRITE_TEXT_METRICS pm{};
+            if (SUCCEEDED(probe->GetMetrics(&pm)) && pm.width > 0.0f)
+                advance = pm.width;
+        }
+        const int cols_per_row =
+            std::max(1, static_cast<int>(max_code_width / advance));
+        geo.row_starts = build_row_starts(estimate_wrap_rows(
+            raw_utf8, line_byte_starts, display.tab_width, cols_per_row));
+    }
+
     // ---- fill the grid skeleton ----
     doc.grid_line_count = line_count;
     doc.first_block_line = 0;
     doc.line_tops.reserve(static_cast<size_t>(line_count));
-    double y = 4.0;  // top padding
-    for (int i = 0; i < line_count; ++i) {
-        doc.line_tops.push_back(static_cast<float>(y));
-        y += line_height;
-    }
+    for (int i = 0; i < line_count; ++i)
+        doc.line_tops.push_back(grid_line_top(geo, i));
 
-    GridGeometry geo{4.0f, line_height, line_count};
     doc.total_height = grid_total_height(geo);
     doc.gutter_width = display.line_numbers ? code_left : 0.0f;
 
@@ -146,7 +165,7 @@ LayoutDocument layout_grid_skeleton(
     // orig_lines stays empty: the grid path decodes per line in build_grid_line.
 
     if (out_ctx) *out_ctx = mctx;
-    if (out_geo) *out_geo = geo;
+    if (out_geo) *out_geo = std::move(geo);
 
     return doc;
 }
