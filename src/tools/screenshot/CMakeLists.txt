@@ -8,6 +8,7 @@ add_executable(screenshot_tool
     # screenshot_tool cannot link as an import lib. Compile the source directly
     # here instead — it has no dllexport annotations, so this is safe.
     ${CMAKE_SOURCE_DIR}/src/plugin_colorizer/layout/colorizer_layout.cpp
+    ${CMAKE_SOURCE_DIR}/src/plugin_colorizer/layout/grid_window.cpp
     ${CMAKE_SOURCE_DIR}/src/plugin_colorizer/colorize/span_table.cpp
 )
 

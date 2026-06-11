@@ -35,8 +35,8 @@ namespace wlx::plugin_colorizer::layout {
 
 // Expand a single source line (wstring) by converting tabs to spaces.
 // Returns the expanded line, and fills out_tab_map[i] = expanded offset for source char i.
-static std::wstring expand_tabs(const std::wstring& line, int tab_width,
-                                 std::vector<int>* out_source_to_expanded) {
+std::wstring expand_tabs(const std::wstring& line, int tab_width,
+                         std::vector<int>* out_source_to_expanded) {
     // tab_width comes from unvalidated TOML config: 0 would divide-by-zero in
     // the column math below and negatives produce garbage, so clamp here.
     if (tab_width < 1) tab_width = 1;
@@ -70,8 +70,8 @@ static std::wstring expand_tabs(const std::wstring& line, int tab_width,
 // into the original (pre-tab-expansion) wstring, stripping a trailing '\r'.
 // Mirrors the per-line decode in layout_source's line-splitting loop so the
 // incremental (apply_spans_to_range) path produces byte-identical line text.
-static std::wstring decode_line(const std::string& raw_utf8,
-                                int line_byte_start, int line_content_end_byte) {
+std::wstring decode_line(const std::string& raw_utf8,
+                         int line_byte_start, int line_content_end_byte) {
     int effective_len = line_content_end_byte - line_byte_start;
     if (effective_len > 0 &&
         raw_utf8[static_cast<size_t>(line_byte_start + effective_len - 1)] == '\r')
@@ -88,16 +88,8 @@ static std::wstring decode_line(const std::string& raw_utf8,
     return text;
 }
 
-// A color span already clamped to one line, with offsets relative to the
-// (pre-tab-expansion) line text in wchar units. Produced by clamp_span_to_line.
-struct PerLineSpan {
-    int wchar_start = 0;
-    int wchar_len = 0;
-    uint32_t color = 0;
-    uint32_t bg_color = 0;
-    bool has_bg = false;
-    uint8_t modifiers = 0;
-};
+// PerLineSpan (a color span clamped to one line, in source-wchar offsets) is
+// declared in colorizer_layout.h — produced by clamp_span_to_line below.
 
 // Clamp one color span (UTF-8 byte offsets in raw_utf8) to the byte range of a
 // single line and convert it to per-line wchar offsets. Appends a PerLineSpan to
@@ -143,7 +135,7 @@ static void clamp_span_to_line(int line_byte_start,
 // start of line i; `raw_utf8_size` is the total source length for the last
 // line's content-end. Shared by layout_source (whole-doc) and apply_spans_to_range
 // (a byte window) so both produce identical per-line mappings.
-static void distribute_spans_to_lines(
+void distribute_spans_to_lines(
     const std::string& raw_utf8,
     const std::vector<int>& line_byte_starts,
     int raw_utf8_size,
@@ -230,7 +222,7 @@ static void distribute_spans_to_lines(
 // Map a line's PerLineSpans (source-wchar offsets) onto tab-expanded wchar
 // offsets and emit ColorRanges. `source_to_expanded` is the tab-expansion map
 // from expand_tabs; `expanded` is the tab-expanded line (for end clamping).
-static std::vector<ColorRange> build_color_ranges(
+std::vector<ColorRange> build_color_ranges(
     const std::vector<PerLineSpan>& line_spans,
     const std::vector<int>& source_to_expanded,
     const std::wstring& expanded) {
@@ -260,33 +252,16 @@ static std::vector<ColorRange> build_color_ranges(
 
 // ---- lazy materialization ---------------------------------------------------
 
-// Per-document context shared by every block for on-demand (viewport) layout.
-// Heap-allocated and captured by the LayoutDocument::materialize_block closure
-// so it outlives layout_source(). Holds the DWrite factory + text format and
-// the layout-wide constants the per-line build needs, plus the original
-// (pre-tab-expansion) source line for each block (indexed by block index).
-struct MaterializeCtx {
-    ComPtr<IDWriteFactory>    dwrite;
-    ComPtr<IDWriteTextFormat> fmt;
-    float max_code_width = 1.0f;
-    float line_height    = 0.0f;
-    float code_left      = 0.0f;
-    float code_size      = 0.0f;
-    int   tab_width      = 4;
-    ShowWhitespace show_whitespace = ShowWhitespace::None;
-    bool  show_indent_guides = false;
-    bool  highlight_trailing = false;
-    uint32_t link_color  = 0;
-    uint32_t muted_color = 0;
-    std::vector<std::wstring> orig_lines;  // [block_index] -> pre-expansion text
-};
+// MaterializeCtx (per-document build context) is declared in colorizer_layout.h
+// so grid_window.cpp shares it. It is heap-allocated and captured by the
+// LayoutDocument::materialize_block closure so it outlives layout_source().
 
 // Build the IDWriteTextLayout for one line and report its measured height
 // (== line_height for the no-wrap grid; can exceed it when word-wrap is on).
 // Syntax font modifiers from `color_ranges` are applied here, BEFORE
 // GetMetrics, so the measured height reflects the final styling (bold can
 // rewrap when word-wrap is on) and paint never mutates the layout's fonts.
-static ComPtr<IDWriteTextLayout> create_line_layout(
+ComPtr<IDWriteTextLayout> create_line_layout(
     const std::wstring& expanded, const std::vector<ColorRange>& color_ranges,
     const MaterializeCtx& ctx, float& out_height) {
     // Both ternary operands must be the same lvalue type, else the result is a
@@ -322,7 +297,7 @@ static ComPtr<IDWriteTextLayout> create_line_layout(
 // the trailing-whitespace highlight. Requires lb.text_runs[0].layout to be set
 // and lb.rect to hold the block's final position. Mirrors the original per-line
 // tail so the lazy and eager paths are pixel-identical.
-static void apply_line_decorations(
+void apply_line_decorations(
     LayoutBlock& lb,
     const std::wstring& expanded,
     const std::vector<int>& source_to_expanded,
@@ -620,6 +595,7 @@ wlx::runtime::layout::LayoutDocument layout_source(
     mctx->line_height        = line_height;
     mctx->code_left          = code_left;
     mctx->code_size          = fonts.code_size;
+    mctx->text_color         = palette.text;
     // Unvalidated config: 0 would stall the indent-guide stride loop forever
     // (expand_tabs clamps its own copy internally).
     mctx->tab_width          = std::max(1, display.tab_width);
