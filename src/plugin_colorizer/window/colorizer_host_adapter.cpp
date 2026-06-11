@@ -819,6 +819,7 @@ static bool select_all_color(ColorViewState* vs) {
         g_display_cfg.tab_width, nullptr);
     vs->sel_anchor = TextPosition{0, 0};
     vs->sel_active = TextPosition{last, static_cast<int>(expanded.size())};
+    vs->selecting = false;   // mirror the shared select_all's contract
     return true;
 }
 
