@@ -19,7 +19,11 @@ TEST_CASE("grid geometry: window covers viewport plus overscan, clamped") {
     auto [first, last] = grid_window_lines(g, /*scroll_y=*/0.0f,
                                            /*viewport_h=*/160.0f, /*overscan=*/160.0f);
     CHECK(first == 0);
-    CHECK(last == 20);                             // 2 screens from the top, inclusive
+    // 320 px below scroll 0 = the edge at y=320, inside line 19's [308, 324):
+    // exactly 20 lines (indices 0..19) intersect the window.
+    CHECK(last == 19);
+    // An edge exactly ON a line boundary floors onto that next line.
+    CHECK(grid_window_lines(g, 0.0f, 160.0f, 164.0f).second == 20);  // y=324 == line 20's top
     auto [f2, l2] = grid_window_lines(g, 16.0f * 95, 160.0f, 160.0f);
     CHECK(l2 == 99);                               // clamps at the end
     CHECK(f2 < 95);

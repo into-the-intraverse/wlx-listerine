@@ -1,7 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <cmath>
 #include <utility>
 
 namespace wlx::plugin_colorizer::layout {
@@ -30,14 +29,14 @@ inline int grid_line_at_y(const GridGeometry& g, float y) {
 }
 
 // Inclusive [first, last] line window for viewport+overscan; {0, -1} if empty.
+// Both bounds use grid_line_at_y (floor): the line CONTAINING each window edge.
+// A bottom edge exactly on a line boundary floors onto that next line, so the
+// boundary case is covered without over-including a non-intersecting line.
 inline std::pair<int, int> grid_window_lines(const GridGeometry& g, float scroll_y,
                                              float viewport_h, float overscan) {
     if (g.line_count <= 0) return {0, -1};
     const int first = grid_line_at_y(g, scroll_y - overscan);
-    const float last_y = scroll_y + viewport_h + overscan;
-    // Ceiling gives the first line starting at or after last_y; clamp to last valid.
-    const int last_raw = static_cast<int>(std::ceil((last_y - g.top_pad) / g.line_height));
-    const int last = std::clamp(last_raw, first, g.line_count - 1);
+    const int last = grid_line_at_y(g, scroll_y + viewport_h + overscan);
     return {first, last};
 }
 
