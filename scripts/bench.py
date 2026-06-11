@@ -56,6 +56,7 @@ SCENARIOS = [
     ("markdown",                                   BENCH_DIR / "big.md",      ["--lazy"]),
     ("C++ header json.hpp",                        FETCHED_DIR / "json.hpp",  ["--colorizer", "--cached-tree"]),
     ("C file sqlite3.c",                           FETCHED_DIR / "sqlite3.c", ["--colorizer", "--cached-tree"]),
+    ("post-scroll sqlite3.c (20 screens)",         FETCHED_DIR / "sqlite3.c", ["--colorizer", "--cached-tree", "--scroll-screens", "20"]),
     ("worst case: markdown full layout",           BENCH_DIR / "big.md",      []),
     ("worst case: whole-file highlight json.hpp",  FETCHED_DIR / "json.hpp",  ["--colorizer"]),
     ("worst case: whole-file highlight sqlite3.c", FETCHED_DIR / "sqlite3.c", ["--colorizer"]),
