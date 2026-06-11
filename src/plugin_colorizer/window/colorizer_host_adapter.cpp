@@ -1548,6 +1548,13 @@ void __stdcall ListCloseWindow(HWND ListWin) {
         while (PeekMessageW(&msg, ListWin, wm_colorizer_parse_done(),
                             wm_colorizer_parse_done(), PM_REMOVE))
             delete reinterpret_cast<ParseResultColor*>(msg.lParam);
+        // Same drain for queued sweep results: a SweepResultColor* carries a heap
+        // SpanTable that DestroyWindow would otherwise leak. Same residual race as
+        // above (one post can slip past the closed-gate); the closed flag keeps the
+        // window vanishingly small.
+        while (PeekMessageW(&msg, ListWin, wm_colorizer_sweep_done(),
+                            wm_colorizer_sweep_done(), PM_REMOVE))
+            delete reinterpret_cast<SweepResultColor*>(msg.lParam);
         SetWindowLongPtrW(ListWin, GWLP_USERDATA, 0);  // clear back-pointer before delete
         delete vs;                         // frees the TreePtr off the loader lock
     }
@@ -1613,7 +1620,20 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
                 // do_layout resets the colored interval, so the next paint
                 // re-highlights the viewport from the cached tree with the new
                 // dark flag. Selection/matches stay valid (same block structure).
+
+                // Cancel any in-flight sweep (it highlights with the OLD dark flag;
+                // adopting its table would bake stale colors + free the tree). The
+                // generation bump makes the worker vanish at its next chunk edge,
+                // and makes any already-posted stale result fail should_adopt_result.
+                vs->current_gen = ++wlx::runtime::host::g_load_gen;
+                vs->live->generation.store(vs->current_gen, std::memory_order_release);
+                vs->span_table.clear();   // pre-settle it's empty anyway; paranoia
+
                 do_layout(vs, vs->cached_raw_utf8, /*colors=*/{});
+                // Restart the sweep with the NEW dark flag so scroll coloring still
+                // converges to a whole-file table (and frees the tree). begin_sweep
+                // no-ops if the tree is null.
+                begin_sweep(vs);
                 InvalidateRect(vs->hwnd, nullptr, FALSE);
             } else {
                 // Re-parse + re-color the IN-MEMORY source (no file re-read) off
