@@ -1613,6 +1613,13 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
                 // generation bump here, so an in-flight first load still adopts;
                 // the adopt handler re-checks wrap against the result (B3.4).
                 InvalidateRect(vs->hwnd, nullptr, FALSE);
+            } else if (vs->state != wlx::runtime::host::LoadState::Ready) {
+                // Mid-load: the flags above are recorded; the pending adoption
+                // applies them (adopt reads the CURRENT dark mode, and a wrap
+                // change is handled by the adopt-time res->wrap mismatch guard,
+                // which drops the tree and takes the whole-doc fallback).
+                // Bumping the generation here would orphan the in-flight parse
+                // and leave the view stuck in Loading.
             } else if (!wrap_changed && vs->tree) {
                 // Dark-only flip on the tree path: the tree is theme-independent
                 // (colors resolve at highlight time), so skip the worker re-parse.
