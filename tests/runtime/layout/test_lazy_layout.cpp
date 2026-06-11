@@ -251,3 +251,171 @@ TEST_CASE("materialize_viewport is a no-op on an eager document") {
     CHECK(eager.materialize_block == nullptr);
     CHECK_FALSE(materialize_viewport(eager, 0.0f, 1000.0f));
 }
+
+TEST_CASE("md eviction: far-off materialized blocks drop layouts but keep exact geometry") {
+    // Build a lazy document tall enough for >5 "screens" (viewport_h = 50 DIPs).
+    // Mix: paragraphs, a code fence, and a list item (recipe-less, eager, must
+    // never be evicted).
+    auto factory = dwf2();
+    REQUIRE(factory);
+    MarkdownParser p;
+    const char* md =
+        "Paragraph one of many.\n\n"
+        "Paragraph two of many.\n\n"
+        "Paragraph three of many.\n\n"
+        "Paragraph four of many.\n\n"
+        "Paragraph five of many.\n\n"
+        "Paragraph six of many.\n\n"
+        "Paragraph seven of many.\n\n"
+        "Paragraph eight of many.\n\n"
+        "- list item (eager, recipe-less)\n\n"
+        "```\nint x = 0;\nint y = 1;\n```\n\n"
+        "Paragraph nine of many.\n\n"
+        "Paragraph ten of many.";
+    auto doc = std::make_shared<Document>(p.parse(md, std::strlen(md)));
+    ThemeService theme;
+    LayoutEngine eng(factory.Get(), theme, false);
+    auto lazy = eng.layout(*doc, 800.0f, /*wrap_code=*/false, /*gutter=*/0.0f, /*lazy=*/true);
+    auto ctx = eng.take_md_ctx();
+    REQUIRE(static_cast<bool>(ctx));
+    ctx->document = doc;
+
+    const float vp_h = 50.0f;  // deliberately tiny so 2-screen zone is small
+
+    // Step 1: materialize the top of the document.
+    materialize_viewport(lazy, 0.0f, vp_h, &ctx->recipes);
+
+    // Record which blocks got materialized and snapshot their geometry.
+    struct BlockSnap {
+        bool had_layout = false;
+        D2D1_RECT_F block_rect = {};
+        D2D1_RECT_F run_rect = {};
+        std::wstring run_text;
+    };
+    std::vector<BlockSnap> snaps;
+    snaps.reserve(lazy.blocks.size());
+    for (auto& b : lazy.blocks) {
+        BlockSnap s;
+        s.had_layout = !b.text_runs.empty() && b.text_runs[0].layout != nullptr;
+        s.block_rect = b.rect;
+        if (!b.text_runs.empty()) {
+            s.run_rect = b.text_runs[0].rect;
+            s.run_text = b.text_runs[0].text;
+        }
+        snaps.push_back(s);
+    }
+
+    // Snapshot line_tops before the far-jump (eviction must not rebuild the index).
+    std::vector<float> line_tops_before = lazy.line_tops;
+
+    // Step 2: jump far — scroll to bottom so early blocks are far outside the
+    // keep zone (> 2 * vp_h above the new viewport top).
+    float far_scroll = lazy.total_height - vp_h;
+    if (far_scroll < 0) far_scroll = 0;
+    materialize_viewport(lazy, far_scroll, vp_h, &ctx->recipes);
+
+    // Step 3: verify early recipe-backed blocks that had layouts now have them
+    // evicted, but geometry and text are unchanged.
+    bool saw_evicted_recipe = false;
+    bool saw_eager_kept = false;
+    for (size_t bi = 0; bi < lazy.blocks.size(); ++bi) {
+        auto& b = lazy.blocks[bi];
+        if (!snaps[bi].had_layout) continue;  // was not materialized before -> skip
+
+        bool recipe_backed = bi < ctx->recipes.size() &&
+                             ctx->recipes[bi].kind != BlockRecipe::Kind::None;
+        bool is_far = b.rect.bottom < (far_scroll - vp_h * kEvictScreens);
+
+        if (!recipe_backed) {
+            // Eager (list item): must keep its layout regardless of position.
+            if (!b.text_runs.empty())
+                CHECK(b.text_runs[0].layout != nullptr);
+            saw_eager_kept = true;
+        } else if (is_far) {
+            // Recipe-backed and far away: must be evicted.
+            REQUIRE_FALSE(b.text_runs.empty());
+            CHECK(b.text_runs[0].layout == nullptr);
+            CHECK(b.text_runs[0].color_ranges.empty());
+            CHECK(b.text_runs[0].code_bg_rects.empty());
+            CHECK(b.spans.empty());
+            CHECK(b.ws_markers.empty());
+            CHECK_FALSE(b.has_trailing_ws);
+
+            // Geometry and text MUST be unchanged.
+            CHECK(b.rect.top    == doctest::Approx(snaps[bi].block_rect.top));
+            CHECK(b.rect.bottom == doctest::Approx(snaps[bi].block_rect.bottom));
+            CHECK(b.text_runs[0].rect.top    == doctest::Approx(snaps[bi].run_rect.top));
+            CHECK(b.text_runs[0].rect.bottom == doctest::Approx(snaps[bi].run_rect.bottom));
+            CHECK(b.text_runs[0].text == snaps[bi].run_text);
+
+            saw_evicted_recipe = true;
+        }
+    }
+    CHECK(saw_evicted_recipe);    // at least one block must have been evicted
+    CHECK(saw_eager_kept);        // the list item keeps its layout
+
+    // line_tops must be identical (eviction must not rebuild the index).
+    REQUIRE(lazy.line_tops.size() == line_tops_before.size());
+    for (size_t i = 0; i < line_tops_before.size(); ++i)
+        CHECK(lazy.line_tops[i] == doctest::Approx(line_tops_before[i]));
+
+    // Step 4: scroll back to top — evicted blocks must re-materialize with the
+    // same geometry (recipe rebuild must reproduce the measured height exactly).
+    materialize_viewport(lazy, 0.0f, vp_h, &ctx->recipes);
+
+    for (size_t bi = 0; bi < lazy.blocks.size(); ++bi) {
+        if (!snaps[bi].had_layout) continue;
+        bool recipe_backed = bi < ctx->recipes.size() &&
+                             ctx->recipes[bi].kind != BlockRecipe::Kind::None;
+        if (!recipe_backed) continue;
+        auto& b = lazy.blocks[bi];
+        // Block must be materialized again after scrolling back into range.
+        // (Only check blocks that scroll back into the viewport+overscan window.)
+        float re_vp_top    = 0.0f;
+        float re_vp_bottom = vp_h * 2.0f;
+        if (b.rect.bottom < re_vp_top || b.rect.top > re_vp_bottom) continue;
+
+        REQUIRE_FALSE(b.text_runs.empty());
+        CHECK(b.text_runs[0].layout != nullptr);
+        // Rects must be unchanged (re-materialization is idempotent).
+        CHECK(b.rect.top    == doctest::Approx(snaps[bi].block_rect.top));
+        CHECK(b.rect.bottom == doctest::Approx(snaps[bi].block_rect.bottom));
+    }
+}
+
+TEST_CASE("md eviction: nullptr recipes disables eviction entirely") {
+    auto factory = dwf2();
+    REQUIRE(factory);
+    MarkdownParser p;
+    const char* md =
+        "Para A.\n\nPara B.\n\nPara C.\n\nPara D.\n\nPara E.\n\n"
+        "Para F.\n\nPara G.\n\nPara H.\n\nPara I.\n\nPara J.";
+    auto doc = std::make_shared<Document>(p.parse(md, std::strlen(md)));
+    ThemeService theme;
+    LayoutEngine eng(factory.Get(), theme, false);
+    auto lazy = eng.layout(*doc, 800.0f, false, 0.0f, /*lazy=*/true);
+    auto ctx = eng.take_md_ctx();
+    REQUIRE(static_cast<bool>(ctx));
+    ctx->document = doc;
+
+    const float vp_h = 50.0f;
+
+    // Materialize from the top WITHOUT recipes (no eviction).
+    materialize_viewport(lazy, 0.0f, vp_h, /*recipes=*/nullptr);
+
+    // Record which blocks were materialized.
+    std::vector<bool> had_layout;
+    for (auto& b : lazy.blocks)
+        had_layout.push_back(!b.text_runs.empty() && b.text_runs[0].layout != nullptr);
+
+    // Jump far without recipes — early materialized blocks must keep their layouts.
+    float far_scroll = lazy.total_height - vp_h;
+    if (far_scroll < 0) far_scroll = 0;
+    materialize_viewport(lazy, far_scroll, vp_h, /*recipes=*/nullptr);
+
+    for (size_t bi = 0; bi < lazy.blocks.size(); ++bi) {
+        if (!had_layout[bi]) continue;
+        REQUIRE_FALSE(lazy.blocks[bi].text_runs.empty());
+        CHECK(lazy.blocks[bi].text_runs[0].layout != nullptr);  // no eviction: layout kept
+    }
+}

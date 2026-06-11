@@ -97,7 +97,8 @@ void apply_height_delta(LayoutDocument& doc, int from_idx, float delta) {
     doc.total_height += delta;
 }
 
-bool materialize_viewport(LayoutDocument& doc, float scroll_y, float viewport_h) {
+bool materialize_viewport(LayoutDocument& doc, float scroll_y, float viewport_h,
+                          const std::vector<BlockRecipe>* recipes) {
     if (!doc.materialize_block) return false;  // eager doc: nothing to do
     float vp_top = scroll_y;
     float vp_bottom = vp_top + viewport_h * 2.0f;  // one screenful of overscan below
@@ -138,6 +139,41 @@ bool materialize_viewport(LayoutDocument& doc, float scroll_y, float viewport_h)
             if (a.block_index >= 0 && a.block_index < static_cast<int>(doc.blocks.size()))
                 a.y_offset = doc.blocks[a.block_index].rect.top;
     }
+
+    if (recipes) {
+        // Evict far-off materialized blocks: keep geometry/text (exact
+        // line_tops, search, no reflow), drop the heavy per-paint state. Only
+        // recipe-backed blocks (kind != None) can re-materialize, so only
+        // those are eligible. Eviction must NOT set `changed` — heights are
+        // unchanged, so no reflow or line_tops rebuild is needed.
+        const float keep_top    = vp_top    - viewport_h * kEvictScreens;
+        const float keep_bottom = vp_bottom + viewport_h * kEvictScreens;
+        for (size_t bi = 0; bi < doc.blocks.size(); ++bi) {
+            auto& b = doc.blocks[bi];
+            if (b.rect.bottom >= keep_top && b.rect.top <= keep_bottom) continue;
+            if (b.text_runs.empty() || !b.text_runs[0].layout) continue;
+            if (bi >= recipes->size() ||
+                (*recipes)[bi].kind == BlockRecipe::Kind::None)
+                continue;
+            // md materializable blocks always have exactly one text_run (Inline /
+            // CodeFence recipes each push_back a single run in layout_engine.cpp
+            // lines ~245, ~278, ~309). The loop over all runs is defensive and
+            // correct: if a future recipe type ever has more runs they all get evicted.
+            for (auto& run : b.text_runs) {
+                run.layout.Reset();
+                run.color_ranges.clear();
+                run.color_ranges.shrink_to_fit();
+                run.code_bg_rects.clear();
+                run.code_bg_rects.shrink_to_fit();
+            }
+            b.spans.clear();
+            b.spans.shrink_to_fit();
+            b.ws_markers.clear();
+            b.ws_markers.shrink_to_fit();
+            b.has_trailing_ws = false;
+        }
+    }
+
     return changed;
 }
 

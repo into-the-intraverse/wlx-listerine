@@ -85,6 +85,16 @@ void apply_height_delta(LayoutDocument& doc, int from_idx, float delta);
 // corrected block tops. No-op (returns false) if the document is fully eager
 // (materialize_block == null). Returns true if any block was (re)materialized,
 // so a host caller can refresh its scrollbar from doc.total_height.
-bool materialize_viewport(LayoutDocument& doc, float scroll_y, float viewport_h);
+//
+// When `recipes` is non-null, blocks materialized earlier but now further than
+// kEvictScreens screens outside the viewport drop their IDWriteTextLayout +
+// per-paint decoration state (color_ranges, code_bg_rects, spans, ws/trailing)
+// and re-materialize from their recipe on re-entry. Measured rects and
+// run.text are KEPT, so geometry/line_tops/search stay exact and eviction
+// never triggers a reflow or an index rebuild. Recipe-less blocks
+// (lists/quotes/tables — built eagerly, kind == None) are never evicted.
+inline constexpr float kEvictScreens = 2.0f;
+bool materialize_viewport(LayoutDocument& doc, float scroll_y, float viewport_h,
+                          const std::vector<BlockRecipe>* recipes = nullptr);
 
 }  // namespace wlx::runtime::layout

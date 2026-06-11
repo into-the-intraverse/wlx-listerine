@@ -86,6 +86,7 @@ struct ViewState {
 
     std::shared_ptr<Document> document;
     std::shared_ptr<LayoutDocument> layout;
+    std::shared_ptr<wlx::runtime::layout::MdMaterializeCtx> md_ctx;  // non-null only for fresh (non-cache) lazy layouts
     std::unique_ptr<RenderEngine> renderer;
     std::unique_ptr<InteractionEngine> interaction;
     std::unique_ptr<SearchHud> hud;
@@ -229,6 +230,9 @@ static void do_layout(ViewState* vs) {
 
     if (auto hit = g_cache.lookup_layout(lk)) {
         vs->layout = hit;
+        // cache-served layouts keep their ctx inside the materialize closure;
+        // no host handle -> no eviction (memory parity with the pre-eviction behavior).
+        vs->md_ctx.reset();
         vs->interaction = std::make_unique<InteractionEngine>(*vs->layout);
         update_scrollbar(vs);
         vs->index_dirty = true;
@@ -262,8 +266,12 @@ static void do_layout(ViewState* vs) {
     float gutter_w = gutter_for(est_lines);
     auto layout = std::make_shared<LayoutDocument>(
         engine.layout(*vs->document, layout_width, vs->wrap_text, gutter_w, lazy));
-    if (auto ctx = engine.take_md_ctx())   // lazy only; keeps recipe-pointed Document alive
+    if (auto ctx = engine.take_md_ctx()) {  // lazy only; keeps recipe-pointed Document alive
         ctx->document = vs->document;
+        vs->md_ctx = ctx;
+    } else {
+        vs->md_ctx.reset();
+    }
     wlx::runtime::layout::build_line_index(*layout);
 
     if (line_numbers && !layout->line_tops.empty()) {
@@ -272,8 +280,12 @@ static void do_layout(ViewState* vs) {
             gutter_w = gutter_for(real);
             layout = std::make_shared<LayoutDocument>(
                 engine.layout(*vs->document, layout_width, vs->wrap_text, gutter_w, lazy));
-            if (auto ctx = engine.take_md_ctx())   // gutter-resize pass is lazy too -> required
+            if (auto ctx = engine.take_md_ctx()) {  // gutter-resize pass is lazy too -> required
                 ctx->document = vs->document;
+                vs->md_ctx = ctx;
+            } else {
+                vs->md_ctx.reset();
+            }
             wlx::runtime::layout::build_line_index(*layout);
         }
     }
@@ -298,7 +310,9 @@ static void do_layout(ViewState* vs) {
 static void materialize_viewport(ViewState* vs) {
     if (!vs->layout || !vs->renderer) return;
     float vp_h = vs->renderer->dip_height();
-    if (wlx::runtime::layout::materialize_viewport(*vs->layout, vs->scroll_y, vp_h))
+    const std::vector<wlx::runtime::layout::BlockRecipe>* recipes =
+        vs->md_ctx ? &vs->md_ctx->recipes : nullptr;
+    if (wlx::runtime::layout::materialize_viewport(*vs->layout, vs->scroll_y, vp_h, recipes))
         update_scrollbar(vs);                     // total_height changed -> max_scroll_y, clamp
 }
 
