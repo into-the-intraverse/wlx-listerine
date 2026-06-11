@@ -23,7 +23,12 @@ public:
 
     // Per-cache approximate byte budget. LRU entries are evicted from the back
     // while total_bytes > kMaxBytesPerCache AND map.size() > 1 (the > 1 guard
-    // ensures a single oversized entry always survives its own store).
+    // ensures a single oversized entry always survives its own store). The
+    // per-entry byte figure is a CALIBRATED proxy, not a true heap accounting:
+    // memory_estimate.h adds a per-allocation/per-block overhead tuned against
+    // the md bench's per-phase working-set rows (big.md lazy skeleton ~84 MB
+    // real vs ~8 MB of summed struct/text bytes) so the budget tracks real
+    // residency within ~2x instead of under-counting it ~10x.
     static constexpr size_t kMaxBytesPerCache = 64 * 1024 * 1024;
 
     // Parse cache
@@ -63,20 +68,26 @@ private:
         void store(const Key& key, Value value, size_t bytes) {
             auto it = map.find(key);
             if (it != map.end()) {
-                // Overwrite: adjust total for the size difference.
+                // Overwrite: adjust total for the size difference. A bigger
+                // replacement can push past the byte budget, so evict here too.
                 total_bytes -= it->second.bytes;
                 total_bytes += bytes;
                 it->second.value = std::move(value);
                 it->second.bytes = bytes;
                 lru.splice(lru.begin(), lru, it->second.lru_pos);  // promote to MRU
+                evict_over_budget();
                 return;
             }
             lru.push_front(key);
             map.emplace(key, Entry{std::move(value), bytes, lru.begin()});
             total_bytes += bytes;
-            // Evict from LRU back while over the entry cap OR over the byte budget
-            // (but never evict the last entry — the just-stored item must survive
-            // even if alone over budget).
+            evict_over_budget();
+        }
+
+        // Evict from the LRU back while over the entry cap OR over the byte
+        // budget (but never evict the last entry — the just-stored item must
+        // survive even if alone over budget).
+        void evict_over_budget() {
             while ((map.size() > kMaxEntries)
                    || (total_bytes > kMaxBytesPerCache && map.size() > 1)) {
                 auto& back_key = lru.back();

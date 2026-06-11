@@ -381,6 +381,11 @@ TEST_CASE("md eviction: far-off materialized blocks drop layouts but keep exact 
         CHECK(b.rect.top    == doctest::Approx(snaps[bi].block_rect.top));
         CHECK(b.rect.bottom == doctest::Approx(snaps[bi].block_rect.bottom));
     }
+
+    // Re-entry must reproduce the index byte-for-byte: recipe rebuild yields the
+    // same measured heights, so no reflow and no fractional drift. Exact equality
+    // (not Approx) — heights are deterministic, delta on re-entry is exactly 0.
+    CHECK(lazy.line_tops == line_tops_before);
 }
 
 TEST_CASE("md eviction: nullptr recipes disables eviction entirely") {
