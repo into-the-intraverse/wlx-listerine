@@ -24,7 +24,10 @@ using wlx::core::colorizer::ColorSpan;
 using wlx::plugin_colorizer::layout::build_grid_line;
 using wlx::plugin_colorizer::layout::ColorizerDisplayConfig;
 using wlx::plugin_colorizer::layout::ColorsForRange;
+using wlx::plugin_colorizer::layout::decode_line;
 using wlx::plugin_colorizer::layout::distribute_spans_to_lines;
+using wlx::plugin_colorizer::layout::expand_tabs;
+using wlx::plugin_colorizer::layout::extract_selected_text_grid;
 using wlx::plugin_colorizer::layout::grid_line_top;
 using wlx::plugin_colorizer::layout::grid_total_height;
 using wlx::plugin_colorizer::layout::GridGeometry;
@@ -35,6 +38,7 @@ using wlx::plugin_colorizer::layout::PerLineSpan;
 using wlx::plugin_colorizer::layout::slide_grid_window;
 using wlx::runtime::layout::LayoutBlock;
 using wlx::runtime::layout::LayoutDocument;
+using wlx::runtime::layout::TextPosition;
 using wlx::runtime::parser::LinkKind;
 using wlx::runtime::theme::ThemeService;
 
@@ -484,4 +488,80 @@ TEST_CASE("decoration parity: URL + tabs line materializes identically to the ol
     // Trailing-ws highlight present in both.
     CHECK(old_doc.blocks[0].has_trailing_ws == lb.has_trailing_ws);
     CHECK(lb.has_trailing_ws);
+}
+
+// ---- Case 7: extract_selected_text_grid -------------------------------------
+
+TEST_CASE("grid selection text: decodes+expands from raw — multi-line, tabs, CRLF, UTF-8") {
+    // raw: "alpha\tbeta\r\n" (12 bytes) + "second line\n" (12 bytes) + "déjà vu" (9 bytes)
+    // line_byte_starts: {0, 12, 24}
+    // tab_width 4: line 0 after decode_line strips \r -> "alpha\tbeta"
+    //   expand_tabs: 'a','l','p','h','a' = col 0..4, tab at col 5 -> pad to col 8 (3 spaces)
+    //   expanded0 = "alpha   beta"
+    // Build expected values from the helpers themselves so tab math is exact.
+    const std::string raw =
+        "alpha\tbeta\r\n"   // line 0: 12 bytes, starts[0] = 0
+        "second line\n"     // line 1: 12 bytes, starts[1] = 12
+        "d\xC3\xA9j\xC3\xA0 vu";  // line 2: 9 bytes (no trailing \n), starts[2] = 24
+
+    const std::vector<int> starts = {0, 12, 24};
+    const int tab_width = 4;
+
+    // Build expected expanded strings using the real helpers.
+    std::wstring expected0 = expand_tabs(decode_line(raw, 0, 11), tab_width, nullptr);
+    std::wstring expected1 = expand_tabs(decode_line(raw, 12, 23), tab_width, nullptr);
+    std::wstring expected2 = expand_tabs(decode_line(raw, 24, static_cast<int>(raw.size())), tab_width, nullptr);
+
+    // Sanity-check the helpers match expected tab expansion for line 0.
+    // "alpha\tbeta" with tab_width=4: tab at position 5 expands to 3 spaces -> "alpha   beta"
+    CHECK(expected0 == L"alpha   beta");
+    CHECK(expected1 == L"second line");
+    CHECK(expected2 == L"déjà vu");
+
+    // Single-line slice: {1,0}..{1,6} == "second"
+    {
+        auto got = extract_selected_text_grid(raw, starts, tab_width,
+                                              TextPosition{1, 0}, TextPosition{1, 6});
+        CHECK(got == L"second");
+    }
+
+    // Multi-line {0,6}..{2,4}: from offset 6 of expanded0 to offset 4 of expanded2.
+    {
+        std::wstring want = expected0.substr(6) + L"\n" + expected1 + L"\n" + expected2.substr(0, 4);
+        auto got = extract_selected_text_grid(raw, starts, tab_width,
+                                              TextPosition{0, 6}, TextPosition{2, 4});
+        CHECK(got == want);
+    }
+
+    // Whole-file {0,0}..{2,999}: hi.char_offset clamps to expanded2.size().
+    {
+        std::wstring want = expected0 + L"\n" + expected1 + L"\n" + expected2;
+        auto got = extract_selected_text_grid(raw, starts, tab_width,
+                                              TextPosition{0, 0}, TextPosition{2, 999});
+        CHECK(got == want);
+    }
+
+    // Degenerate: lo == hi position -> empty string.
+    {
+        auto got = extract_selected_text_grid(raw, starts, tab_width,
+                                              TextPosition{1, 3}, TextPosition{1, 3});
+        CHECK(got.empty());
+    }
+
+    // lo.block_index < 0 clamps to line 0: first=0, line 0's from = 0 (lo.block_index -5
+    // != 0, so the "line == lo.block_index" branch never fires — full line 0 is taken).
+    {
+        std::wstring want = expected0 + L"\n" + expected1.substr(0, 3);
+        auto got = extract_selected_text_grid(raw, starts, tab_width,
+                                              TextPosition{-5, 0}, TextPosition{1, 3});
+        CHECK(got == want);
+    }
+
+    // hi past line_count: clamps to last valid line.
+    {
+        std::wstring want = expected0 + L"\n" + expected1 + L"\n" + expected2;
+        auto got = extract_selected_text_grid(raw, starts, tab_width,
+                                              TextPosition{0, 0}, TextPosition{99, 5});
+        CHECK(got == want);
+    }
 }

@@ -258,4 +258,33 @@ void slide_grid_window(LayoutDocument& doc, const GridGeometry& geo,
     doc.first_block_line = first;
 }
 
+// ---- grid selection text ----------------------------------------------------
+
+std::wstring extract_selected_text_grid(const std::string& raw_utf8,
+                                        const std::vector<int>& line_byte_starts,
+                                        int tab_width,
+                                        wlx::runtime::layout::TextPosition lo,
+                                        wlx::runtime::layout::TextPosition hi) {
+    std::wstring out;
+    const int line_count = static_cast<int>(line_byte_starts.size());
+    const int raw_size = static_cast<int>(raw_utf8.size());
+    const int first = std::max(0, lo.block_index);
+    for (int line = first; line <= hi.block_index && line < line_count; ++line) {
+        const int bs = line_byte_starts[static_cast<size_t>(line)];
+        const int be = (line + 1 < line_count)
+                           ? line_byte_starts[static_cast<size_t>(line) + 1] - 1
+                           : raw_size;
+        std::wstring expanded =
+            expand_tabs(decode_line(raw_utf8, bs, std::max(bs, be)), tab_width, nullptr);
+        int from = (line == lo.block_index) ? lo.char_offset : 0;
+        int to = (line == hi.block_index) ? hi.char_offset
+                                          : static_cast<int>(expanded.size());
+        from = std::clamp(from, 0, static_cast<int>(expanded.size()));
+        to = std::clamp(to, from, static_cast<int>(expanded.size()));
+        if (line != first) out.push_back(L'\n');
+        out.append(expanded, static_cast<size_t>(from), static_cast<size_t>(to - from));
+    }
+    return out;
+}
+
 }  // namespace wlx::plugin_colorizer::layout

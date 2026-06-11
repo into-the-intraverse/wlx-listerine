@@ -45,6 +45,7 @@
 #include "wlx_core/abi_spans_to_result.h"
 #include "core_dll/colorizer/colorizer.h"  // ColorizeResult / ColorSpan still used by ColorViewState
 #include "plugin_colorizer/layout/colorizer_layout.h"
+#include "plugin_colorizer/layout/grid_window.h"
 #include "plugin_colorizer/colorize/span_table.h"
 #include "plugin_colorizer/colorize/sweep_chunk.h"
 #include "plugin_colorizer/language/path_to_language.h"
@@ -780,6 +781,47 @@ static void scroll_to_match(ColorViewState* vs, const SearchMatch& m) {
     wlx::runtime::host::scroll_to_match(*vs, m);
 }
 
+// Selection text honoring grid mode (decode from raw) vs classic (blocks).
+static std::wstring selection_text(const ColorViewState* vs,
+                                   TextPosition lo, TextPosition hi) {
+    if (vs->layout && vs->layout->is_grid())
+        return wlx::plugin_colorizer::layout::extract_selected_text_grid(
+            vs->cached_raw_utf8, vs->line_byte_starts, g_display_cfg.tab_width, lo, hi);
+    return wlx::runtime::interaction::extract_selected_text(*vs->layout, lo, hi);
+}
+
+// Copy the current selection to the clipboard, grid-aware.
+static bool copy_selection_color(const ColorViewState* vs, HWND hwnd) {
+    if (!vs->layout) return false;
+    if (!vs->sel_anchor.valid()) return false;
+    if (vs->sel_anchor == vs->sel_active) return false;
+    auto lo = std::min(vs->sel_anchor, vs->sel_active);
+    auto hi = std::max(vs->sel_anchor, vs->sel_active);
+    auto text = selection_text(vs, lo, hi);
+    return wlx::runtime::host::copy_to_clipboard(hwnd, text);
+}
+
+// Grid: whole-file selection in PUBLIC line space (last line's expanded length
+// needs one decode). Classic: the shared helper.
+static bool select_all_color(ColorViewState* vs) {
+    if (!vs->layout) return false;
+    if (!vs->layout->is_grid())
+        return wlx::runtime::host::select_all(*vs);
+    const int last = vs->layout->grid_line_count - 1;
+    if (last < 0) return false;
+    const auto& starts = vs->line_byte_starts;
+    const int raw_size = static_cast<int>(vs->cached_raw_utf8.size());
+    const int bs = starts[static_cast<size_t>(last)];
+    const int be = raw_size;  // last line runs to EOF
+    std::wstring expanded = wlx::plugin_colorizer::layout::expand_tabs(
+        wlx::plugin_colorizer::layout::decode_line(vs->cached_raw_utf8, bs,
+                                                   std::max(bs, be)),
+        g_display_cfg.tab_width, nullptr);
+    vs->sel_anchor = TextPosition{0, 0};
+    vs->sel_active = TextPosition{last, static_cast<int>(expanded.size())};
+    return true;
+}
+
 // ---------- WndProc ----------
 
 static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -1180,11 +1222,11 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
 
         switch (result.kind) {
         case MenuResult::Copy:
-            copy_selection(*vs, hwnd);
+            copy_selection_color(vs, hwnd);
             break;
 
         case MenuResult::SelectAll:
-            if (select_all(*vs))
+            if (select_all_color(vs))
                 InvalidateRect(hwnd, nullptr, FALSE);
             break;
 
@@ -1192,7 +1234,7 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
             if (vs->sel_anchor.valid() && vs->sel_anchor != vs->sel_active) {
                 auto lo = std::min(vs->sel_anchor, vs->sel_active);
                 auto hi = std::max(vs->sel_anchor, vs->sel_active);
-                auto text = extract_selected_text(*vs->layout, lo, hi);
+                auto text = selection_text(vs, lo, hi);
                 search_with_google(text);
             }
             break;
@@ -1286,12 +1328,12 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         }
         // Ctrl+C — copy selection
         else if (wp == 'C' && (GetKeyState(VK_CONTROL) & 0x8000)) {
-            wlx::runtime::host::copy_selection(*vs, hwnd);
+            copy_selection_color(vs, hwnd);
             handled = true;
         }
         // Ctrl+A — select all
         else if (wp == 'A' && (GetKeyState(VK_CONTROL) & 0x8000)) {
-            if (wlx::runtime::host::select_all(*vs))
+            if (select_all_color(vs))
                 InvalidateRect(hwnd, nullptr, FALSE);
             handled = true;
         }
@@ -1598,11 +1640,11 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
     switch (Command) {
     case lc_copy:
         // Same helper as the Ctrl+C / context-menu paths (guards layout + selection).
-        return copy_selection(*vs, vs->hwnd) ? LISTPLUGIN_OK : LISTPLUGIN_ERROR;
+        return copy_selection_color(vs, vs->hwnd) ? LISTPLUGIN_OK : LISTPLUGIN_ERROR;
 
     case lc_selectall:
         // Same helper as the Ctrl+A / context-menu paths (guards null/empty layout).
-        if (!select_all(*vs))
+        if (!select_all_color(vs))
             return LISTPLUGIN_ERROR;
         InvalidateRect(vs->hwnd, nullptr, FALSE);
         return LISTPLUGIN_OK;

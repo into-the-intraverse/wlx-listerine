@@ -3,6 +3,7 @@
 #include "plugin_colorizer/layout/colorizer_layout.h"
 #include "plugin_colorizer/layout/grid_geometry.h"
 #include "runtime/layout/layout_document.h"
+#include "runtime/layout/text_position.h"
 
 #include <cstdint>
 #include <functional>
@@ -61,5 +62,15 @@ void slide_grid_window(wlx::runtime::layout::LayoutDocument& doc,
                        const std::vector<int>& line_byte_starts,
                        int first, int last,
                        const ColorsForRange& colors_for);
+
+// Selection text for a grid doc, decoded from raw bytes — works for any line
+// range regardless of the materialized window. lo/hi are PUBLIC (line) indices
+// with char offsets into the EXPANDED (tab-expanded) line text, exactly the
+// offsets hit-testing produces. Multi-line output joins with L'\n'.
+std::wstring extract_selected_text_grid(const std::string& raw_utf8,
+                                        const std::vector<int>& line_byte_starts,
+                                        int tab_width,
+                                        wlx::runtime::layout::TextPosition lo,
+                                        wlx::runtime::layout::TextPosition hi);
 
 }  // namespace wlx::plugin_colorizer::layout
