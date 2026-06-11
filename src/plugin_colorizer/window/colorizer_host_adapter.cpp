@@ -1088,9 +1088,8 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         if (vs && vs->renderer && vs->layout) {
             if (vs->renderer->needs_recreate())
                 vs->renderer->create_device_resources(hwnd);
-            // Grid mode: slide the materialized window over the viewport and
-            // color the entering lines (from span table / live tree). Wrap mode:
-            // whole-doc colors are baked at layout; ensure_grid_window is a no-op.
+            // Slide the materialized window over the viewport and color the
+            // entering lines (from span table / live tree) — both wrap modes.
             // Scroll/goto/anchor paths InvalidateRect -> WM_PAINT -> here, so no
             // other call site is needed.
             ensure_grid_window(vs);
