@@ -15,6 +15,7 @@ namespace wlx::plugin_colorizer::layout {
 // Colors for a byte range: post-settle this slices the SpanTable; mid-sweep it
 // calls wlx_core_highlight_range against the live tree; plain-text mode
 // returns an empty result.
+// Returned spans carry ABSOLUTE raw_utf8 byte offsets (never window-relative).
 using ColorsForRange =
     std::function<wlx::core::colorizer::ColorizeResult(uint32_t lo, uint32_t hi)>;
 

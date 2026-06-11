@@ -25,6 +25,8 @@ namespace wlx::plugin_colorizer::layout {
 // Mirrors layout_source's setup (format/line_height/gutter/margins) but builds
 // NO per-line blocks and decodes NO text: only line_byte_starts (a byte scan),
 // arithmetic line_tops, and the build context a later slide_grid_window needs.
+// NOTE: the format/gutter setup duplicates layout_source's; consolidate when
+// the old lazy branch is deleted (M2 cleanup).
 
 LayoutDocument layout_grid_skeleton(
     IDWriteFactory* dwrite,

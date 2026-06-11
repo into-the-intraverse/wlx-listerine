@@ -243,6 +243,42 @@ TEST_CASE("slide builds entering lines and drops leaving ones") {
         CHECK(b.text_runs[0].layout != nullptr);
         CHECK(b.text_runs[0].text == L"line" + std::to_wstring(i));
     }
+
+    // Enter-keep-enter: from [50,70], slide to [40,70].
+    // Old window: [50,70] (21 blocks). New window: [40,70] (31 blocks).
+    // Lines [50,70] are kept (pointer-equal); lines [40,49] enter at the front.
+    // There is only ONE contiguous entering run ([40,49]), so colors_for fires once.
+
+    // Capture pointers for [50..70] (currently doc.blocks[0..20]).
+    IDWriteTextLayout* kept[21];
+    for (int i = 50; i <= 70; ++i)
+        kept[i - 50] = doc.blocks[static_cast<size_t>(i - 50)].text_runs[0].layout.Get();
+
+    int enter_keep_enter_invocations = 0;
+    ColorsForRange counting2 = [&](uint32_t, uint32_t) {
+        ++enter_keep_enter_invocations;
+        return ColorizeResult{};
+    };
+
+    slide_grid_window(doc, geo, *ctx, raw, starts, 40, 70, counting2);
+    REQUIRE(doc.blocks.size() == 31);
+    CHECK(doc.first_block_line == 40);
+
+    // [50,70] must be pointer-equal to what we recorded (reused, not rebuilt).
+    for (int i = 50; i <= 70; ++i) {
+        IDWriteTextLayout* now =
+            doc.blocks[static_cast<size_t>(i - 40)].text_runs[0].layout.Get();
+        CHECK(now == kept[i - 50]);
+    }
+    // [40,49] must be freshly built (non-null, valid text).
+    for (int i = 40; i < 50; ++i) {
+        const auto& b = doc.blocks[static_cast<size_t>(i - 40)];
+        REQUIRE(!b.text_runs.empty());
+        CHECK(b.text_runs[0].layout != nullptr);
+        CHECK(b.text_runs[0].text == L"line" + std::to_wstring(i));
+    }
+    // Only one contiguous entering run ([40,49]) -> exactly 1 colors_for call.
+    CHECK(enter_keep_enter_invocations == 1);
 }
 
 // ---- Case 4: colors_for invoked once per contiguous entering run ------------
