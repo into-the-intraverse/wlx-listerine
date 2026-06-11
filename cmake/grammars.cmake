@@ -51,6 +51,10 @@ function(add_grammar LANG SOURCE_DIR)
     endif()
 
     add_library(tree-sitter-${LANG} SHARED ${GRAMMAR_SOURCES})
+    # Collect every grammar target so consumers whose POST_BUILD mirrors the
+    # grammars/ directory can depend on ALL of them — copying that directory
+    # while a grammar DLL is still being linked into it fails the build.
+    set_property(GLOBAL APPEND PROPERTY WLX_GRAMMAR_TARGETS tree-sitter-${LANG})
     target_include_directories(tree-sitter-${LANG} PRIVATE "${SOURCE_DIR}/src")
     target_link_libraries(tree-sitter-${LANG} PRIVATE tree-sitter::tree-sitter)
     set_target_properties(tree-sitter-${LANG} PROPERTIES

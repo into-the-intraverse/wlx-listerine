@@ -37,6 +37,14 @@ if(WLX_TRACE_ENABLE)
     target_compile_definitions(wlx-listerine-colorizer PRIVATE WLX_TRACE_ENABLE)
 endif()
 
+# The POST_BUILD staging below copies the whole grammars/ directory; depend on
+# every grammar target so the copy can't race a tree-sitter-* DLL still being
+# linked into it (same intermittent CI failure as the core DLL's test mirror).
+get_property(_wlx_grammar_targets GLOBAL PROPERTY WLX_GRAMMAR_TARGETS)
+if(_wlx_grammar_targets)
+    add_dependencies(wlx-listerine-colorizer ${_wlx_grammar_targets})
+endif()
+
 # Output staging — runs as the last per-plugin POST_BUILD; mirrors today's behavior.
 add_custom_command(TARGET wlx-listerine-colorizer POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
