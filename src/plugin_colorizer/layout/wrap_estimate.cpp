@@ -17,6 +17,8 @@ std::vector<int> estimate_wrap_rows(const std::string& raw_utf8,
         int cols = 0;
         for (int i = begin; i < end; ++i) {
             const unsigned char b = static_cast<unsigned char>(raw_utf8[static_cast<size_t>(i)]);
+            // A lone mid-line \r also stops counting — intentional
+            // underestimate, corrected at materialization.
             if (b == '\n' || b == '\r') break;
             if (b == '\t') {
                 cols = (cols / tw + 1) * tw;

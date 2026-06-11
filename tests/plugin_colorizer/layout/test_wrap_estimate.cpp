@@ -56,3 +56,14 @@ TEST_CASE("build_row_starts: prefix sums with leading zero") {
     CHECK(rs[2] == 4);
     CHECK(rs[3] == 6);
 }
+
+TEST_CASE("estimate_wrap_rows: lone mid-line CR stops counting (documented underestimate)") {
+    // line_byte_starts comes from a '\n'-only scan, so "ab\rcd" is ONE line;
+    // counting stops at the \r — 2 cols, not 5. Corrected at materialization.
+    const std::string src = "ab\rcd\nef";
+    const std::vector<int> starts = {0, 6};
+    auto rows = estimate_wrap_rows(src, starts, 4, 2);
+    REQUIRE(rows.size() == 2);
+    CHECK(rows[0] == 1);   // 2 cols at 2/row -> 1 row (would be 3 rows if \r didn't stop it)
+    CHECK(rows[1] == 1);
+}
