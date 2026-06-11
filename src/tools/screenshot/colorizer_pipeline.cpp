@@ -521,8 +521,12 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
 
                 // ---- post-scroll pass (--scroll-screens N): slide the viewport
                 // down N screens, recoloring + repainting per step, so the final
-                // working-set sample measures post-scroll retention.
-                if (opts.scroll_screens > 0 && !opts.full) {
+                // working-set sample measures post-scroll retention. Gated on a
+                // COMPLETE sweep table (host's table-ready discipline): an aborted
+                // sweep must not silently render uncolored post-scroll viewports.
+                if (opts.scroll_screens > 0 && !opts.full &&
+                    sweep_table.complete(
+                        static_cast<uint32_t>(content->raw_utf8.size()))) {
                     for (int step = 0; step < opts.scroll_screens; ++step) {
                         scroll_y_ct_mut += viewport_h_ct;
                         auto vr2 = wlx::plugin_colorizer::layout::viewport_byte_range(
@@ -566,9 +570,12 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
                         ms(_thigh0, _thigh1), vlo, vhi);
                     std::fprintf(stderr, "  paint            %8.2f ms\n",
                         ms(_thigh1, _tpaint_ct));   // from end of highlight, not layout
-                    std::fprintf(stderr, "  sweep      %6.2f ms  (%zu spans, %.1f MB table)\n",
+                    const char* sweep_aborted = sweep_table.complete(
+                        static_cast<uint32_t>(content->raw_utf8.size()))
+                        ? "" : "  (ABORTED)";
+                    std::fprintf(stderr, "  sweep      %6.2f ms  (%zu spans, %.1f MB table)%s\n",
                         ms(_tsweep0, _tsweep1), sweep_table.size(),
-                        sweep_table.approx_bytes() / (1024.0 * 1024.0));
+                        sweep_table.approx_bytes() / (1024.0 * 1024.0), sweep_aborted);
                     // Sum the measured phases. NOT ms(_t0, _tpaint_ct): that wall-
                     // clock also includes the one-time core-singleton init / grammar
                     // scan triggered by acquire_compatible() in this path (a tool
