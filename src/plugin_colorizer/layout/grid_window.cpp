@@ -282,6 +282,10 @@ void slide_grid_window(LayoutDocument& doc, GridGeometry& geo,
     // ---- wrap correction pass: estimates -> measured ----
     if (!geo.wrapped()) return;
 
+    // Precondition: ctx.max_code_width is unchanged since the skeleton was
+    // built. A width change (resize) must rebuild the skeleton, not slide —
+    // retained blocks' measured heights reflect the width they were built at.
+
     bool mismatch = false;
     for (size_t wi = 0; wi < doc.blocks.size(); ++wi) {
         const int wl = first + static_cast<int>(wi);

@@ -934,3 +934,72 @@ TEST_CASE("slide_grid_window: wrap steady-state scroll (no re-correction)") {
     // Total height must not have changed (geometry was already settled).
     CHECK(doc.total_height == doctest::Approx(settled_total));
 }
+
+TEST_CASE("slide_grid_window: corrections at first > 0 shift only trailing lines") {
+    auto dwrite = create_dwrite_factory();
+    REQUIRE(dwrite);
+    ThemeService theme;
+    ColorizerDisplayConfig cfg;
+    cfg.word_wrap = true;
+    cfg.line_numbers = false;
+
+    // 8 short lines (indices 0-7: "ln\n" each), then a long wrapping line
+    // (index 8: 400 'x' chars), then two more short lines (9, 10).
+    // Byte scan: 8 x "ln\n" = 8 x 3 = 24 bytes, then 400 'x', then
+    // "\ntail0\ntail1" — two more newlines -> 11 lines total (indices 0-10).
+    std::string src;
+    for (int i = 0; i < 8; ++i) src += "ln\n";
+    src += std::string(400, 'x');
+    src += "\ntail0\ntail1";
+    std::vector<int> starts;
+    std::shared_ptr<MaterializeCtx> ctx;
+    GridGeometry geo;
+    auto doc = layout_grid_skeleton(dwrite.Get(), src, theme, false, 200.0f, cfg,
+                                    &starts, &ctx, &geo);
+    REQUIRE(geo.line_count == 11);
+
+    // Settle the top window first (lines 0-3: all short, likely no correction,
+    // but harmless either way). Capture the resulting tops as the baseline.
+    slide_grid_window(doc, geo, *ctx, src, starts, 0, 3, empty_colors());
+    const std::vector<float> tops_before(doc.line_tops.begin(), doc.line_tops.end());
+
+    // Slide into never-visited territory containing the long line (index 8).
+    slide_grid_window(doc, geo, *ctx, src, starts, 7, 10, empty_colors());
+    REQUIRE(doc.first_block_line == 7);
+    REQUIRE(doc.blocks.size() == 4);
+
+    // Lines strictly ABOVE the window (indices 0-6) are untouched (the
+    // correction walk starts at first=7 and only propagates forward).
+    for (int i = 0; i < 7; ++i)
+        CHECK(doc.line_tops[static_cast<size_t>(i)] ==
+              doctest::Approx(tops_before[static_cast<size_t>(i)]));
+
+    // Every window block sits exactly at its corrected geometry top, and its
+    // height is an exact multiple of line_height matching grid_line_rows.
+    for (int i = 0; i < 4; ++i) {
+        const int line = 7 + i;
+        CHECK(doc.blocks[static_cast<size_t>(i)].rect.top ==
+              doctest::Approx(grid_line_top(geo, line)));
+        const float h = doc.blocks[static_cast<size_t>(i)].rect.bottom -
+                        doc.blocks[static_cast<size_t>(i)].rect.top;
+        CHECK(h == doctest::Approx(geo.line_height *
+                                   static_cast<float>(grid_line_rows(geo, line))));
+    }
+
+    // The block for line 8 (window index 1) must agree with the corrected
+    // geometry: grid_line_rows reflects the measured row count.
+    {
+        const float h8 = doc.blocks[1].rect.bottom - doc.blocks[1].rect.top;
+        const int measured8 = std::max(
+            1, static_cast<int>(std::lround(h8 / geo.line_height)));
+        CHECK(grid_line_rows(geo, 8) == measured8);
+    }
+
+    // Trailing lines shifted by the cumulative delta of line 8. After
+    // correction, doc.line_tops[i] == grid_line_top(geo, i) for all i.
+    // The shift absorbed by line 9 equals the shift that propagates to line 10.
+    CHECK(doc.line_tops[10] ==
+          doctest::Approx(tops_before[10] +
+                          (grid_line_top(geo, 9) - tops_before[9])));
+    CHECK(doc.total_height == doctest::Approx(grid_total_height(geo)));
+}
