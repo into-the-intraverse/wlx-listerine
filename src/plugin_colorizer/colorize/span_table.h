@@ -28,6 +28,7 @@ public:
     // All spans overlapping [lo, hi), in start order. Because spans are
     // non-overlapping and sorted, at most ONE span starting before lo can
     // overlap it (the predecessor) — step back one after the lower_bound.
+    // Callers gate table-serving on complete(); slicing mid-sweep yields only the already-swept prefix.
     wlx::core::colorizer::ColorizeResult slice(uint32_t lo, uint32_t hi) const;
 
     bool complete(uint32_t file_size) const { return swept_hi_ >= file_size; }

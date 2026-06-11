@@ -1,6 +1,7 @@
 #include "plugin_colorizer/colorize/span_table.h"
 
 #include <algorithm>
+#include <cassert>
 
 namespace wlx::plugin_colorizer::colorize {
 
@@ -9,6 +10,7 @@ using wlx::core::colorizer::ColorSpan;
 
 void SpanTable::append_chunk(const ColorizeResult& chunk,
                              uint32_t chunk_lo, uint32_t chunk_hi) {
+    assert(chunk_lo == swept_hi_);
     for (const ColorSpan& s : chunk.spans) {
         if (s.start < chunk_lo || s.start >= chunk_hi) continue;  // owned by a neighbor chunk
         spans_.push_back(s);
@@ -17,6 +19,7 @@ void SpanTable::append_chunk(const ColorizeResult& chunk,
 }
 
 ColorizeResult SpanTable::slice(uint32_t lo, uint32_t hi) const {
+    // start + length cannot overflow: spans lie within a uint32_t-sized file (ABI caps len), so span end <= file_size <= UINT32_MAX.
     ColorizeResult out;
     if (lo >= hi || spans_.empty()) return out;
     auto first = std::lower_bound(
