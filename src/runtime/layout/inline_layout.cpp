@@ -13,7 +13,7 @@ InlineLayoutResult build_inline_layout(
     IDWriteFactory* dwrite,
     const std::vector<InlineNode>& inlines,
     float max_width,
-    uint32_t default_color,
+    uint32_t /*default_color*/,  // unused — see the header note
     IDWriteTextFormat* format,
     bool force_bold,
     const FontConfig& fonts,

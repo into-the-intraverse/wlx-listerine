@@ -44,3 +44,14 @@ add_subdirectory(src/plugin_md)
 add_subdirectory(src/plugin_colorizer)
 add_subdirectory(src/tools/screenshot)
 add_subdirectory(tests)
+
+# First-party code builds at /W4 with warnings as errors. Third-party code
+# (conan imports, the FetchContent grammar DLLs in cmake/grammars.cmake) is
+# deliberately not listed. C4251 (std member of a dllexported class needs
+# dll-interface) is disabled: the core DLL, both plugins, and the tools ship
+# as one lockstep bundle built with a single toolchain/CRT, which is exactly
+# the case where that warning is noise.
+foreach(t wlx-core wlx-listerine-core wlx-listerine-md wlx-listerine-colorizer
+          screenshot_tool tests colorizer-tests)
+    target_compile_options(${t} PRIVATE /W4 /WX /wd4251)
+endforeach()

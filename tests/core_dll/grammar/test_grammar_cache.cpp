@@ -179,7 +179,7 @@ TEST_CASE("GrammarCache: reload after evict") {
     c.register_entry("a", L"a.dll", "");
     c.register_entry("b", L"b.dll", "");
 
-    auto* a1 = c.get_grammar("a");
+    c.get_grammar("a");
     now += 6min;
     c.get_grammar("b");
     CHECK_FALSE(c.is_loaded("a"));

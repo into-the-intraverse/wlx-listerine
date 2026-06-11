@@ -65,7 +65,9 @@ inline const wchar_t* wlx_trace_msg_name_(UINT msg) {
 
 #else  // WLX_TRACE_ENABLE not defined — strip to no-ops
 
-#define WLX_TRACE(...) ((void)0)
+// __noop generates no code but counts the arguments as referenced, so
+// parameters used only inside WLX_TRACE don't trip /W4 C4100 in this mode.
+#define WLX_TRACE(...) __noop(__VA_ARGS__)
 inline const wchar_t* wlx_trace_msg_name_(unsigned) { return L"?"; }
 
 #endif  // WLX_TRACE_ENABLE

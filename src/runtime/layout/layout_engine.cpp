@@ -512,7 +512,6 @@ void LayoutEngine::layout_list_item(const BlockNode& node, float& y, float left,
 
 void LayoutEngine::layout_blockquote(const BlockNode& node, float& y, float left, float right) {
     float quote_left = left + spacing_.quote_indent;
-    float border_x = left + spacing_.quote_border_width;
 
     float start_y = y;
 
@@ -618,8 +617,6 @@ void LayoutEngine::layout_table(const BlockNode& node, float& y, float left, flo
     int col_count = node.table_columns > 0 ? node.table_columns : 1;
     float table_width = right - left;
     float col_width = table_width / static_cast<float>(col_count);
-
-    float start_y = y;
 
     for (auto& row : node.children) {
         if (row.type != BlockType::TableRow) continue;
