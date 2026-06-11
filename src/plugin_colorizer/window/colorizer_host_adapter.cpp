@@ -132,8 +132,8 @@ struct ColorViewState {
     // reads this instead of the tree, and the tree is freed.
     wlx::plugin_colorizer::colorize::SpanTable span_table;
 
-    // Grid mode (no-wrap): build context + geometry for slide_grid_window.
-    // Null/zeroed in wrap mode (classic eager whole-file blocks).
+    // Grid build context + geometry for slide_grid_window (both modes; wrap
+    // carries estimated row_starts corrected on slide).
     std::shared_ptr<wlx::plugin_colorizer::layout::MaterializeCtx> grid_ctx;
     wlx::plugin_colorizer::layout::GridGeometry grid_geo;
 

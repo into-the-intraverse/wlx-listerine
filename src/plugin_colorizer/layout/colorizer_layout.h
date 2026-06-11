@@ -131,7 +131,7 @@ struct LayoutTimings {
 // block: the UTF-8 byte offset in `raw_utf8` where that block's source line begins.
 // Pass an EMPTY `colors` to build a color-less skeleton (blocks + run.text, no
 // color_ranges). This path is used by the screenshot tool's eager whole-doc route
-// (word_wrap=false bench/smoke) and by wrap-mode layout in the plugin.
+// (bench/smoke).
 wlx::runtime::layout::LayoutDocument layout_source(
     IDWriteFactory* dwrite,
     const std::string& raw_utf8,
