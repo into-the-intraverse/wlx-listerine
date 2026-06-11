@@ -104,7 +104,6 @@ struct ColorViewState {
     float max_scroll_y = 0;
 
     // Cached file content (avoids re-reading on resize)
-    std::wstring cached_text;
     std::string cached_raw_utf8;
     ColorizeResult cached_colors;
 
@@ -205,7 +204,6 @@ struct ParseResultColor {
     uint64_t generation = 0;
     std::shared_ptr<wlx::runtime::host::ViewLiveToken> live;  // same control block as the spawning view
     bool failed = false;
-    std::wstring text;        // -> cached_text
     std::string  raw_utf8;    // -> cached_raw_utf8
     std::string  language;    // -> tree_language
     bool wrap = false;        // wrap mode the tree path was decided with (B3.4)
@@ -514,16 +512,15 @@ static void apply_whole_doc_fallback(ColorViewState* vs, const std::string& lang
 // The shared worker body (pure; runs OFF the UI thread). Captures only copyable,
 // COM-free data — NEVER a ColorViewState. wlx_core_prewarm/parse/supports take
 // the core mutex (fine off-thread); no render target / colorize_viewport here.
-// `text`/`raw_utf8` are the source: from disk (read here) or a cached copy passed
-// in. wlx_core_prewarm folds in the old ListLoadW prewarm jthread.
+// `raw_utf8` is the source: from disk (read here) or a cached copy passed in.
+// wlx_core_prewarm folds in the old ListLoadW prewarm jthread.
 static std::unique_ptr<ParseResultColor> color_parse_body(
     const wlx::runtime::host::ParseJob& j,
-    std::wstring text, std::string raw_utf8,
+    std::string raw_utf8,
     std::string language, bool wrap_text, WlxCore* core) {
     auto r = std::make_unique<ParseResultColor>();
     r->generation = j.generation;
     r->live = j.live;
-    r->text = std::move(text);
     r->raw_utf8 = std::move(raw_utf8);
     r->language = language;
     r->wrap = wrap_text;
@@ -611,8 +608,7 @@ static void begin_async_load(ColorViewState* vs, const wchar_t* path) {
                 r->failed = true;
                 return r;
             }
-            return color_parse_body(j, std::move(content->text),
-                                    std::move(content->raw_utf8),
+            return color_parse_body(j, std::move(content->raw_utf8),
                                     language, wrap, core);
         });
     // Loading frame now; the worker triggers the real repaint at adoption.
@@ -639,8 +635,7 @@ static void begin_async_recolor(ColorViewState* vs) {
     const std::string language = resolve_language(vs);   // pure, UI-side
     WlxCore* core = g_colorizer_handle;
     const bool wrap = vs->wrap_text;
-    std::wstring text_copy = vs->cached_text;             // captured COPIES — no vs
-    std::string raw_copy = vs->cached_raw_utf8;
+    std::string raw_copy = vs->cached_raw_utf8;           // captured COPY — no vs
 
     auto job = std::make_unique<wlx::runtime::host::ParseJob>();
     job->path = vs->file_path;     // unused by this closure; kept for symmetry
@@ -649,12 +644,12 @@ static void begin_async_recolor(ColorViewState* vs) {
     job->hwnd = vs->hwnd;
     job->done_msg = wm_colorizer_parse_done();
     wlx::runtime::host::spawn_parse_worker<ParseResultColor>(std::move(job),
-        [language, wrap, core, text_copy = std::move(text_copy),
+        [language, wrap, core,
          raw_copy = std::move(raw_copy)](const wlx::runtime::host::ParseJob& j) mutable
             -> std::unique_ptr<ParseResultColor> {
             // mutable + move: the worker runs this exactly once, so hand the
-            // file-sized strings to color_parse_body instead of copying them.
-            return color_parse_body(j, std::move(text_copy), std::move(raw_copy),
+            // file-sized string to color_parse_body instead of copying it.
+            return color_parse_body(j, std::move(raw_copy),
                                     language, wrap, core);
         });
     InvalidateRect(vs->hwnd, nullptr, FALSE);
@@ -721,7 +716,7 @@ static void begin_sweep(ColorViewState* vs) {
 
 
 static void relayout(ColorViewState* vs) {
-    if (vs->cached_text.empty() && vs->file_path.empty()) return;
+    if (vs->cached_raw_utf8.empty() && vs->file_path.empty()) return;
     do_layout(vs, vs->cached_raw_utf8, vs->cached_colors);
 }
 
@@ -801,7 +796,6 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         if (res->failed) {
             v->layout.reset();
             v->interaction.reset();                   // held a reference into the dead layout
-            v->cached_text.clear();
             v->cached_raw_utf8.clear();
             v->cached_colors = {};
             v->tree.reset();                          // unpin old grammar on a failed reload
@@ -818,7 +812,6 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
             InvalidateRect(hwnd, nullptr, FALSE);
             return 0;
         }
-        v->cached_text = std::move(res->text);
         v->cached_raw_utf8 = std::move(res->raw_utf8);
         v->tree_language = std::move(res->language);
         // res->tree stays move-only (TreePtr); only the ViewState field is shared.
