@@ -87,8 +87,8 @@ TEST_CASE("span table: completeness watermark") {
 TEST_CASE("adaptive sweep chunk targets ~25ms of highlight per chunk") {
     // pathological language: 64 KB took 480 ms -> shrink hard, clamped at 16 KB
     CHECK(next_chunk_bytes(64 * 1024, 480.0) == 16 * 1024);
-    // fast language: 64 KB took 2 ms -> grow, clamped at 1 MB
-    CHECK(next_chunk_bytes(64 * 1024, 2.0) == 1024 * 1024);
+    // fast language: 64 KB took 1 ms -> grow 25x, clamped at 1 MB
+    CHECK(next_chunk_bytes(64 * 1024, 1.0) == 1024 * 1024);
     // on-target stays put (within clamps)
     CHECK(next_chunk_bytes(256 * 1024, 25.0) == 256 * 1024);
     // degenerate timing -> max growth, no div-by-zero
