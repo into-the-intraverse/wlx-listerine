@@ -94,6 +94,14 @@ std::wstring run_markdown_pipeline(const Options& opts) {
     // process delta number measuring just what this pipeline allocates.
     size_t mem_before = opts.bench ? sample_working_set().current : 0;
 
+    // Per-phase working-set samples (only populated when --bench).
+    size_t ws_read        = 0;
+    size_t ws_parse       = 0;
+    size_t ws_layout      = 0;
+    size_t ws_target      = 0;
+    size_t ws_materialize = 0;
+    size_t ws_paint       = 0;
+
     // Build output path as sibling of input: dir/foo.md -> dir/foo.png
     fs::path input(opts.input_path);
     std::wstring stem = input.stem().wstring();
@@ -158,6 +166,7 @@ std::wstring run_markdown_pipeline(const Options& opts) {
     }
 
     double t_read = now_ms();
+    if (opts.bench) ws_read = sample_working_set().current;
 
     MarkdownParser parser;
     // shared_ptr so the lazy path can hand ownership to the layout's materialize
@@ -167,6 +176,7 @@ std::wstring run_markdown_pipeline(const Options& opts) {
         parser.parse(content->raw_utf8.c_str(), content->raw_utf8.size()));
 
     double t_parse = now_ms();
+    if (opts.bench) ws_parse = sample_working_set().current;
 
     // Layout
     LayoutEngine layout_engine(dwrite_factory.Get(), theme, opts.dark, core);
@@ -188,6 +198,7 @@ std::wstring run_markdown_pipeline(const Options& opts) {
     }
 
     double t_layout = now_ms();
+    if (opts.bench) ws_layout = sample_working_set().current;
 
     // Determine bitmap dimensions
     int bmp_width = opts.width;
@@ -211,6 +222,7 @@ std::wstring run_markdown_pipeline(const Options& opts) {
     }
 
     double t_target = now_ms();
+    if (opts.bench) ws_target = sample_working_set().current;
 
     // Lazy only: build + reflow the blocks intersecting the painted viewport
     // before painting (and before search indexing). Eager docs are a no-op.
@@ -222,6 +234,7 @@ std::wstring run_markdown_pipeline(const Options& opts) {
         wlx::runtime::layout::materialize_viewport(layout, scroll_y, renderer.dip_height());
 
     double t_materialize = now_ms();
+    if (opts.bench) ws_materialize = sample_working_set().current;
 
     // Optional: run a search before painting so the document and the
     // match highlights are baked into a single paint pass.
@@ -277,6 +290,7 @@ std::wstring run_markdown_pipeline(const Options& opts) {
     }
 
     double t_paint = now_ms();
+    if (opts.bench) ws_paint = sample_working_set().current;
 
     // Save PNG
     hr = renderer.save_to_png(wic_factory.Get(), out_path.c_str());
@@ -331,13 +345,32 @@ std::wstring run_markdown_pipeline(const Options& opts) {
         size_t doc_mem = estimate_document_memory(*doc);
         size_t lay_mem = estimate_layout_memory(layout);
         std::fprintf(stderr, "Memory (estimates):\n");
-        std::fprintf(stderr, "  document AST   %6zu bytes\n", doc_mem);
-        std::fprintf(stderr, "  layout data    %6zu bytes\n", lay_mem);
+        std::fprintf(stderr, "  document AST   %6zu bytes  (%.1f MB)\n",
+                     doc_mem, static_cast<double>(doc_mem) / (1024.0 * 1024.0));
+        std::fprintf(stderr, "  layout data    %6zu bytes  (%.1f MB)\n",
+                     lay_mem, static_cast<double>(lay_mem) / (1024.0 * 1024.0));
         // Signed: the working set can legitimately SHRINK vs the baseline,
         // and unsigned size_t subtraction would wrap to a huge bogus delta.
         std::fprintf(stderr, "  process delta  %+.0f KB\n",
                      static_cast<double>(static_cast<ptrdiff_t>(mem_after) -
                                          static_cast<ptrdiff_t>(mem_before)) / 1024.0);
+        std::fprintf(stderr, "\n");
+
+        // Per-phase working-set deltas vs mem_before (bench-only).
+        // Labels intentionally differ from "process delta" so RX_DELTA in bench.py
+        // does not pick them up.
+        auto phase_mb = [mem_before](size_t ws) {
+            return (static_cast<double>(ws) - static_cast<double>(mem_before))
+                   / (1024.0 * 1024.0);
+        };
+        std::fprintf(stderr, "Working-set phases (cumulative from baseline):\n");
+        std::fprintf(stderr, "  ws after read         %+8.1f MB\n", phase_mb(ws_read));
+        std::fprintf(stderr, "  ws after parse        %+8.1f MB\n", phase_mb(ws_parse));
+        std::fprintf(stderr, "  ws after layout       %+8.1f MB\n", phase_mb(ws_layout));
+        std::fprintf(stderr, "  ws after target       %+8.1f MB\n", phase_mb(ws_target));
+        if (lazy)
+            std::fprintf(stderr, "  ws after materialize  %+8.1f MB\n", phase_mb(ws_materialize));
+        std::fprintf(stderr, "  ws after paint        %+8.1f MB\n", phase_mb(ws_paint));
         std::fprintf(stderr, "\n");
     }
 
