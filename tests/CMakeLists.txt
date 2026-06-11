@@ -47,11 +47,13 @@ add_executable(colorizer-tests
     plugin_colorizer/language/test_path_to_language.cpp
     plugin_colorizer/layout/test_colorizer_layout.cpp
     plugin_colorizer/test_colorizer_smoke.cpp
+    plugin_colorizer/colorize/test_span_table.cpp
     core_dll/abi/test_wlx_core_abi.cpp
     core_dll/registry/test_core_config.cpp
     core_dll/grammar/test_grammar_cache.cpp
     tools/test_token_json_writer.cpp
     ${CMAKE_SOURCE_DIR}/src/plugin_colorizer/layout/colorizer_layout.cpp
+    ${CMAKE_SOURCE_DIR}/src/plugin_colorizer/colorize/span_table.cpp
 )
 
 target_link_libraries(colorizer-tests PRIVATE

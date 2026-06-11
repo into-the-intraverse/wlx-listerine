@@ -4,6 +4,7 @@
 add_library(wlx-listerine-colorizer SHARED
     window/colorizer_host_adapter.cpp
     layout/colorizer_layout.cpp
+    colorize/span_table.cpp
     ${CMAKE_SOURCE_DIR}/src/runtime/search/search_hud.cpp
     exports/plugin.def
     "${CMAKE_BINARY_DIR}/generated/colorizer_resource.rc"
