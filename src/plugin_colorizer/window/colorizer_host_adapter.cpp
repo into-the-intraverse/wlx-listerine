@@ -195,6 +195,15 @@ static UINT wm_colorizer_sweep_done() {
     return m;
 }
 
+// Phase 1 of a two-phase open (spec 2026-06-11-two-phase-open): the worker
+// posts the raw bytes as soon as the read completes; adoption shows plain,
+// fully interactive text while the parse continues. Distinct registered
+// message for the same reasons as ParseDone.
+static UINT wm_colorizer_text_ready() {
+    static const UINT m = RegisterWindowMessageW(L"WlxListerineColorizer.TextReady");
+    return m;
+}
+
 // Plugin-local async parse result. Carries ONLY copyable/move-only COM-free data:
 // built on the worker thread, adopted on the UI thread. The TreePtr makes this
 // move-only — fine for unique_ptr<ParseResultColor>. A dropped/closed/post-failed
@@ -208,6 +217,11 @@ struct ParseResultColor {
     std::string  raw_utf8;    // -> cached_raw_utf8
     std::string  language;    // -> tree_language
     bool wrap = false;        // wrap mode the tree path was decided with (B3.4)
+    // True when a TextReady post already delivered raw_utf8 (phase 1); the
+    // adopt handler then takes the minimal tree + window-clear path and this
+    // struct's raw_utf8 is empty. False on the single-phase paths (wrap mode,
+    // read failure, or a failed phase-1 post) which still carry the source.
+    bool two_phase = false;
     wlx_core::TreePtr tree;   // null => UI runs the whole-doc fallback colorize
 };
 
@@ -217,6 +231,14 @@ struct SweepResultColor {
     std::shared_ptr<wlx::runtime::host::ViewLiveToken> live;
     bool aborted = false;
     wlx::plugin_colorizer::colorize::SpanTable table;
+};
+
+// Worker -> UI phase-1 result. COM-free. Carries a COPY of the source (the
+// worker keeps its original for the parse).
+struct TextResultColor {
+    uint64_t generation = 0;
+    std::shared_ptr<wlx::runtime::host::ViewLiveToken> live;
+    std::string raw_utf8;
 };
 
 // ---------- globals ----------
@@ -977,6 +999,29 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         return 0;
     }
 
+    if (msg == wm_colorizer_text_ready()) {
+        std::unique_ptr<TextResultColor> res(reinterpret_cast<TextResultColor*>(lp));
+        auto it = g_views.find(hwnd);
+        if (it == g_views.end()) return 0;            // closed/recycled -> drop
+        ColorViewState* v = it->second;
+        if (!wlx::runtime::host::should_adopt_result(res->live.get(), res->generation,
+                                                     v->live.get(), v->current_gen))
+            return 0;                                 // superseded/closed -> drop
+        // Swap in the new source and show it plain. The OLD file's tree/table
+        // describe the previous content — drop them now (the generation bump
+        // already cancelled the old sweep; freeing here is on the UI thread,
+        // off the loader lock). Colors arrive at ParseDone (two_phase path).
+        v->cached_raw_utf8 = std::move(res->raw_utf8);
+        v->tree.reset();
+        v->span_table.clear();
+        v->tree_language.clear();
+        do_layout(v, v->cached_raw_utf8, /*colors=*/{});
+        v->state = wlx::runtime::host::LoadState::Ready;
+        WLX_TRACE(L"text ready: %zu bytes shown plain", v->cached_raw_utf8.size());
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+    }
+
     switch (msg) {
     case WM_PAINT: {
         PAINTSTRUCT ps;
@@ -1685,6 +1730,13 @@ void __stdcall ListCloseWindow(HWND ListWin) {
         while (PeekMessageW(&msg, ListWin, wm_colorizer_sweep_done(),
                             wm_colorizer_sweep_done(), PM_REMOVE))
             delete reinterpret_cast<SweepResultColor*>(msg.lParam);
+        // Same drain for queued phase-1 text results: a TextResultColor* carries a
+        // heap raw_utf8 copy that DestroyWindow would otherwise leak. Same residual
+        // race as above (one post can slip past the closed-gate); the closed flag
+        // keeps the window vanishingly small.
+        while (PeekMessageW(&msg, ListWin, wm_colorizer_text_ready(),
+                            wm_colorizer_text_ready(), PM_REMOVE))
+            delete reinterpret_cast<TextResultColor*>(msg.lParam);
         SetWindowLongPtrW(ListWin, GWLP_USERDATA, 0);  // clear back-pointer before delete
         delete vs;                         // drops the UI's shared tree ref; the tree frees here OR on the sweep worker, whichever holds the last ref — both off the loader lock
     }
