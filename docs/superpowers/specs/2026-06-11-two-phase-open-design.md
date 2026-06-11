@@ -1,3 +1,5 @@
+**Superseded 2026-06-11:** wrap mode now uses the implicit grid (two-phase, tree under wrap, B3.4 retired) — see docs/superpowers/plans/2026-06-11-wrap-grid.md.
+
 # Two-phase open (colorizer) — design
 
 **Date:** 2026-06-11
