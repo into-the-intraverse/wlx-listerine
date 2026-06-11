@@ -193,7 +193,12 @@ void slide_grid_window(LayoutDocument& doc, const GridGeometry& geo,
                        MaterializeCtx& ctx, const std::string& raw_utf8,
                        const std::vector<int>& line_byte_starts,
                        int first, int last, const ColorsForRange& colors_for) {
-    if (last < first) {  // empty window
+    // Clamp into the valid line range: grid_window_lines already clamps, but
+    // this is the public API boundary — a future caller must not be able to
+    // index line_byte_starts out of bounds.
+    first = std::max(0, first);
+    last = std::min(last, static_cast<int>(line_byte_starts.size()) - 1);
+    if (last < first) {  // empty window (also: empty doc, or first past EOF)
         doc.blocks.clear();
         doc.first_block_line = std::max(0, first);
         return;

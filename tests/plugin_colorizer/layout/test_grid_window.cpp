@@ -370,6 +370,13 @@ TEST_CASE("slide edges: empty file, single huge line, window past EOF, empty win
         REQUIRE(doc.blocks.size() == 1);
         CHECK(doc.first_block_line == 9);
         CHECK(doc.blocks[0].text_runs[0].text == L"line9");
+
+        // Genuinely past EOF: the API clamps rather than indexing OOB.
+        slide_grid_window(doc, geo, *ctx, raw, starts, 9, 50, empty_colors());
+        REQUIRE(doc.blocks.size() == 1);              // clamped to last line
+        CHECK(doc.blocks[0].text_runs[0].text == L"line9");
+        slide_grid_window(doc, geo, *ctx, raw, starts, 20, 50, empty_colors());
+        CHECK(doc.blocks.empty());                    // first past EOF -> empty
     }
 }
 
