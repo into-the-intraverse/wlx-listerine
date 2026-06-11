@@ -844,3 +844,93 @@ TEST_CASE("layout_grid_skeleton: no-wrap mode keeps an empty row_starts (uniform
     CHECK(!geo.wrapped());
     CHECK(doc.line_tops[1] - doc.line_tops[0] == doctest::Approx(geo.line_height));
 }
+
+// ---- Case 11: wrap-mode estimate correction -----------------------------------
+
+TEST_CASE("slide_grid_window: wrap mode corrects estimates to measured rows") {
+    auto dwrite = create_dwrite_factory();
+    REQUIRE(dwrite);
+    ThemeService theme;
+    ColorizerDisplayConfig cfg;
+    cfg.word_wrap = true;
+    cfg.line_numbers = false;
+
+    const std::string src = "short\n" + std::string(400, 'x') + "\nend";
+    std::vector<int> starts;
+    std::shared_ptr<MaterializeCtx> ctx;
+    GridGeometry geo;
+    auto doc = layout_grid_skeleton(dwrite.Get(), src, theme, false, 200.0f, cfg,
+                                    &starts, &ctx, &geo);
+
+    slide_grid_window(doc, geo, *ctx, src, starts, 0, 2, empty_colors());
+
+    REQUIRE(doc.blocks.size() == 3);
+    // Geometry now reflects measured rows: block rects exactly match
+    // grid_line_top, heights are exact row multiples, blocks are contiguous.
+    for (int i = 0; i < 3; ++i) {
+        CHECK(doc.blocks[static_cast<size_t>(i)].rect.top ==
+              doctest::Approx(grid_line_top(geo, i)));
+        const float h = doc.blocks[static_cast<size_t>(i)].rect.bottom -
+                        doc.blocks[static_cast<size_t>(i)].rect.top;
+        CHECK(h == doctest::Approx(geo.line_height * grid_line_rows(geo, i)));
+    }
+    CHECK(doc.blocks[1].rect.bottom == doctest::Approx(doc.blocks[2].rect.top));
+    CHECK(doc.line_tops[2] == doctest::Approx(grid_line_top(geo, 2)));
+    CHECK(doc.total_height == doctest::Approx(grid_total_height(geo)));
+    // A second identical slide is steady-state: nothing changes.
+    const float settled_total = doc.total_height;
+    slide_grid_window(doc, geo, *ctx, src, starts, 0, 2, empty_colors());
+    CHECK(doc.total_height == doctest::Approx(settled_total));
+}
+
+TEST_CASE("slide_grid_window: no-wrap behavior unchanged (uniform geo untouched)") {
+    auto dwrite = create_dwrite_factory();
+    REQUIRE(dwrite);
+    ThemeService theme;
+    ColorizerDisplayConfig cfg;
+    cfg.word_wrap = false;
+    cfg.line_numbers = false;
+
+    // "alpha\nbeta\ngamma\n" has a trailing newline -> 4 lines incl. final empty.
+    const std::string src = "alpha\nbeta\ngamma\n";
+    std::vector<int> starts;
+    std::shared_ptr<MaterializeCtx> ctx;
+    GridGeometry geo;
+    auto doc = layout_grid_skeleton(dwrite.Get(), src, theme, false, 600.0f, cfg,
+                                    &starts, &ctx, &geo);
+    // 4 lines: alpha, beta, gamma, <empty>
+    REQUIRE(doc.grid_line_count == 4);
+    slide_grid_window(doc, geo, *ctx, src, starts, 0, 3, empty_colors());
+    CHECK(!geo.wrapped());
+    CHECK(doc.blocks.size() == 4);
+    CHECK(doc.blocks[1].rect.top ==
+          doctest::Approx(geo.top_pad + geo.line_height));
+}
+
+TEST_CASE("slide_grid_window: wrap steady-state scroll (no re-correction)") {
+    auto dwrite = create_dwrite_factory();
+    REQUIRE(dwrite);
+    ThemeService theme;
+    ColorizerDisplayConfig cfg;
+    cfg.word_wrap = true;
+    cfg.line_numbers = false;
+
+    const std::string src = "short\n" + std::string(400, 'x') + "\nend";
+    std::vector<int> starts;
+    std::shared_ptr<MaterializeCtx> ctx;
+    GridGeometry geo;
+    auto doc = layout_grid_skeleton(dwrite.Get(), src, theme, false, 200.0f, cfg,
+                                    &starts, &ctx, &geo);
+
+    // First slide settles geometry.
+    slide_grid_window(doc, geo, *ctx, src, starts, 0, 2, empty_colors());
+    const float settled_total = doc.total_height;
+
+    // Slide to [1, 2] (scroll down one line).
+    slide_grid_window(doc, geo, *ctx, src, starts, 1, 2, empty_colors());
+    CHECK(doc.first_block_line == 1);
+    CHECK(doc.blocks.size() == 2);
+    CHECK(doc.blocks[0].rect.top == doctest::Approx(grid_line_top(geo, 1)));
+    // Total height must not have changed (geometry was already settled).
+    CHECK(doc.total_height == doctest::Approx(settled_total));
+}

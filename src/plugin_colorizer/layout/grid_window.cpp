@@ -10,6 +10,7 @@
 #include "runtime/theme/font_config.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 
 using wlx::runtime::layout::LayoutBlock;
@@ -190,18 +191,20 @@ LayoutBlock build_grid_line(int line, const GridGeometry& geo, MaterializeCtx& c
     LayoutBlock lb;
     lb.type = BlockType::Paragraph;
     const float top = grid_line_top(geo, line);
-    lb.rect = D2D1::RectF(ctx.code_left, top,
-                          ctx.code_left + ctx.max_code_width, top + geo.line_height);
     // background_color deliberately not set: has_background stays false and the
     // renderer ignores it (matches the eager loop's has_background = false).
 
     TextRun run;
-    run.rect = lb.rect;
     run.color = ctx.text_color;
     run.is_code = true;
     run.color_ranges = build_color_ranges(spans_for_line, source_to_expanded, expanded);
     float h = geo.line_height;
     run.layout = create_line_layout(expanded, run.color_ranges, ctx, h);
+    // h is now the MEASURED height (create_line_layout overwrites it): use h so
+    // that wrap-mode rects are exact multiples of line_height, not the estimate.
+    run.rect = D2D1::RectF(ctx.code_left, top,
+                           ctx.code_left + ctx.max_code_width, top + h);
+    lb.rect = run.rect;
     run.text = std::move(expanded);
     lb.text_runs.push_back(std::move(run));
     apply_line_decorations(lb, lb.text_runs[0].text, source_to_expanded, orig, ctx);
@@ -210,7 +213,7 @@ LayoutBlock build_grid_line(int line, const GridGeometry& geo, MaterializeCtx& c
 
 // ---- slide the materialized window ------------------------------------------
 
-void slide_grid_window(LayoutDocument& doc, const GridGeometry& geo,
+void slide_grid_window(LayoutDocument& doc, GridGeometry& geo,
                        MaterializeCtx& ctx, const std::string& raw_utf8,
                        const std::vector<int>& line_byte_starts,
                        int first, int last, const ColorsForRange& colors_for) {
@@ -275,6 +278,64 @@ void slide_grid_window(LayoutDocument& doc, const GridGeometry& geo,
 
     doc.blocks = std::move(next);  // leaving blocks destroyed here = eviction
     doc.first_block_line = first;
+
+    // ---- wrap correction pass: estimates -> measured ----
+    if (!geo.wrapped()) return;
+
+    bool mismatch = false;
+    for (size_t wi = 0; wi < doc.blocks.size(); ++wi) {
+        const int wl = first + static_cast<int>(wi);
+        const float wh = doc.blocks[wi].rect.bottom - doc.blocks[wi].rect.top;
+        const int wmeasured =
+            std::max(1, static_cast<int>(std::lround(wh / geo.line_height)));
+        if (wmeasured != grid_line_rows(geo, wl)) {
+            mismatch = true;
+            break;
+        }
+    }
+    if (!mismatch) return;
+
+    // Fold measured rows into row_starts with one suffix walk. Snapshot the
+    // old per-line rows first: grid_line_rows(wl) reads row_starts[wl]
+    // (already shifted by prior lines' cum) AND row_starts[wl+1] (not yet
+    // shifted), so reading it mid-walk would skew the deltas.
+    {
+        std::vector<int> old_rows(static_cast<size_t>(last - first + 1));
+        for (int wl = first; wl <= last; ++wl)
+            old_rows[static_cast<size_t>(wl - first)] =
+                grid_line_rows(geo, wl);
+        int cum = 0;
+        for (int wl = first; wl < geo.line_count; ++wl) {
+            if (wl <= last) {
+                const size_t wi = static_cast<size_t>(wl - first);
+                const float wh =
+                    doc.blocks[wi].rect.bottom - doc.blocks[wi].rect.top;
+                const int wmeasured = std::max(
+                    1, static_cast<int>(std::lround(wh / geo.line_height)));
+                cum += wmeasured - old_rows[wi];
+            }
+            geo.row_starts[static_cast<size_t>(wl) + 1] += cum;
+        }
+    }
+    // Rewrite the consumer-facing Y index + total from corrected geometry.
+    for (int gi = 0; gi < geo.line_count; ++gi)
+        doc.line_tops[static_cast<size_t>(gi)] = grid_line_top(geo, gi);
+    doc.total_height = grid_total_height(geo);
+
+    // Rebuild the window once at the corrected tops (one batched colors_for).
+    // A rebuilt window cannot mismatch again: measured values ARE the geometry
+    // now, and create_line_layout is deterministic. This also means blocks are
+    // always BUILT at their final tops — no block ever needs its internal
+    // decoration/link rects translated.
+    std::vector<std::vector<PerLineSpan>> line_spans;
+    colors_into(first, last, line_spans);
+    std::vector<LayoutBlock> rebuilt;
+    rebuilt.reserve(static_cast<size_t>(last - first + 1));
+    for (int l = first; l <= last; ++l)
+        rebuilt.push_back(build_grid_line(l, geo, ctx, raw_utf8,
+                                          line_byte_starts,
+                                          line_spans[static_cast<size_t>(l - first)]));
+    doc.blocks = std::move(rebuilt);
 }
 
 // ---- grid selection text ----------------------------------------------------

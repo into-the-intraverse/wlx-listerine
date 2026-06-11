@@ -56,8 +56,15 @@ wlx::runtime::layout::LayoutBlock build_grid_line(
 //
 // last < first => empty window: clears doc.blocks and sets first_block_line to
 // std::max(0, first) (the {0, -1} empty-window convention from grid_geometry).
+//
+// Wrap mode: entering lines are measured by create_line_layout; if measured
+// row counts differ from geo.row_starts estimates, the corrections are folded
+// into geo (suffix update), doc.line_tops / doc.total_height are rewritten,
+// and the window is rebuilt ONCE against the corrected geometry (a rebuilt
+// window cannot mismatch — measured values ARE the geometry). Steady-state
+// slides (all estimates already corrected) skip all of this.
 void slide_grid_window(wlx::runtime::layout::LayoutDocument& doc,
-                       const GridGeometry& geo,
+                       GridGeometry& geo,
                        MaterializeCtx& ctx,
                        const std::string& raw_utf8,
                        const std::vector<int>& line_byte_starts,
