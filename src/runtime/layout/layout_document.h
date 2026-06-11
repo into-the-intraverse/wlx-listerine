@@ -41,6 +41,16 @@ struct LayoutDocument {
     // Width (DIPs) reserved on the left for the markdown line-number gutter.
     // 0 = no gutter (the colorizer draws its own gutter via bullets).
     float gutter_width = 0;
+
+    // Implicit-grid mode (colorizer no-wrap): `blocks` holds only a
+    // materialized viewport±overscan window; blocks[i] represents source line
+    // first_block_line + i, every line is exactly line_height tall, and all
+    // public block indices (TextPosition, SearchMatch, HitResult) are SOURCE
+    // LINE indices. grid_line_count == 0 => classic whole-file blocks (md,
+    // colorizer wrap mode) and first_block_line stays 0.
+    int first_block_line = 0;
+    int grid_line_count = 0;
+    bool is_grid() const { return grid_line_count > 0; }
 };
 
 }  // namespace wlx::runtime::layout

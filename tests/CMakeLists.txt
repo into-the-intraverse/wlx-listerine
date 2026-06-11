@@ -46,6 +46,7 @@ add_executable(colorizer-tests
     plugin_colorizer/language/test_colorizer_routing.cpp
     plugin_colorizer/language/test_path_to_language.cpp
     plugin_colorizer/layout/test_colorizer_layout.cpp
+    plugin_colorizer/layout/test_grid_geometry.cpp
     plugin_colorizer/test_colorizer_smoke.cpp
     plugin_colorizer/colorize/test_span_table.cpp
     plugin_colorizer/colorize/test_sweep_parity.cpp
