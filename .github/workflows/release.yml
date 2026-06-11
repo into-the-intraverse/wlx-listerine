@@ -10,6 +10,8 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write  # required by softprops/action-gh-release to create/update the Release
+    env:
+      CONAN_VERSION: "2.27.0"
 
     steps:
       - uses: actions/checkout@v4
@@ -30,19 +32,67 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
+      - name: Detect MSVC version
+        id: msvc
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationVersion
+          "version=$vs" >> $env:GITHUB_OUTPUT
+
+      # Conan package IDs depend on the MSVC version and the home layout on the
+      # Conan version, so both are in the key. Only ~/.conan2/p is cached (the
+      # package store is self-consistent); caching profiles/ would make the bare
+      # `conan profile detect` below fail on every cache hit.
+      - name: Restore Conan package cache
+        id: conan-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.conan2/p
+          key: conan-${{ runner.os }}-${{ env.CONAN_VERSION }}-msvc${{ steps.msvc.outputs.version }}-${{ hashFiles('conanfile.txt') }}
+          restore-keys: conan-${{ runner.os }}-${{ env.CONAN_VERSION }}-msvc${{ steps.msvc.outputs.version }}-
+
       - name: Install Conan
         run: |
-          uv pip install --system conan
+          uv pip install --system conan==${{ env.CONAN_VERSION }}
           conan profile detect
 
       - name: Install C++ dependencies
         run: conan install . --output-folder=build --build=missing -s build_type=Release -s compiler.cppstd=20
 
+      # Explicit save right after install: the monolithic cache action saves only
+      # when the whole job succeeds, and the visual suite at the end is the flaky
+      # part - a failing seed run would never populate the cache.
+      - name: Save Conan package cache
+        if: steps.conan-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.conan2/p
+          key: conan-${{ runner.os }}-${{ env.CONAN_VERSION }}-msvc${{ steps.msvc.outputs.version }}-${{ hashFiles('conanfile.txt') }}
+
+      # Exact-key only, no restore-keys: a stale _deps with different pins must
+      # be a clean miss (FULLY_DISCONNECTED would silently build old sources).
+      - name: Restore grammar sources
+        id: grammar-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/_deps
+          key: grammars-${{ runner.os }}-${{ hashFiles('cmake/grammars.cmake') }}
+
+      # On a cache hit FETCHCONTENT_FULLY_DISCONNECTED skips population entirely;
+      # CMP0170=NEW turns a missing source dir into a hard configure error and
+      # WLX_REQUIRE_ALL_GRAMMARS catches anything less than all 27 grammars.
       - name: Configure CMake
         # Run under bash: PowerShell's expression parser mangles dotted args
         # like `-DWLX_VERSION=1.2.0` (it sees `1.2.0` as member-access on a decimal).
         shell: bash
-        run: cmake --preset conan-default -DWLX_VERSION=${{ steps.version.outputs.version }} -DWLX_REQUIRE_ALL_GRAMMARS=ON
+        run: cmake --preset conan-default -DWLX_VERSION=${{ steps.version.outputs.version }} -DWLX_REQUIRE_ALL_GRAMMARS=ON ${{ steps.grammar-cache.outputs.cache-hit == 'true' && '-DFETCHCONTENT_FULLY_DISCONNECTED=ON -DCMAKE_POLICY_DEFAULT_CMP0170=NEW' || '' }}
+
+      - name: Save grammar sources
+        if: steps.grammar-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/_deps
+          key: grammars-${{ runner.os }}-${{ hashFiles('cmake/grammars.cmake') }}
 
       - name: Build
         run: cmake --build --preset conan-release
