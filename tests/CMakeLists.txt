@@ -49,6 +49,7 @@ add_executable(colorizer-tests
     plugin_colorizer/layout/test_colorizer_layout.cpp
     plugin_colorizer/layout/test_grid_geometry.cpp
     plugin_colorizer/layout/test_grid_window.cpp
+    plugin_colorizer/layout/test_wrap_estimate.cpp
     plugin_colorizer/test_colorizer_smoke.cpp
     plugin_colorizer/colorize/test_span_table.cpp
     plugin_colorizer/colorize/test_sweep_parity.cpp
@@ -58,6 +59,7 @@ add_executable(colorizer-tests
     tools/test_token_json_writer.cpp
     ${CMAKE_SOURCE_DIR}/src/plugin_colorizer/layout/colorizer_layout.cpp
     ${CMAKE_SOURCE_DIR}/src/plugin_colorizer/layout/grid_window.cpp
+    ${CMAKE_SOURCE_DIR}/src/plugin_colorizer/layout/wrap_estimate.cpp
     ${CMAKE_SOURCE_DIR}/src/plugin_colorizer/colorize/span_table.cpp
 )
 
