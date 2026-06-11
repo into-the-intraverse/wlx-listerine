@@ -10,6 +10,7 @@ namespace wlx::plugin_colorizer::layout {
 // line spacing). No-wrap: every source line is one row, so Y is pure
 // arithmetic. Wrap: row_starts[i] = total rows before line i (prefix sums,
 // size line_count + 1), so line i spans rows [row_starts[i], row_starts[i+1]).
+// row_starts[0] == 0 always; values are non-decreasing.
 // Empty row_starts == uniform no-wrap grid. Single source of truth for grid Y.
 struct GridGeometry {
     float top_pad = 4.0f;
@@ -19,6 +20,7 @@ struct GridGeometry {
     bool wrapped() const { return !row_starts.empty(); }
 };
 
+// Precondition: line in [0, line_count).
 inline int grid_line_rows(const GridGeometry& g, int line) {
     if (g.row_starts.empty()) return 1;
     return g.row_starts[static_cast<size_t>(line) + 1] -

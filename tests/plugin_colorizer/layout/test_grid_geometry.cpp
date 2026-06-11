@@ -60,12 +60,18 @@ TEST_CASE("wrapped grid: line_at_y maps rows back to source lines") {
     CHECK(grid_line_at_y(g, 4.0f) == 0);
     CHECK(grid_line_at_y(g, 14.0f) == 1);    // row 1 = first row of line 1
     CHECK(grid_line_at_y(g, 33.9f) == 1);    // row 2 = still line 1
+    CHECK(grid_line_at_y(g, 34.0f) == 1);    // row 3 = last row of line 1
+    CHECK(grid_line_at_y(g, 43.9f) == 1);    // just before line 2
     CHECK(grid_line_at_y(g, 44.0f) == 2);
     CHECK(grid_line_at_y(g, 1000.0f) == 2);  // past end clamps to last line
 
     auto [first, last] = grid_window_lines(g, 14.0f, 20.0f, 0.0f);
     CHECK(first == 1);
     CHECK(last == 1);  // rows 1..3 (y 14..34) all belong to line 1
+
+    auto [f2, l2] = grid_window_lines(g, 4.0f, 40.0f, 0.0f);
+    CHECK(f2 == 0);
+    CHECK(l2 == 2);  // bottom edge y=44 = row 4 = first row of line 2
 }
 
 TEST_CASE("uniform grid: empty row_starts keeps the old arithmetic") {
