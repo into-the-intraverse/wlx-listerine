@@ -46,6 +46,7 @@
 #include "core_dll/colorizer/colorizer.h"  // ColorizeResult / ColorSpan still used by ColorViewState
 #include "plugin_colorizer/layout/colorizer_layout.h"
 #include "plugin_colorizer/layout/grid_window.h"
+#include "plugin_colorizer/layout/grid_geometry.h"
 #include "plugin_colorizer/colorize/span_table.h"
 #include "plugin_colorizer/colorize/sweep_chunk.h"
 #include "plugin_colorizer/language/path_to_language.h"
@@ -136,6 +137,11 @@ struct ColorViewState {
     // Whole-file span table (sweep output). Once complete, scroll coloring
     // reads this instead of the tree, and the tree is freed.
     wlx::plugin_colorizer::colorize::SpanTable span_table;
+
+    // Grid mode (no-wrap): build context + geometry for slide_grid_window.
+    // Null/zeroed in wrap mode (classic eager whole-file blocks).
+    std::shared_ptr<wlx::plugin_colorizer::layout::MaterializeCtx> grid_ctx;
+    wlx::plugin_colorizer::layout::GridGeometry grid_geo;
 
     // Selection
     TextPosition sel_anchor;
@@ -396,12 +402,34 @@ static void do_layout(ColorViewState* vs, const std::string& raw_utf8,
     cfg.line_height_factor = g_theme.spacing().line_height_factor;
 
     vs->line_byte_starts.clear();
-    auto layout = std::make_shared<LayoutDocument>(
-        layout_source(dwrite_factory(), raw_utf8,
-                      colors, g_theme, vs->dark_mode, viewport_width, cfg,
-                      /*timings=*/nullptr, &vs->line_byte_starts));
-    // layout_source already builds the line index + gutter, and fills
-    // vs->line_byte_starts (one entry per block) for viewport recoloring.
+    std::shared_ptr<LayoutDocument> layout;
+    if (!cfg.word_wrap) {
+        // Implicit grid: skeleton only; blocks materialize per viewport in
+        // ensure_grid_window. Whole-doc colors (the no-tree fallback) feed the
+        // span table so the window builder serves them like sweep output —
+        // idempotent on relayout (DPI/dark) re-feeds.
+        std::shared_ptr<MaterializeCtx> grid_ctx;
+        GridGeometry geo;
+        layout = std::make_shared<LayoutDocument>(layout_grid_skeleton(
+            dwrite_factory(), raw_utf8, g_theme, vs->dark_mode, viewport_width,
+            cfg, &vs->line_byte_starts, &grid_ctx, &geo));
+        vs->grid_ctx = std::move(grid_ctx);
+        vs->grid_geo = geo;
+        if (!colors.spans.empty()) {
+            vs->span_table.clear();
+            vs->span_table.append_chunk(colors, 0,
+                static_cast<uint32_t>(raw_utf8.size()));
+        }
+    } else {
+        // layout_source already builds the line index + gutter, and fills
+        // vs->line_byte_starts (one entry per block) for viewport recoloring.
+        layout = std::make_shared<LayoutDocument>(
+            layout_source(dwrite_factory(), raw_utf8, colors, g_theme,
+                          vs->dark_mode, viewport_width, cfg,
+                          /*timings=*/nullptr, &vs->line_byte_starts));
+        vs->grid_ctx.reset();
+        vs->grid_geo = GridGeometry{};
+    }
 
     vs->layout = layout;
     vs->interaction = std::make_unique<InteractionEngine>(*vs->layout);
@@ -410,7 +438,9 @@ static void do_layout(ColorViewState* vs, const std::string& raw_utf8,
     // A fresh layout has new blocks not yet viewport-colored; invalidate the
     // colored byte interval so colorize_viewport re-highlights against the cached
     // tree on the next paint. (Covers every rebuild path: load, relang, DPI,
-    // wrap resize — not just the one that remembers to reset it.)
+    // wrap resize — not just the one that remembers to reset it.) Unused by the
+    // grid path (ensure_grid_window keys off the span table / live tree), but
+    // kept so the classic wrap path + the dark-flip fast path's contract hold.
     vs->colored_lo = vs->colored_hi = 0;
 }
 
@@ -476,6 +506,40 @@ static void colorize_viewport(ColorViewState* vs) {
     // colored blocks keep their color_ranges, which is harmless.
     vs->colored_lo = cd.new_lo;
     vs->colored_hi = cd.new_hi;
+}
+
+// Pre-paint (grid mode): slide the materialized window over the viewport.
+// Colors come from the span table once complete (sweep done or whole-doc
+// fallback fed it), else from the live tree (mid-sweep), else plain text
+// (unsupported language). Classic docs (wrap mode) fall back to the old
+// whole-file colorize_viewport.
+static void ensure_grid_window(ColorViewState* vs) {
+    if (!vs || !vs->layout) return;
+    if (!vs->layout->is_grid()) { colorize_viewport(vs); return; }
+    if (!vs->grid_ctx) return;
+    const float viewport_h = vs->renderer ? vs->renderer->dip_height() : 100.0f;
+    auto [first, last] = wlx::plugin_colorizer::layout::grid_window_lines(
+        vs->grid_geo, vs->scroll_y, viewport_h, viewport_h);
+    const auto raw_size = static_cast<uint32_t>(vs->cached_raw_utf8.size());
+    ColorsForRange colors_for = [vs, raw_size](uint32_t lo, uint32_t hi)
+        -> wlx::core::colorizer::ColorizeResult {
+        // Runs SYNCHRONOUSLY on the UI thread inside slide_grid_window — `vs` is
+        // safe to capture (no thread hop).
+        if (vs->span_table.complete(raw_size))
+            return vs->span_table.slice(lo, hi);
+        if (vs->tree) {
+            WlxColorSpan* spans = nullptr;
+            uint32_t count = 0;
+            if (wlx_core_highlight_range(g_colorizer_handle, vs->tree.get(),
+                                         vs->dark_mode ? 1 : 0, lo, hi,
+                                         &spans, &count) == 0)
+                return wlx_core::abi_spans_to_result(spans, count);
+        }
+        return {};
+    };
+    slide_grid_window(*vs->layout, vs->grid_geo, *vs->grid_ctx,
+                      vs->cached_raw_utf8, vs->line_byte_starts,
+                      first, last, colors_for);
 }
 
 // UI-thread whole-doc fallback: color the entire cached source with `language`
@@ -741,6 +805,16 @@ static void resize_widths_nowrap(ColorViewState* vs) {
         }
     }
     doc.viewport_width = new_vw;
+    // Grid mode: the loop above stretches blocks ALREADY in the window, but
+    // FUTURE materializations (ensure_grid_window after a scroll) build against
+    // grid_ctx — update its code width to the new viewport. Must run regardless
+    // of doc.blocks emptiness (a pre-first-paint resize leaves the window empty,
+    // so the loop is skipped). right_margin == 8.0f mirrors layout_grid_skeleton.
+    if (vs->grid_ctx) {
+        const float code_right = new_vw - 8.0f;            // right_margin
+        vs->grid_ctx->max_code_width =
+            std::max(1.0f, code_right - vs->grid_ctx->code_left);
+    }
     update_scrollbar(vs);
 }
 
@@ -925,9 +999,9 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         if (v->tree && res->wrap != v->wrap_text)
             v->tree.reset();
         if (v->tree) {
-            // Skeleton layout (empty colors); colorize the first viewport now.
+            // Skeleton layout (empty colors); build the first viewport window now.
             do_layout(v, v->cached_raw_utf8, /*colors=*/{});
-            colorize_viewport(v);
+            ensure_grid_window(v);
             begin_sweep(v);          // memory M1: sweep -> span table -> free tree
         } else {
             // Whole-doc fallback on the UI thread (unsupported / wrap / parse fail).
@@ -966,11 +1040,12 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         if (vs && vs->renderer && vs->layout) {
             if (vs->renderer->needs_recreate())
                 vs->renderer->create_device_resources(hwnd);
-            // Viewport-scoped highlight: color any newly-visible byte range
-            // against the cached tree before painting (no-op without a tree).
+            // Grid mode: slide the materialized window over the viewport and
+            // color the entering lines (from span table / live tree). Wrap mode:
+            // ensure_grid_window falls back to the old whole-file colorize_viewport.
             // Scroll/goto/anchor paths InvalidateRect -> WM_PAINT -> here, so no
             // other call site is needed.
-            colorize_viewport(vs);
+            ensure_grid_window(vs);
             auto sel_lo = std::min(vs->sel_anchor, vs->sel_active);
             auto sel_hi = std::max(vs->sel_anchor, vs->sel_active);
             vs->renderer->paint(*vs->layout, vs->scroll_y, sel_lo, sel_hi,
