@@ -17,6 +17,7 @@
 #include <dwrite.h>
 #include <wrl/client.h>
 #include <algorithm>
+#include <chrono>
 #include <unordered_map>
 #include <optional>
 #include <string>
@@ -44,6 +45,8 @@
 #include "wlx_core/abi_spans_to_result.h"
 #include "core_dll/colorizer/colorizer.h"  // ColorizeResult / ColorSpan still used by ColorViewState
 #include "plugin_colorizer/layout/colorizer_layout.h"
+#include "plugin_colorizer/colorize/span_table.h"
+#include "plugin_colorizer/colorize/sweep_chunk.h"
 #include "plugin_colorizer/language/path_to_language.h"
 #include "plugin_colorizer/language/routing.h"
 #include "runtime/search/search_hud.h"
@@ -110,10 +113,15 @@ struct ColorViewState {
     // Freed automatically on ColorViewState destruction (ListCloseWindow) and on
     // reassignment in load_document/reparse (reload / relang). NOTE: ViewStates
     // are LEAKED on DLL_PROCESS_DETACH (g_views.clear() drops the map entries but
-    // never deletes the ColorViewState*), so this TreePtr never destructs under
-    // the loader lock — wlx_core_free_tree (which takes the core mutex) is never
+    // never deletes the ColorViewState*), so this tree never destructs under the
+    // loader lock — wlx_core_free_tree (which takes the core mutex) is never
     // called at detach. Confirmed: see DllMain DLL_PROCESS_DETACH below.
-    wlx_core::TreePtr tree;
+    //
+    // Shared with at most one in-flight sweep worker; whichever side drops the
+    // last reference frees it via wlx_core_free_tree (worker-side frees take
+    // the core mutex on the worker thread — never under the loader lock, since
+    // ViewStates leak on DLL_PROCESS_DETACH and workers are detached).
+    std::shared_ptr<WlxTree> tree;
     // Per-block (== per-source-line) UTF-8 byte start, parallel to layout->blocks.
     // From layout_source's out-param; maps a viewport byte range -> the blocks it
     // touches for apply_spans_to_range.
@@ -125,6 +133,9 @@ struct ColorViewState {
     // this (or resets it on a disjoint jump) to avoid per-paint re-highlight churn.
     uint32_t colored_lo = 0;
     uint32_t colored_hi = 0;
+    // Whole-file span table (sweep output). Once complete, scroll coloring
+    // reads this instead of the tree, and the tree is freed.
+    wlx::plugin_colorizer::colorize::SpanTable span_table;
 
     // Selection
     TextPosition sel_anchor;
@@ -176,6 +187,14 @@ static UINT wm_colorizer_parse_done() {
     return m;
 }
 
+// Sweep completion (memory M1): a worker chunk-highlighted the whole file into
+// a SpanTable; adoption frees the tree. Distinct registered message for the
+// same reasons as ParseDone.
+static UINT wm_colorizer_sweep_done() {
+    static const UINT m = RegisterWindowMessageW(L"WlxListerineColorizer.SweepDone");
+    return m;
+}
+
 // Plugin-local async parse result. Carries ONLY copyable/move-only COM-free data:
 // built on the worker thread, adopted on the UI thread. The TreePtr makes this
 // move-only — fine for unique_ptr<ParseResultColor>. A dropped/closed/post-failed
@@ -191,6 +210,14 @@ struct ParseResultColor {
     std::string  language;    // -> tree_language
     bool wrap = false;        // wrap mode the tree path was decided with (B3.4)
     wlx_core::TreePtr tree;   // null => UI runs the whole-doc fallback colorize
+};
+
+// Worker -> UI sweep result. COM-free. `aborted` => keep the tree (fallback).
+struct SweepResultColor {
+    uint64_t generation = 0;
+    std::shared_ptr<wlx::runtime::host::ViewLiveToken> live;
+    bool aborted = false;
+    wlx::plugin_colorizer::colorize::SpanTable table;
 };
 
 // ---------- globals ----------
@@ -409,7 +436,10 @@ static std::string resolve_language(ColorViewState* vs) {
 // newly-exposed range against the cached tree (no re-parse), and skips entirely
 // when the viewport is already within the colored interval.
 static void colorize_viewport(ColorViewState* vs) {
-    if (!vs || !vs->tree || !vs->layout) return;
+    if (!vs || !vs->layout) return;
+    const bool table_ready =
+        vs->span_table.complete(static_cast<uint32_t>(vs->cached_raw_utf8.size()));
+    if (!vs->tree && !table_ready) return;   // wrap/unsupported fallback already colored
     auto& doc = *vs->layout;
     if (doc.blocks.empty() || vs->line_byte_starts.empty()) return;
 
@@ -426,13 +456,18 @@ static void colorize_viewport(ColorViewState* vs) {
     ColoredDecision cd = colored_interval_update(vlo, vhi, vs->colored_lo, vs->colored_hi);
     if (cd.skip) return;
 
-    WlxColorSpan* spans = nullptr;
-    uint32_t count = 0;
-    if (wlx_core_highlight_range(g_colorizer_handle, vs->tree.get(),
-                                 vs->dark_mode ? 1 : 0, vlo, vhi,
-                                 &spans, &count) != 0)
-        return;  // highlight failed — leave existing colors as-is
-    ColorizeResult result = wlx_core::abi_spans_to_result(spans, count);
+    ColorizeResult result;
+    if (table_ready) {
+        result = vs->span_table.slice(vlo, vhi);       // tree already freed
+    } else {
+        WlxColorSpan* spans = nullptr;
+        uint32_t count = 0;
+        if (wlx_core_highlight_range(g_colorizer_handle, vs->tree.get(),
+                                     vs->dark_mode ? 1 : 0, vlo, vhi,
+                                     &spans, &count) != 0)
+            return;  // highlight failed — leave existing colors as-is
+        result = wlx_core::abi_spans_to_result(spans, count);
+    }
 
     apply_spans_to_range(doc, vs->cached_raw_utf8, vs->line_byte_starts,
                          result, vlo, vhi, g_display_cfg.tab_width);
@@ -592,11 +627,13 @@ static void begin_async_recolor(ColorViewState* vs) {
     if (!vs || vs->cached_raw_utf8.empty()) return;   // nothing loaded -> no-op
     begin_load_reset(vs, /*reset_force=*/false);
 
-    // Drop the stale tree + colored interval up front: a Loading paint then can't
-    // touch the old tree (colorize_viewport bails on null tree), and the old tree
-    // is freed here on the UI thread (off the loader lock).
+    // Drop the stale tree + colored interval + span table up front: a Loading
+    // paint then can't touch the old tree (colorize_viewport bails on null tree
+    // and an incomplete table), and the old tree is freed here on the UI thread
+    // (off the loader lock).
     vs->tree.reset();
     vs->colored_lo = vs->colored_hi = 0;
+    vs->span_table.clear();
 
     const std::string language = resolve_language(vs);   // pure, UI-side
     WlxCore* core = g_colorizer_handle;
@@ -620,6 +657,58 @@ static void begin_async_recolor(ColorViewState* vs) {
                                     language, wrap, core);
         });
     InvalidateRect(vs->hwnd, nullptr, FALSE);
+}
+
+// Sweep funnel (memory M1). Spawned after a tree adoption; walks the file in
+// adaptive chunks against the SHARED tree (core mutex serializes with viewport
+// highlights), accumulating a SpanTable worker-side. Re-checks the live token
+// between chunks: close / reload / re-language / dark-flip bumps the generation
+// and the sweep self-cancels at the next chunk edge.
+static void begin_sweep(ColorViewState* vs) {
+    if (!vs->tree || vs->cached_raw_utf8.empty()) return;
+    std::shared_ptr<WlxTree> tree = vs->tree;          // shared keep-alive copy
+    WlxCore* core = g_colorizer_handle;
+    const bool dark = vs->dark_mode;
+    const auto fsize = static_cast<uint32_t>(vs->cached_raw_utf8.size());
+
+    auto job = std::make_unique<wlx::runtime::host::ParseJob>();
+    job->path = vs->file_path;                          // tracing only
+    job->generation = vs->current_gen;
+    job->live = vs->live;
+    job->hwnd = vs->hwnd;
+    job->done_msg = wm_colorizer_sweep_done();
+    wlx::runtime::host::spawn_parse_worker<SweepResultColor>(std::move(job),
+        [tree, core, dark, fsize](const wlx::runtime::host::ParseJob& j)
+            -> std::unique_ptr<SweepResultColor> {
+            using namespace wlx::plugin_colorizer::colorize;
+            using _clk = std::chrono::steady_clock;
+            auto r = std::make_unique<SweepResultColor>();
+            r->generation = j.generation;
+            r->live = j.live;
+            uint32_t chunk = kSweepFirstChunkBytes;
+            while (!r->table.complete(fsize)) {
+                // Superseded / closed / detaching: vanish between chunks. The
+                // shared tree ref drops on return; a worker-side last-ref free
+                // takes the core mutex on this thread (never the loader lock).
+                if (sweep_superseded(*j.live, j.generation))
+                    return nullptr;
+                const uint32_t lo = r->table.swept_hi();
+                const uint32_t hi = std::min(fsize, lo + chunk);
+                WlxColorSpan* spans = nullptr;
+                uint32_t count = 0;
+                auto c0 = _clk::now();
+                if (wlx_core_highlight_range(core, tree.get(), dark ? 1 : 0,
+                                             lo, hi, &spans, &count) != 0) {
+                    r->aborted = true;   // keep the tree; today's behavior is the fallback
+                    return r;
+                }
+                r->table.append_chunk(wlx_core::abi_spans_to_result(spans, count), lo, hi);
+                const double chunk_ms = std::chrono::duration<double, std::milli>(
+                    _clk::now() - c0).count();
+                chunk = next_chunk_bytes(hi - lo, chunk_ms);
+            }
+            return r;
+        });
 }
 
 
@@ -709,6 +798,7 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
             v->cached_colors = {};
             v->tree.reset();                          // unpin old grammar on a failed reload
             v->colored_lo = v->colored_hi = 0;
+            v->span_table.clear();                    // dead file's table must not survive
             // update_scrollbar early-returns on a null layout, so collapse the
             // scrollbar explicitly — it would otherwise keep the dead file's range.
             v->scroll_y = 0;
@@ -723,8 +813,15 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         v->cached_text = std::move(res->text);
         v->cached_raw_utf8 = std::move(res->raw_utf8);
         v->tree_language = std::move(res->language);
-        v->tree = std::move(res->tree);               // may be null (free old via move-assign)
+        // res->tree stays move-only (TreePtr); only the ViewState field is shared.
+        // release() may yield null (whole-doc fallback) — keep a null shared_ptr
+        // empty rather than constructing a deleter-bound null one.
+        if (WlxTree* raw_tree = res->tree.release())
+            v->tree = std::shared_ptr<WlxTree>(raw_tree, wlx_core::TreeDeleter{g_colorizer_handle});
+        else
+            v->tree.reset();                          // free old tree; no new tree
         v->colored_lo = v->colored_hi = 0;
+        v->span_table.clear();                        // a new file's table must not survive adoption
         // Wrap toggled while this load was in flight (lc_newparams can't recolor
         // before the first adoption — no cached source yet — so the worker was
         // not superseded): the tree was built for the spawn-time wrap mode, but
@@ -736,11 +833,33 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
             // Skeleton layout (empty colors); colorize the first viewport now.
             do_layout(v, v->cached_raw_utf8, /*colors=*/{});
             colorize_viewport(v);
+            begin_sweep(v);          // memory M1: sweep -> span table -> free tree
         } else {
             // Whole-doc fallback on the UI thread (unsupported / wrap / parse fail).
             apply_whole_doc_fallback(v, v->tree_language);
         }
         InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+    }
+
+    // Async sweep adoption (memory M1): sibling of the parse-done handler above.
+    // A worker chunk-highlighted the whole file into a SpanTable; adopting it
+    // lets scroll coloring read the table and frees the tree (unpins its
+    // grammar). Same identity/generation/closed gate; reject paths free res.
+    if (msg == wm_colorizer_sweep_done()) {
+        std::unique_ptr<SweepResultColor> res(reinterpret_cast<SweepResultColor*>(lp));
+        auto it = g_views.find(hwnd);
+        if (it == g_views.end()) return 0;
+        ColorViewState* v = it->second;
+        if (!wlx::runtime::host::should_adopt_result(res->live.get(), res->generation,
+                                                     v->live.get(), v->current_gen))
+            return 0;                                  // superseded/closed -> drop
+        if (res->aborted) {
+            WLX_TRACE(L"sweep aborted (highlight_range failed) — keeping tree");
+            return 0;                                  // memory-heavy but correct
+        }
+        v->span_table = std::move(res->table);
+        v->tree.reset();                               // free tree + unpin grammar
         return 0;
     }
 
