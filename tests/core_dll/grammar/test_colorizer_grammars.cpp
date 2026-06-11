@@ -538,14 +538,23 @@ public:
 )", "unreal-cpp");
     }
 
-    // SUBCASE("highlights query loads (inherits cpp resolves)") disabled:
-    // on GHA windows-2025 the upstream tree-sitter-cpp v0.23.4 (ABI 14) grammar
-    // emits no spans for named-node captures, so `class A {};` (which only
-    // hits inherited cpp/c rules) returns 0 spans. Local builds with the same
-    // toolset/conan binary do not reproduce. Subcase 2 above already covers
-    // the inherits-chain compilation via Unreal-specific captures, and the
-    // recursive multi-level resolution itself (unreal-cpp -> cpp -> c) is
-    // unit-tested without grammar DLLs in
-    // tests/core_dll/grammar/test_grammar_cache.cpp.
-    // TODO: revisit once tree-sitter-cpp ships an ABI 15 release.
+    SUBCASE("highlights query loads (inherits cpp resolves)") {
+        // colorize() exercises the full query path; if the inherits chain or
+        // any inherited rule fails to compile, spans would be empty or
+        // colorize() would return early.
+        //
+        // History: disabled 2026-04 because on the GHA windows-2025 image the
+        // tree-sitter-cpp v0.23.4 grammar emitted no spans for named-node
+        // captures (`class A {};` only hits inherited cpp/c rules -> 0 spans)
+        // while local builds with the same toolset were fine. Re-enabled
+        // 2026-06-11: every CI run since 2026-05-06 — including the strict
+        // sample.cpp token-golden diff in visual-test stage 2 — has been
+        // green, so the symptom is gone from the current runner image. If
+        // this fails on GHA again, capture the run URL: it would be a live
+        // repro of a bug unreported upstream (suspects: scanner.cc or the
+        // tree-sitter runtime — parser.c is compiled with MSVC optimization
+        // off and is exonerated).
+        auto result = c.colorize("class A {};", "unreal-cpp", false);
+        CHECK_FALSE(result.spans.empty());
+    }
 }

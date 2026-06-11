@@ -93,7 +93,7 @@ Baseline: commit `123b4a7-dirty`, 2026-06-10, median of 5 runs (`scripts/bench.p
 
 ## 🚧 TODO
 
-- **CPP highlighting on GHA windows-2025** — the upstream tree-sitter-cpp v0.23.4 grammar (ABI 14) emits no named-node spans on the GitHub Actions windows-2025 image, so plain `.cpp` files render only keyword tokens. Local builds with the same MSVC 14.44 toolset and conan binary work fine; root cause not yet pinned. The `Grammar: unreal-cpp` "highlights query loads" subcase is disabled until upstream ships an ABI 15 release or we route cpp through the taku25 fork.
+- **CPP highlighting on GHA windows-2025 (dormant, watching)** — in 2026-04 the upstream tree-sitter-cpp v0.23.4 grammar (ABI 14) emitted no named-node spans on the GitHub Actions windows-2025 image (plain `.cpp` files rendered only keyword tokens; local builds with the same MSVC 14.44 toolset were fine; root cause never pinned, though parser.c is compiled with MSVC optimization off, so suspicion falls on scanner.cc / the tree-sitter runtime / the image itself). Not reproducible since: every CI run from 2026-05-06 on — including the strict `sample.cpp` token-golden diff — is green, so the `Grammar: unreal-cpp` "highlights query loads" subcase was re-enabled 2026-06-11. If it reds out again, capture the run URL and report upstream (no matching issue exists). Upstream still has no ABI 15 release (v0.23.4, Nov 2024, is the latest; master is ABI 15 but unreleased and carries the [#357](https://github.com/tree-sitter/tree-sitter-cpp/issues/357) regen regression).
 
 Deferred from the 2026-06 code review (verified real, fix postponed):
 
