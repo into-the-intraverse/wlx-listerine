@@ -12,6 +12,10 @@ using wlx::runtime::layout::TextPosition;
 
 TextPosition hit_test_position(const LayoutDocument& layout, float x, float y) {
     int block_count = static_cast<int>(layout.blocks.size());
+    // In grid mode blocks[i] represents source line (first_block_line + i);
+    // all returned TextPositions carry the PUBLIC source-line index.
+    // Identity when first_block_line == 0 (whole-file docs and all md layouts).
+    const int line_base = layout.first_block_line;
 
     for (int i = 0; i < block_count; i++) {
         auto& block = layout.blocks[i];
@@ -36,7 +40,7 @@ TextPosition hit_test_position(const LayoutDocument& layout, float x, float y) {
 
         int offset = static_cast<int>(htm.textPosition);
         if (is_trailing) offset++;
-        return TextPosition{i, offset};
+        return TextPosition{line_base + i, offset};
     }
 
     // Snap to nearest block boundary
@@ -56,9 +60,9 @@ TextPosition hit_test_position(const LayoutDocument& layout, float x, float y) {
     if (closest >= 0) {
         auto& block = layout.blocks[closest];
         if (y < (block.rect.top + block.rect.bottom) * 0.5f) {
-            return TextPosition{closest, 0};
+            return TextPosition{line_base + closest, 0};
         }
-        return TextPosition{closest, block_text_length(block)};
+        return TextPosition{line_base + closest, block_text_length(block)};
     }
     return TextPosition{};
 }

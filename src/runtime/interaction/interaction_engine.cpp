@@ -11,6 +11,10 @@ InteractionEngine::InteractionEngine(const LayoutDocument& layout)
 
 InteractionEngine::HitResult InteractionEngine::hit_test(float x, float y) const {
     HitResult result;
+    // In grid mode blocks[bi] represents source line (first_block_line + bi);
+    // HitResult.block_index carries the PUBLIC source-line index.
+    // Identity when first_block_line == 0 (whole-file docs and all md layouts).
+    const int line_base = layout_.first_block_line;
 
     for (int bi = 0; bi < static_cast<int>(layout_.blocks.size()); bi++) {
         auto& block = layout_.blocks[bi];
@@ -29,7 +33,7 @@ InteractionEngine::HitResult InteractionEngine::hit_test(float x, float y) const
             if (x >= span.rect.left && x <= span.rect.right &&
                 y >= span.rect.top && y <= span.rect.bottom) {
                 result.hit = true;
-                result.block_index = bi;
+                result.block_index = line_base + bi;
                 result.span_index = si;
                 result.target = span.target;
                 return result;

@@ -762,6 +762,16 @@ static constexpr UINT_PTR TIMER_AUTOSCROLL = 1;
 using wlx::runtime::host::block_text_length;
 using wlx::runtime::host::hit_test_position;
 
+// Map a public (source-line) block index to the window-local blocks slot.
+// Identity while first_block_line == 0 (whole-file docs); bounds-checked so a
+// window slide between hit-test and use degrades to "no hit", never UB.
+static int block_slot(const ColorViewState* vs, int public_index) {
+    if (!vs->layout) return -1;
+    const int slot = public_index - vs->layout->first_block_line;
+    if (slot < 0 || slot >= static_cast<int>(vs->layout->blocks.size())) return -1;
+    return slot;
+}
+
 static void clear_selection(ColorViewState* vs) {
     wlx::runtime::host::clear_selection(*vs);
 }
@@ -1054,7 +1064,8 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
             pos.block_index == vs->last_dblclk_block &&
             (GetTickCount() - vs->last_dblclk_time) < GetDoubleClickTime()) {
             // Select entire line (block)
-            int len = block_text_length(vs->layout->blocks[pos.block_index]);
+            int slot = block_slot(vs, pos.block_index);
+            int len = slot >= 0 ? block_text_length(vs->layout->blocks[static_cast<size_t>(slot)]) : 0;
             vs->sel_anchor = TextPosition{pos.block_index, 0};
             vs->sel_active = TextPosition{pos.block_index, len};
             vs->selecting = false;
@@ -1109,17 +1120,20 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
 
         auto pos = hit_test_position(*vs->layout, px, doc_y);
         if (pos.valid()) {
-            auto& block = vs->layout->blocks[pos.block_index];
-            std::wstring full;
-            for (auto& run : block.text_runs) full += run.text;
-            auto [ws, we] = find_word_boundaries(full, pos.char_offset);
-            vs->sel_anchor = TextPosition{pos.block_index, ws};
-            vs->sel_active = TextPosition{pos.block_index, we};
-            vs->selecting = false;
+            int slot = block_slot(vs, pos.block_index);
+            if (slot >= 0) {
+                auto& block = vs->layout->blocks[static_cast<size_t>(slot)];
+                std::wstring full;
+                for (auto& run : block.text_runs) full += run.text;
+                auto [ws, we] = find_word_boundaries(full, pos.char_offset);
+                vs->sel_anchor = TextPosition{pos.block_index, ws};
+                vs->sel_active = TextPosition{pos.block_index, we};
+                vs->selecting = false;
 
-            // Record for triple-click detection
-            vs->last_dblclk_time = GetTickCount();
-            vs->last_dblclk_block = pos.block_index;
+                // Record for triple-click detection
+                vs->last_dblclk_time = GetTickCount();
+                vs->last_dblclk_block = pos.block_index;
+            }
         }
         InvalidateRect(hwnd, nullptr, FALSE);
         return 0;

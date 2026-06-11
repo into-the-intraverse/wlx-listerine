@@ -247,6 +247,10 @@ HRESULT RenderEngine::paint(LayoutDocument& layout, float scroll_y,
         layout.blocks.begin(), layout.blocks.end(), scroll_y,
         [](const LayoutBlock& b, float sy) { return b.rect.bottom < sy; });
     const int first_idx = static_cast<int>(first_visible - layout.blocks.begin());
+    // In grid mode blocks[i] represents source line (first_block_line + i);
+    // paint helpers that compare against TextPosition/SearchMatch block_index
+    // values receive the PUBLIC (source-line) index. Identity when base == 0.
+    const int line_base = layout.first_block_line;
 
     // Blockquote border containers the seek landed past but whose rect still
     // crosses the viewport. They carry no text — only the left-border
@@ -257,7 +261,7 @@ HRESULT RenderEngine::paint(LayoutDocument& layout, float scroll_y,
         if (idx >= first_idx) break;  // ascending indices
         auto& block = layout.blocks[idx];
         if (block.rect.bottom >= scroll_y && block.rect.top - scroll_y <= viewport_h) {
-            paint_selection_highlight(block, idx, 0, sel_start, sel_end);
+            paint_selection_highlight(block, line_base + idx, 0, sel_start, sel_end);
             paint_block_decoration(block, 0);
         }
     }
@@ -286,14 +290,14 @@ HRESULT RenderEngine::paint(LayoutDocument& layout, float scroll_y,
         paint_trailing_ws(block, 0);
         paint_inline_code_bg(block, 0);
         paint_span_backgrounds(block, 0);
-        paint_selection_highlight(block, block_idx, 0, sel_start, sel_end);
-        paint_search_highlights(block, block_idx, 0, search_cursor);
+        paint_selection_highlight(block, line_base + block_idx, 0, sel_start, sel_end);
+        paint_search_highlights(block, line_base + block_idx, 0, search_cursor);
         paint_block_decoration(block, 0);
         paint_indent_guides(block, 0);
         paint_bullet(block, 0);
         paint_text_runs(block, 0);
         paint_whitespace_markers(block, 0);
-        paint_copy_button(block, block_idx, 0);
+        paint_copy_button(block, line_base + block_idx, 0);
     }
 
     if (layout.gutter_width > 0.0f)

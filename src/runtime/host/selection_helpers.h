@@ -34,10 +34,12 @@ void clear_selection(V& v) {
 template <Scrollable V>
 void scroll_to_match(V& v, const wlx::runtime::search::SearchMatch& m) {
     if (!v.layout) return;
-    if (m.block_index < 0 ||
-        m.block_index >= static_cast<int>(v.layout->blocks.size())) return;
+    // m.block_index is a PUBLIC source-line index; convert to the window-local
+    // blocks slot (subtract first_block_line). Identity when base == 0.
+    const int slot = m.block_index - v.layout->first_block_line;
+    if (slot < 0 || slot >= static_cast<int>(v.layout->blocks.size())) return;
 
-    const auto& block = v.layout->blocks[m.block_index];
+    const auto& block = v.layout->blocks[static_cast<size_t>(slot)];
     const float viewport_h = v.renderer ? v.renderer->dip_height() : 100.0f;
     const float block_top = block.rect.top;
     const float block_bot = block.rect.bottom;
