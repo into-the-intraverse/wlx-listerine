@@ -124,7 +124,7 @@ struct ColorViewState {
     // ViewStates leak on DLL_PROCESS_DETACH and workers are detached).
     std::shared_ptr<WlxTree> tree;
     // Per-block (== per-source-line) UTF-8 byte start, parallel to layout->blocks.
-    // From layout_source's out-param; used by ensure_search_index + selection.
+    // From layout_grid_skeleton's out-param; used by ensure_search_index + selection.
     std::vector<int> line_byte_starts;
     // Language the tree was parsed with (tracing only).
     std::string tree_language;
@@ -216,11 +216,10 @@ struct ParseResultColor {
     bool failed = false;
     std::string  raw_utf8;    // -> cached_raw_utf8
     std::string  language;    // -> tree_language
-    bool wrap = false;        // wrap mode the tree path was decided with (B3.4)
     // True when a TextReady post already delivered raw_utf8 (phase 1); the
     // adopt handler then takes the minimal tree + window-clear path and this
-    // struct's raw_utf8 is empty. False on the single-phase paths (wrap mode,
-    // read failure, or a failed phase-1 post) which still carry the source.
+    // struct's raw_utf8 is empty. False on the single-phase paths (read
+    // failure or a failed phase-1 post) which still carry the source.
     bool two_phase = false;
     wlx_core::TreePtr tree;   // null => UI runs the whole-doc fallback colorize
 };
@@ -419,33 +418,24 @@ static void do_layout(ColorViewState* vs, const std::string& raw_utf8,
 
     vs->line_byte_starts.clear();
     std::shared_ptr<LayoutDocument> layout;
-    if (!cfg.word_wrap) {
-        // Implicit grid: skeleton only; blocks materialize per viewport in
-        // ensure_grid_window. Whole-doc colors (the no-tree fallback) feed the
-        // span table so the window builder serves them like sweep output —
-        // idempotent on relayout (DPI/dark) re-feeds.
-        std::shared_ptr<MaterializeCtx> grid_ctx;
-        GridGeometry geo;
-        layout = std::make_shared<LayoutDocument>(layout_grid_skeleton(
-            dwrite_factory(), raw_utf8, g_theme, vs->dark_mode, viewport_width,
-            cfg, &vs->line_byte_starts, &grid_ctx, &geo));
-        vs->grid_ctx = std::move(grid_ctx);
-        vs->grid_geo = geo;
-        if (!colors.spans.empty()) {
-            vs->span_table.clear();
-            vs->span_table.append_chunk(colors, 0,
-                static_cast<uint32_t>(raw_utf8.size()));
-            vs->span_table.seal();
-        }
-    } else {
-        // layout_source already builds the line index + gutter, and fills
-        // vs->line_byte_starts (one entry per block) for viewport recoloring.
-        layout = std::make_shared<LayoutDocument>(
-            layout_source(dwrite_factory(), raw_utf8, colors, g_theme,
-                          vs->dark_mode, viewport_width, cfg,
-                          /*timings=*/nullptr, &vs->line_byte_starts));
-        vs->grid_ctx.reset();
-        vs->grid_geo = GridGeometry{};
+    // Implicit grid (both modes): skeleton only; blocks materialize per viewport
+    // in ensure_grid_window. cfg.word_wrap flows into the skeleton, which builds
+    // a uniform no-wrap grid or an estimated-then-corrected wrapped grid.
+    // Whole-doc colors (the no-tree fallback) feed the span table in BOTH modes
+    // so the window builder serves them like sweep output — idempotent on
+    // relayout (DPI/dark) re-feeds.
+    std::shared_ptr<MaterializeCtx> grid_ctx;
+    GridGeometry geo;
+    layout = std::make_shared<LayoutDocument>(layout_grid_skeleton(
+        dwrite_factory(), raw_utf8, g_theme, vs->dark_mode, viewport_width,
+        cfg, &vs->line_byte_starts, &grid_ctx, &geo));
+    vs->grid_ctx = std::move(grid_ctx);
+    vs->grid_geo = std::move(geo);
+    if (!colors.spans.empty()) {
+        vs->span_table.clear();
+        vs->span_table.append_chunk(colors, 0,
+            static_cast<uint32_t>(raw_utf8.size()));
+        vs->span_table.seal();
     }
 
     vs->layout = layout;
@@ -468,15 +458,14 @@ static std::string resolve_language(ColorViewState* vs) {
     return language;
 }
 
-// Pre-paint (grid mode): slide the materialized window over the viewport.
-// Colors come from the span table once complete (sweep done or whole-doc
-// fallback fed it), else from the live tree (mid-sweep), else plain text
-// (unsupported language). Wrap docs (classic whole-file layout_source) have
-// their colors baked in at layout time — nothing to do per-paint.
+// Pre-paint (grid mode, both wrap and no-wrap): slide the materialized window
+// over the viewport. Colors come from the span table once complete (sweep done
+// or whole-doc fallback fed it), else from the live tree (mid-sweep), else plain
+// text (unsupported language).
 static void ensure_grid_window(ColorViewState* vs) {
     if (!vs || !vs->layout) return;
     if (!vs->layout->is_grid()) {
-        // wrap mode: whole-doc colors applied at layout; nothing per-paint
+        // Null/edge guard: a failed load leaves a null/non-grid layout.
         return;
     }
     if (!vs->grid_ctx) return;
@@ -503,12 +492,16 @@ static void ensure_grid_window(ColorViewState* vs) {
     slide_grid_window(*vs->layout, vs->grid_geo, *vs->grid_ctx,
                       vs->cached_raw_utf8, vs->line_byte_starts,
                       first, last, colors_for);
+    if (vs->grid_geo.wrapped()) {
+        // Estimate corrections may have moved total_height; keep the
+        // scrollbar honest. No-op when nothing changed.
+        update_scrollbar(vs);
+    }
 }
 
 // UI-thread whole-doc fallback: color the entire cached source with `language`
 // into vs->cached_colors and (re)lay out. Used by the adopt handler when the
-// worker produced no tree (unsupported language, word-wrap on, or a parse
-// failure — byte->line mapping is unreliable with wrap, Invariant B3.4). This is
+// worker produced no tree (unsupported language or a parse failure). This is
 // the exact fallback the old synchronous reparse_and_colorize ran; it stays on
 // the UI thread per the design's decided default. tree stays null, so
 // For the no-tree grid path, do_layout feeds the fallback colors into
@@ -519,7 +512,7 @@ static void apply_whole_doc_fallback(ColorViewState* vs, const std::string& lang
                            wlx_core_supports(g_colorizer_handle, language.c_str()) == 1;
     if (supported) {
         WLX_TRACE(L"viewport-colorize fallback: whole-doc colorize for '%hs' "
-                  L"(wrap=%d / parse-fail)", language.c_str(), vs->wrap_text ? 1 : 0);
+                  L"(parse-fail or unsupported)", language.c_str());
         WlxColorSpan* spans = nullptr;
         uint32_t count = 0;
         if (wlx_core_colorize(g_colorizer_handle,
@@ -546,21 +539,22 @@ static void apply_whole_doc_fallback(ColorViewState* vs, const std::string& lang
 static std::unique_ptr<ParseResultColor> color_parse_body(
     const wlx::runtime::host::ParseJob& j,
     std::string raw_utf8,
-    std::string language, bool wrap_text, WlxCore* core, bool two_phase) {
+    std::string language, WlxCore* core, bool two_phase) {
     auto r = std::make_unique<ParseResultColor>();
     r->generation = j.generation;
     r->live = j.live;
     r->raw_utf8 = std::move(raw_utf8);
     r->language = language;
-    r->wrap = wrap_text;
 
     if (!language.empty() && core)
         wlx_core_prewarm(core, language.c_str());   // folds in the old prewarm jthread
 
-    // Tree path mirrors the old reparse_and_colorize: supported language, a core
-    // handle, and word-wrap off (wrap stays whole-doc — Invariant B3.4). null tree
-    // => the adopt handler runs the UI-thread whole-doc fallback.
-    const bool tree_path = !language.empty() && core && !wrap_text &&
+    // Tree path: supported language and a core handle. The tree is byte-space
+    // and valid under BOTH wrap modes (wrap changes only Y-geometry, never the
+    // byte offsets the tree/highlight_range work in). null tree => the adopt
+    // handler runs the UI-thread whole-doc fallback (unsupported language or a
+    // parse failure only).
+    const bool tree_path = !language.empty() && core &&
                            wlx_core_supports(core, language.c_str()) == 1;
     if (tree_path) {
         WlxTree* raw = wlx_core_parse(core, r->raw_utf8.c_str(),
@@ -622,7 +616,6 @@ static void begin_async_load(ColorViewState* vs, const wchar_t* path) {
 
     const std::string language = resolve_language(vs);   // pure, UI-side
     WlxCore* core = g_colorizer_handle;
-    const bool wrap = vs->wrap_text;
 
     auto job = std::make_unique<wlx::runtime::host::ParseJob>();
     job->path = path;
@@ -631,7 +624,7 @@ static void begin_async_load(ColorViewState* vs, const wchar_t* path) {
     job->hwnd = vs->hwnd;
     job->done_msg = wm_colorizer_parse_done();
     wlx::runtime::host::spawn_parse_worker<ParseResultColor>(std::move(job),
-        [language, wrap, core](const wlx::runtime::host::ParseJob& j)
+        [language, core](const wlx::runtime::host::ParseJob& j)
             -> std::unique_ptr<ParseResultColor> {
             using _clk = std::chrono::steady_clock;
             const auto t_read0 = _clk::now();
@@ -646,12 +639,12 @@ static void begin_async_load(ColorViewState* vs, const wchar_t* path) {
                 r->failed = true;
                 return r;
             }
-            // Phase 1 (no-wrap only): post a COPY of the source so the UI can
+            // Phase 1 (both modes): post a COPY of the source so the UI can
             // show plain text now; keep the original for the parse below.
             // Mirrors spawn_parse_worker's posting discipline: re-check the
             // shutdown/closed gates, free locally on any failure to deliver.
             bool posted_text = false;
-            if (!wrap) {
+            {
                 auto t = std::make_unique<TextResultColor>();
                 t->generation = j.generation;
                 t->live = j.live;
@@ -672,7 +665,7 @@ static void begin_async_load(ColorViewState* vs, const wchar_t* path) {
                       std::chrono::duration<double, std::milli>(t_text - t_read0).count(),
                       posted_text ? 1 : 0);
             auto r = color_parse_body(j, std::move(content->raw_utf8),
-                                      language, wrap, core, posted_text);
+                                      language, core, posted_text);
             WLX_TRACE(L"two-phase: parse %.1f ms",
                       std::chrono::duration<double, std::milli>(_clk::now() - t_text).count());
             return r;
@@ -698,7 +691,6 @@ static void begin_async_recolor(ColorViewState* vs) {
 
     const std::string language = resolve_language(vs);   // pure, UI-side
     WlxCore* core = g_colorizer_handle;
-    const bool wrap = vs->wrap_text;
     std::string raw_copy = vs->cached_raw_utf8;           // captured COPY — no vs
 
     auto job = std::make_unique<wlx::runtime::host::ParseJob>();
@@ -708,13 +700,13 @@ static void begin_async_recolor(ColorViewState* vs) {
     job->hwnd = vs->hwnd;
     job->done_msg = wm_colorizer_parse_done();
     wlx::runtime::host::spawn_parse_worker<ParseResultColor>(std::move(job),
-        [language, wrap, core,
+        [language, core,
          raw_copy = std::move(raw_copy)](const wlx::runtime::host::ParseJob& j) mutable
             -> std::unique_ptr<ParseResultColor> {
             // mutable + move: the worker runs this exactly once, so hand the
             // file-sized string to color_parse_body instead of copying it.
             return color_parse_body(j, std::move(raw_copy),
-                                    language, wrap, core, /*two_phase=*/false);
+                                    language, core, /*two_phase=*/false);
         });
     InvalidateRect(vs->hwnd, nullptr, FALSE);
 }
@@ -995,16 +987,9 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
                                                    wlx_core::TreeDeleter{g_colorizer_handle});
             else
                 v->tree.reset();
-            // REACHABLE, load-bearing (Invariant B3.4: never a tree under
-            // word-wrap) — NOT just defensive: a wrap toggle during the
-            // read->parse gap routes lc_newparams through the empty-raw or
-            // mid-load branches, which deliberately do NOT bump the generation
-            // (that would orphan this load), so this result still adopts with
-            // a stale spawn-time wrap. Unlike the single-phase twin below,
-            // phase 1 already created a cached source, so the toggle CAN land
-            // between the phases.
-            if (v->tree && res->wrap != v->wrap_text)
-                v->tree.reset();
+            // A wrap toggle while this load was in flight changed only the
+            // GEOMETRY (lc_newparams already re-ran do_layout with the new mode).
+            // The tree is byte-space and stays valid under both modes.
             if (v->tree) {
                 // Window blocks were built plain — drop them; the next paint's
                 // ensure_grid_window rebuilds the visible window through
@@ -1035,20 +1020,16 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         else
             v->tree.reset();                          // free old tree; no new tree
         v->span_table.clear();                        // a new file's table must not survive adoption
-        // Wrap toggled while this load was in flight (lc_newparams can't recolor
-        // before the first adoption — no cached source yet — so the worker was
-        // not superseded): the tree was built for the spawn-time wrap mode, but
-        // do_layout reads the CURRENT wrap_text. Drop it and take the whole-doc
-        // fallback below (Invariant B3.4: never a tree under word-wrap).
-        if (v->tree && res->wrap != v->wrap_text)
-            v->tree.reset();
+        // A wrap toggle while this load was in flight changed only the
+        // GEOMETRY (lc_newparams already re-ran do_layout with the new mode).
+        // The tree is byte-space and stays valid under both modes.
         if (v->tree) {
             // Skeleton layout (empty colors); build the first viewport window now.
             do_layout(v, v->cached_raw_utf8, /*colors=*/{});
             ensure_grid_window(v);
             begin_sweep(v);          // memory M1: sweep -> span table -> free tree
         } else {
-            // Whole-doc fallback on the UI thread (unsupported / wrap / parse fail).
+            // Whole-doc fallback on the UI thread (unsupported language / parse fail).
             apply_whole_doc_fallback(v, v->tree_language);
         }
         InvalidateRect(hwnd, nullptr, FALSE);
@@ -1871,22 +1852,26 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
                 // No source yet (loading/empty) — just repaint the frame with the
                 // new dark palette (vs->dark_mode was updated above). NOTE: no
                 // generation bump here, so an in-flight first load still adopts;
-                // the adopt handler re-checks wrap against the result (B3.4).
+                // the adopt handler reads the current dark/wrap at do_layout time.
                 InvalidateRect(vs->hwnd, nullptr, FALSE);
             } else if (vs->state != wlx::runtime::host::LoadState::Ready) {
                 // Mid-load: the flags above are recorded; the pending adoption
-                // applies them (adopt reads the CURRENT dark mode, and a wrap
-                // change is handled by the adopt-time res->wrap mismatch guard,
-                // which drops the tree and takes the whole-doc fallback).
-                // Bumping the generation here would orphan the in-flight parse
-                // and leave the view stuck in Loading.
-            } else if (!wrap_changed && vs->tree) {
-                // Dark-only flip on the tree path: the tree is theme-independent
-                // (colors resolve at highlight time), so skip the worker re-parse.
-                // Rebuild the grid skeleton against the new palette with empty
-                // colors; ensure_grid_window on the next WM_PAINT slides a fresh
-                // window from the cached tree with the new dark flag.
-                // Selection/matches stay valid (same block structure).
+                // applies them. The adopt runs do_layout, which reads the CURRENT
+                // wrap_text and dark_mode, and the byte-space tree stays valid
+                // across both — so recording the flags without a generation bump
+                // is correct. Bumping the generation here would orphan the
+                // in-flight parse and leave the view stuck in Loading.
+            } else if (vs->tree) {
+                // Dark and/or wrap change on the tree path: the tree is byte-space
+                // and theme-independent (colors resolve at highlight time, wrap is
+                // geometry-only), so skip the worker re-parse. Rebuild the grid
+                // skeleton against the new palette + wrap with empty colors;
+                // ensure_grid_window on the next WM_PAINT slides a fresh window
+                // from the cached tree with the new dark flag. Selection/matches
+                // stay valid (same block structure). The gen bump + sweep restart
+                // below is what keeps a mid-flight sweep from baking stale dark
+                // colors; a wrap-only toggle mid-sweep restarts it too (slightly
+                // wasteful, but simple and correct).
 
                 // Cancel any in-flight sweep (it highlights with the OLD dark flag;
                 // adopting its table would bake stale colors + free the tree). The
@@ -1901,6 +1886,12 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
                 // converges to a whole-file table (and frees the tree). begin_sweep
                 // no-ops if the tree is null.
                 begin_sweep(vs);
+                InvalidateRect(vs->hwnd, nullptr, FALSE);
+            } else if (wrap_changed && !dark_changed) {
+                // Pure wrap toggle after the sweep settled (tree freed): the span
+                // table is wrap-independent, so rebuild the skeleton and let the next
+                // paint slice the existing table — no re-tokenize.
+                relayout(vs);
                 InvalidateRect(vs->hwnd, nullptr, FALSE);
             } else {
                 // Re-parse + re-color the IN-MEMORY source (no file re-read) off
