@@ -546,7 +546,7 @@ static void apply_whole_doc_fallback(ColorViewState* vs, const std::string& lang
 static std::unique_ptr<ParseResultColor> color_parse_body(
     const wlx::runtime::host::ParseJob& j,
     std::string raw_utf8,
-    std::string language, bool wrap_text, WlxCore* core) {
+    std::string language, bool wrap_text, WlxCore* core, bool two_phase) {
     auto r = std::make_unique<ParseResultColor>();
     r->generation = j.generation;
     r->live = j.live;
@@ -567,6 +567,13 @@ static std::unique_ptr<ParseResultColor> color_parse_body(
                                       static_cast<uint32_t>(r->raw_utf8.size()),
                                       language.c_str());
         if (raw) r->tree = wlx_core::TreePtr(raw, wlx_core::TreeDeleter{core});
+    }
+    if (two_phase) {
+        // Phase 1 already delivered the source to the UI; don't ship a second
+        // copy through the message queue.
+        r->raw_utf8.clear();
+        r->raw_utf8.shrink_to_fit();
+        r->two_phase = true;
     }
     return r;
 }
@@ -626,6 +633,8 @@ static void begin_async_load(ColorViewState* vs, const wchar_t* path) {
     wlx::runtime::host::spawn_parse_worker<ParseResultColor>(std::move(job),
         [language, wrap, core](const wlx::runtime::host::ParseJob& j)
             -> std::unique_ptr<ParseResultColor> {
+            using _clk = std::chrono::steady_clock;
+            const auto t_read0 = _clk::now();
             wlx::runtime::io::FileService fs;             // worker-LOCAL, stateless
             std::optional<wlx::runtime::io::FileContent> content;
             if (!file_too_large(j.path.c_str()))   // re-check: F2 reload may have grown the file
@@ -637,8 +646,36 @@ static void begin_async_load(ColorViewState* vs, const wchar_t* path) {
                 r->failed = true;
                 return r;
             }
-            return color_parse_body(j, std::move(content->raw_utf8),
-                                    language, wrap, core);
+            // Phase 1 (no-wrap only): post a COPY of the source so the UI can
+            // show plain text now; keep the original for the parse below.
+            // Mirrors spawn_parse_worker's posting discipline: re-check the
+            // shutdown/closed gates, free locally on any failure to deliver.
+            bool posted_text = false;
+            if (!wrap) {
+                auto t = std::make_unique<TextResultColor>();
+                t->generation = j.generation;
+                t->live = j.live;
+                t->raw_utf8 = content->raw_utf8;          // copy
+                if (!wlx::runtime::host::g_shutting_down.load(std::memory_order_acquire) &&
+                    !j.live->closed.load(std::memory_order_acquire)) {
+                    TextResultColor* raw = t.release();
+                    if (PostMessage(j.hwnd, wm_colorizer_text_ready(),
+                                    static_cast<WPARAM>(j.generation),
+                                    reinterpret_cast<LPARAM>(raw)))
+                        posted_text = true;
+                    else
+                        t.reset(raw);   // post failed -> reclaim + free locally
+                }
+            }
+            const auto t_text = _clk::now();
+            WLX_TRACE(L"two-phase: read+post %.1f ms (posted=%d)",
+                      std::chrono::duration<double, std::milli>(t_text - t_read0).count(),
+                      posted_text ? 1 : 0);
+            auto r = color_parse_body(j, std::move(content->raw_utf8),
+                                      language, wrap, core, posted_text);
+            WLX_TRACE(L"two-phase: parse %.1f ms",
+                      std::chrono::duration<double, std::milli>(_clk::now() - t_text).count());
+            return r;
         });
     // Loading frame now; the worker triggers the real repaint at adoption.
     InvalidateRect(vs->hwnd, nullptr, FALSE);
@@ -677,7 +714,7 @@ static void begin_async_recolor(ColorViewState* vs) {
             // mutable + move: the worker runs this exactly once, so hand the
             // file-sized string to color_parse_body instead of copying it.
             return color_parse_body(j, std::move(raw_copy),
-                                    language, wrap, core);
+                                    language, wrap, core, /*two_phase=*/false);
         });
     InvalidateRect(vs->hwnd, nullptr, FALSE);
 }
@@ -944,6 +981,39 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
             si.cbSize = sizeof(si);
             si.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
             SetScrollInfo(hwnd, SB_VERT, &si, TRUE);
+            InvalidateRect(hwnd, nullptr, FALSE);
+            return 0;
+        }
+        if (res->two_phase) {
+            // Phase 1 already swapped the source + plain skeleton; the bytes
+            // didn't change, so the skeleton, line index, search index, scroll
+            // and any selection made meanwhile are all still exact. Just bring
+            // the colors in.
+            v->tree_language = std::move(res->language);
+            if (WlxTree* raw_tree = res->tree.release())
+                v->tree = std::shared_ptr<WlxTree>(raw_tree,
+                                                   wlx_core::TreeDeleter{g_colorizer_handle});
+            else
+                v->tree.reset();
+            if (v->tree && res->wrap != v->wrap_text)
+                v->tree.reset();   // wrap flipped mid-gap (defensive; gen bump normally catches it)
+            if (v->tree) {
+                // Window blocks were built plain — drop them; the next paint's
+                // ensure_grid_window rebuilds the visible window through
+                // colors_for (tree highlight). Everything else stays put.
+                if (v->layout) {
+                    v->layout->blocks.clear();
+                    v->layout->first_block_line = 0;
+                }
+                begin_sweep(v);
+            } else {
+                // Unsupported language -> apply_whole_doc_fallback traces and
+                // re-lays plain (harmless); supported-but-parse-fail -> whole-doc
+                // colorize fallback feeding the span table. Same semantics as
+                // the single-phase fallback.
+                apply_whole_doc_fallback(v, v->tree_language);
+            }
+            WLX_TRACE(L"parse done (two-phase): tree=%d", v->tree ? 1 : 0);
             InvalidateRect(hwnd, nullptr, FALSE);
             return 0;
         }

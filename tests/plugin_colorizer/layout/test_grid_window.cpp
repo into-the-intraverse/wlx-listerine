@@ -754,3 +754,42 @@ TEST_CASE("grid byte-range: window past EOF produces no colors_for call") {
     CHECK(doc.blocks.empty());
     CHECK(invoke_count == 0);
 }
+
+TEST_CASE("phase-2 window clear: re-slide rebuilds colored at the same scroll") {
+    // Simulates the two-phase ParseDone adopt: a window built PLAIN at a
+    // scrolled position is cleared (blocks + first_block_line only) and the
+    // next slide rebuilds it WITH colors — geometry/line index untouched.
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    ThemeService theme;
+    ColorizerDisplayConfig display;
+    const std::string raw = numbered_lines(100);
+    std::vector<int> starts;
+    std::shared_ptr<MaterializeCtx> ctx;
+    GridGeometry geo;
+    auto doc = layout_grid_skeleton(factory.Get(), raw, theme, false, 800.0f,
+                                    display, &starts, &ctx, &geo);
+    const auto tops_before = doc.line_tops;
+    const float height_before = doc.total_height;
+
+    slide_grid_window(doc, geo, *ctx, raw, starts, 40, 60, empty_colors());  // plain
+    REQUIRE(doc.blocks.size() == 21);
+    CHECK(doc.blocks[5].text_runs[0].color_ranges.empty());
+
+    doc.blocks.clear();              // the phase-2 adopt's exact mutation
+    doc.first_block_line = 0;
+
+    ColorSpan s;                     // a crafted span on line 45's text
+    s.start = static_cast<uint32_t>(starts[45]);
+    s.length = 4;
+    s.color = 0x123456;
+    ColorizeResult crafted;
+    crafted.spans = {s};
+    slide_grid_window(doc, geo, *ctx, raw, starts, 40, 60,
+                      [&](uint32_t, uint32_t) { return crafted; });
+    REQUIRE(doc.blocks.size() == 21);
+    CHECK(doc.first_block_line == 40);
+    CHECK_FALSE(doc.blocks[5].text_runs[0].color_ranges.empty());  // line 45 colored
+    CHECK(doc.line_tops == tops_before);                           // geometry untouched
+    CHECK(doc.total_height == doctest::Approx(height_before));
+}
