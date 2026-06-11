@@ -48,6 +48,7 @@ add_executable(colorizer-tests
     plugin_colorizer/layout/test_colorizer_layout.cpp
     plugin_colorizer/test_colorizer_smoke.cpp
     plugin_colorizer/colorize/test_span_table.cpp
+    plugin_colorizer/colorize/test_sweep_parity.cpp
     core_dll/abi/test_wlx_core_abi.cpp
     core_dll/registry/test_core_config.cpp
     core_dll/grammar/test_grammar_cache.cpp

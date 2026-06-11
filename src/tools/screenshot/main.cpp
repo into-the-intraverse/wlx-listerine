@@ -35,7 +35,8 @@ static void print_usage() {
         "  --cpp-grammar <kind>  \"standard\" or \"unreal\" — selects cpp grammar variant\n"
         "  --dump-tokens         Write resolved-style token JSON instead of painting\n"
         "  --display-config <p>  TOML overrides for ColorizerDisplayConfig\n"
-        "  --cached-tree         Colorizer: parse once + highlight_range (viewport path)\n");
+        "  --cached-tree         Colorizer: parse once + highlight_range (viewport path)\n"
+        "  --scroll-screens N    Cached-tree: scroll N viewport heights after sweep (bench)\n");
 }
 
 // Strict numeric parsing: the whole value must be consumed, so e.g.
@@ -101,7 +102,8 @@ static bool parse_args(int argc, wchar_t* argv[], Options& opts) {
         else if (std::wcscmp(arg, L"--cpp-grammar")   == 0) { auto v = value(); if (!v) return false; opts.cpp_grammar = v; }
         else if (std::wcscmp(arg, L"--dump-tokens")   == 0) opts.dump_tokens = true;
         else if (std::wcscmp(arg, L"--display-config")== 0) { auto v = value(); if (!v) return false; opts.display_config = v; }
-        else if (std::wcscmp(arg, L"--cached-tree")   == 0) opts.cached_tree = true;
+        else if (std::wcscmp(arg, L"--cached-tree")    == 0) opts.cached_tree = true;
+        else if (std::wcscmp(arg, L"--scroll-screens") == 0) { auto v = value(); if (!v || !parse_int(arg, v, opts.scroll_screens)) return false; }
         else { std::fprintf(stderr, "Unknown option: %ls\n", arg); return false; }
     }
     if (opts.width <= 0 || opts.height <= 0) {

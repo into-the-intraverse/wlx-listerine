@@ -34,6 +34,8 @@
 #include "plugin_colorizer/layout/colorizer_layout.h"
 #include "wlx_core/abi.h"
 #include "wlx_core/abi_spans_to_result.h"
+#include "plugin_colorizer/colorize/span_table.h"
+#include "plugin_colorizer/colorize/sweep_chunk.h"
 #include "plugin_colorizer/language/path_to_language.h"
 #include "plugin_colorizer/language/routing.h"
 #include "tools/screenshot/token_json_writer.h"
@@ -428,18 +430,21 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
                 const int bmp_height_ct = opts.full
                     ? std::max(1, static_cast<int>(std::ceil(layout_ct.total_height)))
                     : opts.height;
-                const float scroll_y_ct = opts.full ? 0.0f : opts.scroll;
+                // Mutable scroll so the post-scroll loop can slide the viewport.
+                float scroll_y_ct_mut = opts.full ? 0.0f : opts.scroll;
+                // viewport_h is needed for the post-scroll loop; defined here so
+                // it is in scope regardless of opts.full.
+                const float viewport_h_ct = static_cast<float>(bmp_height_ct);
 
                 uint32_t vlo = 0;
                 uint32_t vhi = static_cast<uint32_t>(content->raw_utf8.size());
 
                 if (!opts.full) {
                     // Same visible->byte math as the host's colorize_viewport.
-                    const float viewport_h = static_cast<float>(bmp_height_ct);
                     auto vr = wlx::plugin_colorizer::layout::viewport_byte_range(
                         layout_ct.blocks, line_byte_starts,
                         static_cast<int>(content->raw_utf8.size()),
-                        scroll_y_ct, viewport_h, /*overscan=*/viewport_h);
+                        scroll_y_ct_mut, viewport_h_ct, /*overscan=*/viewport_h_ct);
                     // vr.empty means empty/out-of-range layout; fall back to whole-doc coloring.
                     if (!vr.empty) {
                         vlo = vr.lo;
@@ -474,17 +479,67 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
                     std::fprintf(stderr, "Bitmap target failed: 0x%08lx\n", hr);
                     return {};
                 }
-                hr = renderer_ct.paint(layout_ct, scroll_y_ct);
+                hr = renderer_ct.paint(layout_ct, scroll_y_ct_mut);
                 if (FAILED(hr)) {
                     std::fprintf(stderr, "Paint failed (EndDraw): 0x%08lx\n", hr);
                     return {};
                 }
                 auto _tpaint_ct = std::chrono::steady_clock::now();
 
+                // Timing helper shared by bench print and sweep timing.
+                auto ms = [](auto a, auto b) {
+                    return std::chrono::duration<double, std::milli>(b - a).count();
+                };
+
+                // ---- sweep: chunk-highlight the whole file into the span table,
+                // then free the tree (memory M1). The "process delta" bench sample
+                // is taken AFTER this settle point so the freed tree shows up.
+                // Gated: run only when --bench (settle sampling) or --scroll-screens
+                // (which needs the table to recolor post-scroll viewports).
+                wlx::plugin_colorizer::colorize::SpanTable sweep_table;
+                auto _tsweep0 = std::chrono::steady_clock::now();
+                if (opts.bench || opts.scroll_screens > 0) {
+                    const auto fsize = static_cast<uint32_t>(content->raw_utf8.size());
+                    uint32_t chunk = wlx::plugin_colorizer::colorize::kSweepFirstChunkBytes;
+                    while (!sweep_table.complete(fsize)) {
+                        const uint32_t lo = sweep_table.swept_hi();
+                        const uint32_t hi = std::min(fsize, lo + chunk);
+                        WlxColorSpan* cs = nullptr;
+                        uint32_t cc = 0;
+                        auto c0 = std::chrono::steady_clock::now();
+                        if (wlx_core_highlight_range(core, tree.get(), opts.dark ? 1 : 0,
+                                                     lo, hi, &cs, &cc) != 0)
+                            break;   // sweep failure: keep the tree (spec fallback)
+                        sweep_table.append_chunk(wlx_core::abi_spans_to_result(cs, cc), lo, hi);
+                        chunk = wlx::plugin_colorizer::colorize::next_chunk_bytes(
+                            hi - lo, ms(c0, std::chrono::steady_clock::now()));
+                    }
+                    if (sweep_table.complete(fsize))
+                        tree.reset();   // free tree + unpin grammar — the settle point
+                }
+                auto _tsweep1 = std::chrono::steady_clock::now();
+
+                // ---- post-scroll pass (--scroll-screens N): slide the viewport
+                // down N screens, recoloring + repainting per step, so the final
+                // working-set sample measures post-scroll retention.
+                if (opts.scroll_screens > 0 && !opts.full) {
+                    for (int step = 0; step < opts.scroll_screens; ++step) {
+                        scroll_y_ct_mut += viewport_h_ct;
+                        auto vr2 = wlx::plugin_colorizer::layout::viewport_byte_range(
+                            layout_ct.blocks, line_byte_starts,
+                            static_cast<int>(content->raw_utf8.size()),
+                            scroll_y_ct_mut, viewport_h_ct, viewport_h_ct);
+                        if (!vr2.empty) {
+                            auto step_spans = sweep_table.slice(vr2.lo, vr2.hi);
+                            apply_spans_to_range(layout_ct, content->raw_utf8,
+                                                 line_byte_starts, step_spans,
+                                                 vr2.lo, vr2.hi, display.tab_width);
+                        }
+                        renderer_ct.paint(layout_ct, scroll_y_ct_mut);
+                    }
+                }
+
                 if (opts.bench) {
-                    auto ms = [](auto a, auto b) {
-                        return std::chrono::duration<double, std::milli>(b - a).count();
-                    };
                     int lines = 1;
                     for (char c : content->raw_utf8) if (c == '\n') ++lines;
 
@@ -511,10 +566,15 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
                         ms(_thigh0, _thigh1), vlo, vhi);
                     std::fprintf(stderr, "  paint            %8.2f ms\n",
                         ms(_thigh1, _tpaint_ct));   // from end of highlight, not layout
+                    std::fprintf(stderr, "  sweep      %6.2f ms  (%zu spans, %.1f MB table)\n",
+                        ms(_tsweep0, _tsweep1), sweep_table.size(),
+                        sweep_table.approx_bytes() / (1024.0 * 1024.0));
                     // Sum the measured phases. NOT ms(_t0, _tpaint_ct): that wall-
                     // clock also includes the one-time core-singleton init / grammar
                     // scan triggered by acquire_compatible() in this path (a tool
                     // artifact — the real plugin shares one already-warm core).
+                    // Sweep is excluded from hot total: it is a bench settle step,
+                    // not part of the open-file critical path.
                     double hot_ct = ms(_t0, _tread) + ms(_tparse0, _tparse1)
                                   + ms(_tparse1, _tlayout_ct) + ms(_thigh0, _thigh1)
                                   + ms(_thigh1, _tpaint_ct);
@@ -529,7 +589,7 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
                 return save_png(renderer_ct, wic_factory.Get(),
                                 sibling_path(opts.input_path,
                                              opts.dark ? L"_dark.png" : L".png"));
-                // tree freed here via TreePtr destructor
+                // tree freed here via TreePtr destructor (if sweep didn't free it)
             }
         }
         // Fallback: word_wrap or parse failed — fall through to eager whole-doc below.
