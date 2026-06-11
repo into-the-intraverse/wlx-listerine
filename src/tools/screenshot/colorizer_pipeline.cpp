@@ -418,7 +418,7 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
 
                 // Grid skeleton: NO per-line blocks, just line_byte_starts +
                 // geometry + the build context slide_grid_window needs. This is
-                // the host's no-wrap path (do_layout's grid branch) — the old
+                // the host's grid path (do_layout, both wrap modes) — the old
                 // layout_source skeleton built every block up front; the grid
                 // skeleton builds none, so the 250k-block sqlite layout never
                 // materializes during parse/sweep (the M2 memory win).
