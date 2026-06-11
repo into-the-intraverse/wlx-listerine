@@ -58,7 +58,7 @@ cpp_grammar = "unreal"
 
 Restart Total Commander. All C/C++ files now route to the Unreal grammar. The Unreal grammar is a strict superset of plain C++, so non-Unreal files continue to parse correctly — they just have no extra macros to highlight.
 
-The fork is **SHA-pinned** in `CMakeLists.txt` (no upstream releases yet). Bumping it is a manual edit of `GIT_TAG`. The build-side mechanism that resolves the fork's `tree_sitter_cpp()` symbol export to `tree_sitter_unreal_cpp` is the `add_grammar(..., UPSTREAM_SYMBOL <name>)` keyword — reusable for any future fork that retains its parent's exported name.
+The fork is **SHA-pinned** in `cmake/grammars.cmake` (no upstream releases yet) as a GitHub archive `URL` + `URL_HASH`. Bumping it means updating the commit SHA in the archive URL and the tarball's `URL_HASH` SHA256. The build-side mechanism that resolves the fork's `tree_sitter_cpp()` symbol export to `tree_sitter_unreal_cpp` is the `add_grammar(..., UPSTREAM_SYMBOL <name>)` keyword — reusable for any future fork that retains its parent's exported name.
 
 ## Adding a New Language
 
@@ -67,13 +67,13 @@ The grammar list is hardcoded in CMake (fetched at build time) and the extension
 1. **Declare and fetch the grammar source in `cmake/grammars.cmake`:**
    ```cmake
    FetchContent_Declare(ts-foo
-       GIT_REPOSITORY https://github.com/owner/tree-sitter-foo.git
-       GIT_TAG        v1.0.0
-       GIT_SHALLOW    TRUE
+       URL      https://github.com/owner/tree-sitter-foo/archive/refs/tags/v1.0.0.tar.gz
+       URL_HASH SHA256=<sha256 of the tarball>
    )
    fetch_grammar(ts-foo)
    add_grammar(foo "${ts-foo_SOURCE_DIR}")
    ```
+   Grammars are fetched as hash-pinned GitHub source archives, not git clones (single fast HTTP download, reproducible, CI-cacheable). For untagged upstreams, pin a commit SHA: `https://github.com/owner/tree-sitter-foo/archive/<sha>.tar.gz`.
    `add_grammar(foo …)` builds `grammars/foo/tree-sitter-foo.dll` and copies upstream `queries/highlights.scm` if no local override exists at `grammars/foo/highlights.scm`.
 
 2. **Map extensions to the language in `src/plugin_colorizer/language/path_to_language.h`:**

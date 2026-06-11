@@ -24,7 +24,9 @@ endif()
 # Give extracted archive files fresh timestamps. With OLD behavior they keep
 # the archive's mtimes, so bumping a grammar version in an existing build dir
 # would leave sources older than the previously built .objs and grammar DLLs
-# would silently not rebuild.
+# would silently not rebuild. CMP0135 only exists on CMake >= 3.24; on
+# 3.20-3.23 archive mtimes are always preserved — after bumping a grammar pin
+# there, delete build/_deps to force the rebuild.
 if(POLICY CMP0135)
     cmake_policy(SET CMP0135 NEW)
 endif()
