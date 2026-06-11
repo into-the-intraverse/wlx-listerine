@@ -387,12 +387,12 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
 
     // ----- --cached-tree path (parse once + viewport highlight_range) -----
     // Mirrors the host's grid flow (layout_grid_skeleton + slide_grid_window).
-    // Falls back to the eager whole-doc path when:
+    // Wrap geometry is handled by the grid (GridGeometry) — word_wrap no longer
+    // causes a fallback here. Falls back to the eager whole-doc path only when:
     //   - core handle unavailable (ABI mismatch)
     //   - language unsupported in the core
-    //   - word_wrap is on (byte->line mapping unreliable)
     //   - wlx_core_parse returns null
-    if (opts.cached_tree && !display.word_wrap) {
+    if (opts.cached_tree) {
         WlxCore* core = wlx_core::acquire_compatible();
         bool use_cached = core != nullptr &&
                           wlx_core_supports(core, lang.c_str()) == 1;
@@ -598,16 +598,13 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
                 // tree freed here via TreePtr destructor (if sweep didn't free it)
             }
         }
-        // Fallback: word_wrap or parse failed — fall through to eager whole-doc below.
-    } else if (opts.cached_tree && display.word_wrap) {
-        std::fprintf(stderr,
-            "[--cached-tree] fallback: word_wrap on — using whole-doc colorize\n");
+        // Fallback: parse failed — fall through to eager whole-doc below.
     }
 
     // ----- Layout (eager whole-doc) -----
 
-    // Reached in --cached-tree mode only via fallback (core unavailable, parse
-    // failure, or word_wrap on) — run the whole-doc colorize deferred above.
+    // Reached in --cached-tree mode only via fallback (core unavailable or parse
+    // failure) — run the whole-doc colorize deferred above.
     if (!colorized) {
         _tcolor0 = std::chrono::steady_clock::now();
         colors = colorizer.colorize(content->raw_utf8, lang, opts.dark, &ctimings);
