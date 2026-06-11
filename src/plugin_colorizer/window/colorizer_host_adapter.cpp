@@ -419,6 +419,7 @@ static void do_layout(ColorViewState* vs, const std::string& raw_utf8,
             vs->span_table.clear();
             vs->span_table.append_chunk(colors, 0,
                 static_cast<uint32_t>(raw_utf8.size()));
+            vs->span_table.seal();
         }
     } else {
         // layout_source already builds the line index + gutter, and fills
@@ -775,6 +776,7 @@ static void begin_sweep(ColorViewState* vs) {
                     _clk::now() - c0).count();
                 chunk = next_chunk_bytes(hi - lo, chunk_ms);
             }
+            r->table.seal();  // drop vector growth slack before the UI adopts it
             return r;
         });
 }

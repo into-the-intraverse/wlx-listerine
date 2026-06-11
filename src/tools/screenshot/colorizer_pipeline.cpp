@@ -32,6 +32,8 @@
 #include "core_dll/colorizer/colorizer.h"
 #include "core_dll/registry/core_config.h"
 #include "plugin_colorizer/layout/colorizer_layout.h"
+#include "plugin_colorizer/layout/grid_window.h"
+#include "plugin_colorizer/layout/grid_geometry.h"
 #include "wlx_core/abi.h"
 #include "wlx_core/abi_spans_to_result.h"
 #include "plugin_colorizer/colorize/span_table.h"
@@ -52,6 +54,11 @@ using wlx::plugin_colorizer::layout::LayoutTimings;
 using wlx::plugin_colorizer::layout::CppGrammar;
 using wlx::plugin_colorizer::layout::layout_source;
 using wlx::plugin_colorizer::layout::apply_spans_to_range;
+using wlx::plugin_colorizer::layout::layout_grid_skeleton;
+using wlx::plugin_colorizer::layout::slide_grid_window;
+using wlx::plugin_colorizer::layout::grid_window_lines;
+using wlx::plugin_colorizer::layout::MaterializeCtx;
+using wlx::plugin_colorizer::layout::GridGeometry;
 using wlx::plugin_colorizer::language::apply_cpp_variant;
 using wlx::plugin_colorizer::language::ext_to_language;
 using wlx::plugin_colorizer::language::filename_to_language;
@@ -410,66 +417,63 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
             } else {
                 wlx_core::TreePtr tree(raw_tree, wlx_core::TreeDeleter{core});
 
-                // Skeleton layout: empty colors, capture line_byte_starts
+                // Grid skeleton: NO per-line blocks, just line_byte_starts +
+                // geometry + the build context slide_grid_window needs. This is
+                // the host's no-wrap path (do_layout's grid branch) — the old
+                // layout_source skeleton built every block up front; the grid
+                // skeleton builds none, so the 250k-block sqlite layout never
+                // materializes during parse/sweep (the M2 memory win).
                 std::vector<int> line_byte_starts;
-                LayoutTimings ltimings_ct;
-                auto layout_ct = layout_source(dwrite_factory.Get(),
-                                               content->raw_utf8,
-                                               /*colors=*/{},
-                                               theme,
-                                               opts.dark,
-                                               static_cast<float>(opts.width),
-                                               display,
-                                               &ltimings_ct,
-                                               &line_byte_starts);
+                std::shared_ptr<MaterializeCtx> grid_ctx;
+                GridGeometry grid_geo;
+                auto layout_ct = layout_grid_skeleton(dwrite_factory.Get(),
+                                                      content->raw_utf8,
+                                                      theme,
+                                                      opts.dark,
+                                                      static_cast<float>(opts.width),
+                                                      display,
+                                                      &line_byte_starts,
+                                                      &grid_ctx,
+                                                      &grid_geo);
                 auto _tlayout_ct = std::chrono::steady_clock::now();
 
-                // Compute visible byte range for the rendered viewport.
-                // For --full: highlight the entire document.
-                // For viewport mode: use the same overscan math as colorize_viewport.
+                // Bitmap height: --full sizes to the whole grid, else the fixed
+                // viewport. viewport_h_ct is also the post-scroll step + overscan.
                 const int bmp_height_ct = opts.full
                     ? std::max(1, static_cast<int>(std::ceil(layout_ct.total_height)))
                     : opts.height;
                 // Mutable scroll so the post-scroll loop can slide the viewport.
                 float scroll_y_ct_mut = opts.full ? 0.0f : opts.scroll;
-                // viewport_h is needed for the post-scroll loop; defined here so
-                // it is in scope regardless of opts.full.
                 const float viewport_h_ct = static_cast<float>(bmp_height_ct);
 
-                uint32_t vlo = 0;
-                uint32_t vhi = static_cast<uint32_t>(content->raw_utf8.size());
-
-                if (!opts.full) {
-                    // Same visible->byte math as the host's colorize_viewport.
-                    auto vr = wlx::plugin_colorizer::layout::viewport_byte_range(
-                        layout_ct.blocks, line_byte_starts,
-                        static_cast<int>(content->raw_utf8.size()),
-                        scroll_y_ct_mut, viewport_h_ct, /*overscan=*/viewport_h_ct);
-                    // vr.empty means empty/out-of-range layout; fall back to whole-doc coloring.
-                    if (!vr.empty) {
-                        vlo = vr.lo;
-                        vhi = vr.hi;
-                    }
-                }
-
-                // Highlight the visible byte range against the cached tree
-                WlxColorSpan* ct_spans = nullptr;
-                uint32_t ct_count = 0;
+                // First-paint coloring through the grid (host's WM_PAINT flow):
+                // pick the visible line window, then slide_grid_window builds +
+                // colors those lines via the live tree. colors_for runs
+                // synchronously inside the slide, so `tree` is safe to capture.
+                auto colors_for_tree = [&](uint32_t lo, uint32_t hi) -> ColorizeResult {
+                    WlxColorSpan* cs = nullptr; uint32_t cc = 0;
+                    if (wlx_core_highlight_range(core, tree.get(), opts.dark ? 1 : 0,
+                                                 lo, hi, &cs, &cc) == 0)
+                        return wlx_core::abi_spans_to_result(cs, cc);
+                    return {};
+                };
                 auto _thigh0 = std::chrono::steady_clock::now();
-                int hres = wlx_core_highlight_range(
-                    core, tree.get(), opts.dark ? 1 : 0,
-                    vlo, vhi, &ct_spans, &ct_count);
+                auto [first, last] = grid_window_lines(grid_geo, scroll_y_ct_mut,
+                                                       viewport_h_ct,
+                                                       /*overscan=*/viewport_h_ct);
+                slide_grid_window(layout_ct, grid_geo, *grid_ctx, content->raw_utf8,
+                                  line_byte_starts, first, last, colors_for_tree);
                 auto _thigh1 = std::chrono::steady_clock::now();
 
-                if (hres != 0) {
-                    std::fprintf(stderr,
-                        "[--cached-tree] wlx_core_highlight_range failed (%d) — "
-                        "rendering without colors\n", hres);
-                } else {
-                    ColorizeResult ct_result = wlx_core::abi_spans_to_result(ct_spans, ct_count);
-                    apply_spans_to_range(layout_ct, content->raw_utf8, line_byte_starts,
-                                         ct_result, vlo, vhi, display.tab_width);
-                }
+                // Byte span of the first window, for the bench annotation only.
+                const uint32_t vlo = (last < first)
+                    ? 0u
+                    : static_cast<uint32_t>(line_byte_starts[static_cast<size_t>(first)]);
+                const uint32_t vhi = (last < first)
+                    ? 0u
+                    : ((last + 1 < static_cast<int>(line_byte_starts.size()))
+                           ? static_cast<uint32_t>(line_byte_starts[static_cast<size_t>(last + 1)])
+                           : static_cast<uint32_t>(content->raw_utf8.size()));
 
                 // ----- Render (cached-tree path) -----
                 RenderEngine renderer_ct(d2d_factory.Get(), dwrite_factory.Get(), theme, opts.dark);
@@ -514,8 +518,10 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
                         chunk = wlx::plugin_colorizer::colorize::next_chunk_bytes(
                             hi - lo, ms(c0, std::chrono::steady_clock::now()));
                     }
-                    if (sweep_table.complete(fsize))
+                    if (sweep_table.complete(fsize)) {
+                        sweep_table.seal();  // drop vector growth slack (~MBs on big files)
                         tree.reset();   // free tree + unpin grammar — the settle point
+                    }
                 }
                 auto _tsweep1 = std::chrono::steady_clock::now();
 
@@ -529,16 +535,14 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
                         static_cast<uint32_t>(content->raw_utf8.size()))) {
                     for (int step = 0; step < opts.scroll_screens; ++step) {
                         scroll_y_ct_mut += viewport_h_ct;
-                        auto vr2 = wlx::plugin_colorizer::layout::viewport_byte_range(
-                            layout_ct.blocks, line_byte_starts,
-                            static_cast<int>(content->raw_utf8.size()),
-                            scroll_y_ct_mut, viewport_h_ct, viewport_h_ct);
-                        if (!vr2.empty) {
-                            auto step_spans = sweep_table.slice(vr2.lo, vr2.hi);
-                            apply_spans_to_range(layout_ct, content->raw_utf8,
-                                                 line_byte_starts, step_spans,
-                                                 vr2.lo, vr2.hi, display.tab_width);
-                        }
+                        auto [f2, l2] = grid_window_lines(grid_geo, scroll_y_ct_mut,
+                                                          viewport_h_ct, viewport_h_ct);
+                        slide_grid_window(layout_ct, grid_geo, *grid_ctx,
+                                          content->raw_utf8, line_byte_starts,
+                                          f2, l2,
+                                          [&](uint32_t lo, uint32_t hi) {
+                                              return sweep_table.slice(lo, hi);
+                                          });
                         renderer_ct.paint(layout_ct, scroll_y_ct_mut);
                     }
                 }
@@ -554,18 +558,14 @@ std::wstring run_colorizer_pipeline(const Options& opts) {
                         ms(_t0, _tread));
                     std::fprintf(stderr, "  parse (cold)     %8.2f ms  (wlx_core_parse)\n",
                         ms(_tparse0, _tparse1));
-                    std::fprintf(stderr, "  layout (skel)    %8.2f ms  (skeleton, no colors)\n",
+                    // Grid skeleton: byte-scan + arithmetic line_tops only, NO
+                    // per-line blocks (those build lazily in the slide below), so
+                    // the old line-split / span-index / build-blocks / line-index
+                    // sub-rows are gone — layout_grid_skeleton takes no timings.
+                    std::fprintf(stderr, "  layout (skel)    %8.2f ms  (grid skeleton, no blocks)\n",
                         ms(_tparse1, _tlayout_ct));
-                    std::fprintf(stderr, "    line split     %8.2f ms\n",
-                        ltimings_ct.line_split_ms);
-                    std::fprintf(stderr, "    span index     %8.2f ms  (empty, skipped)\n",
-                        ltimings_ct.span_index_ms);
-                    std::fprintf(stderr, "    build blocks   %8.2f ms\n",
-                        ltimings_ct.build_blocks_ms);
-                    std::fprintf(stderr, "    line index     %8.2f ms\n",
-                        ltimings_ct.line_index_ms);
                     std::fprintf(stderr,
-                        "  highlight range  %8.2f ms  (wlx_core_highlight_range, "
+                        "  highlight range  %8.2f ms  (slide_grid_window first window, "
                         "bytes %u..%u)\n",
                         ms(_thigh0, _thigh1), vlo, vhi);
                     std::fprintf(stderr, "  paint            %8.2f ms\n",

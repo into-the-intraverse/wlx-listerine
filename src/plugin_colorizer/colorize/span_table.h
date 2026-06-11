@@ -32,6 +32,10 @@ public:
     wlx::core::colorizer::ColorizeResult slice(uint32_t lo, uint32_t hi) const;
 
     bool complete(uint32_t file_size) const { return swept_hi_ >= file_size; }
+    // Call once the table stops growing (sweep complete / whole-doc feed done):
+    // geometric vector growth leaves ~25-50% capacity slack, which on a
+    // million-span table is several MB of retained waste.
+    void seal() { spans_.shrink_to_fit(); }
     uint32_t swept_hi() const { return swept_hi_; }
     size_t size() const { return spans_.size(); }
     size_t approx_bytes() const {
