@@ -53,7 +53,6 @@ using wlx::plugin_colorizer::layout::ColorizerDisplayConfig;
 using wlx::plugin_colorizer::layout::LayoutTimings;
 using wlx::plugin_colorizer::layout::CppGrammar;
 using wlx::plugin_colorizer::layout::layout_source;
-using wlx::plugin_colorizer::layout::apply_spans_to_range;
 using wlx::plugin_colorizer::layout::layout_grid_skeleton;
 using wlx::plugin_colorizer::layout::slide_grid_window;
 using wlx::plugin_colorizer::layout::grid_window_lines;

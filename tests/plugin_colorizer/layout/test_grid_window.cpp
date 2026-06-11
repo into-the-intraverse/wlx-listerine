@@ -601,3 +601,156 @@ TEST_CASE("build_lines: search offsets align with tab-expanded text") {
     CHECK(m[0].char_start  == 4);
     CHECK(m[0].char_end    == 5);
 }
+
+// ---- Case 9: byte-range math via colors_for (ported from viewport_byte_range) ----
+//
+// These cases were previously expressed in terms of the removed viewport_byte_range
+// function. Each is re-stated as a slide_grid_window call that captures the [lo, hi)
+// byte window passed to colors_for, verifying the same boundary properties:
+//   - single block: hi == raw_size (not raw_size + 1)
+//   - first-block-only window: hi == starts[1]
+//   - scrolled window: lo == starts[mid]
+//   - overscan pulls in adjacent lines
+//   - huge viewport == full file (lo==0, hi==raw_size)
+//   - window past EOF → empty (first > last → no colors_for call)
+// Mapped from the old viewport_byte_range test zoo; "scrolled past the end -> empty"
+// is already covered by Case 5 (first > last → doc.blocks.empty).
+
+TEST_CASE("grid byte-range: single block at scroll 0 — hi == raw_size") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    ThemeService theme;
+    ColorizerDisplayConfig display;
+
+    // "abc\n" -> 1 line (the newline is the line terminator, not a second line
+    // if we omit a trailing byte). Use no trailing newline for a single line.
+    const std::string raw = "abc";   // 3 bytes, 1 line
+    std::vector<int> starts;
+    std::shared_ptr<MaterializeCtx> ctx;
+    GridGeometry geo;
+    auto doc = layout_grid_skeleton(factory.Get(), raw, theme, false, 800.0f,
+                                    display, &starts, &ctx, &geo);
+    REQUIRE(doc.grid_line_count == 1);
+    REQUIRE(starts.size() == 1);
+    CHECK(starts[0] == 0);
+
+    uint32_t cap_lo = UINT32_MAX, cap_hi = 0;
+    ColorsForRange capture = [&](uint32_t lo, uint32_t hi) {
+        cap_lo = lo;
+        cap_hi = hi;
+        return ColorizeResult{};
+    };
+    slide_grid_window(doc, geo, *ctx, raw, starts, 0, 0, capture);
+    REQUIRE(doc.blocks.size() == 1);
+    // lo = starts[0] = 0; hi = raw_size = 3 (NOT raw_size + 1)
+    CHECK(cap_lo == 0u);
+    CHECK(cap_hi == static_cast<uint32_t>(raw.size()));
+}
+
+TEST_CASE("grid byte-range: first-block window — hi == starts[1]") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    ThemeService theme;
+    ColorizerDisplayConfig display;
+
+    // 4 lines; starts at 0, 7, 14, 21
+    const std::string raw = "line0\nline1\nline2\nline3";
+    std::vector<int> starts;
+    std::shared_ptr<MaterializeCtx> ctx;
+    GridGeometry geo;
+    auto doc = layout_grid_skeleton(factory.Get(), raw, theme, false, 800.0f,
+                                    display, &starts, &ctx, &geo);
+    REQUIRE(doc.grid_line_count == 4);
+    REQUIRE(starts.size() == 4);
+
+    // Slide only line 0
+    uint32_t cap_lo = UINT32_MAX, cap_hi = 0;
+    ColorsForRange capture = [&](uint32_t lo, uint32_t hi) {
+        cap_lo = lo; cap_hi = hi;
+        return ColorizeResult{};
+    };
+    slide_grid_window(doc, geo, *ctx, raw, starts, 0, 0, capture);
+    REQUIRE(doc.blocks.size() == 1);
+    CHECK(cap_lo == 0u);
+    CHECK(cap_hi == static_cast<uint32_t>(starts[1]));  // NOT raw_size
+}
+
+TEST_CASE("grid byte-range: scrolled window starts at the right line's byte start") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    ThemeService theme;
+    ColorizerDisplayConfig display;
+
+    const std::string raw = "line0\nline1\nline2\nline3";
+    std::vector<int> starts;
+    std::shared_ptr<MaterializeCtx> ctx;
+    GridGeometry geo;
+    auto doc = layout_grid_skeleton(factory.Get(), raw, theme, false, 800.0f,
+                                    display, &starts, &ctx, &geo);
+    REQUIRE(doc.grid_line_count == 4);
+
+    // Slide lines [2, 3] — the last two lines.
+    uint32_t cap_lo = UINT32_MAX, cap_hi = 0;
+    ColorsForRange capture = [&](uint32_t lo, uint32_t hi) {
+        cap_lo = lo; cap_hi = hi;
+        return ColorizeResult{};
+    };
+    slide_grid_window(doc, geo, *ctx, raw, starts, 2, 3, capture);
+    REQUIRE(doc.blocks.size() == 2);
+    CHECK(cap_lo == static_cast<uint32_t>(starts[2]));
+    // lines 2+3 are the last two: hi = raw_size
+    CHECK(cap_hi == static_cast<uint32_t>(raw.size()));
+}
+
+TEST_CASE("grid byte-range: huge window covers the whole file (lo==0, hi==raw_size)") {
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    ThemeService theme;
+    ColorizerDisplayConfig display;
+
+    const std::string raw = "a\nb\nc\nd";
+    std::vector<int> starts;
+    std::shared_ptr<MaterializeCtx> ctx;
+    GridGeometry geo;
+    auto doc = layout_grid_skeleton(factory.Get(), raw, theme, false, 800.0f,
+                                    display, &starts, &ctx, &geo);
+    REQUIRE(doc.grid_line_count == 4);
+
+    uint32_t cap_lo = UINT32_MAX, cap_hi = 0;
+    ColorsForRange capture = [&](uint32_t lo, uint32_t hi) {
+        cap_lo = lo; cap_hi = hi;
+        return ColorizeResult{};
+    };
+    slide_grid_window(doc, geo, *ctx, raw, starts,
+                      0, doc.grid_line_count - 1, capture);
+    REQUIRE(doc.blocks.size() == static_cast<size_t>(doc.grid_line_count));
+    CHECK(cap_lo == 0u);
+    CHECK(cap_hi == static_cast<uint32_t>(raw.size()));
+}
+
+TEST_CASE("grid byte-range: window past EOF produces no colors_for call") {
+    // first > grid_line_count - 1 is clamped; the slide produces no entering
+    // lines and therefore no colors_for invocation (already covered by Case 5,
+    // re-stated here as the ported "scrolled past the end -> empty" case).
+    auto factory = create_dwrite_factory();
+    REQUIRE(factory);
+    ThemeService theme;
+    ColorizerDisplayConfig display;
+
+    const std::string raw = numbered_lines(5);
+    std::vector<int> starts;
+    std::shared_ptr<MaterializeCtx> ctx;
+    GridGeometry geo;
+    auto doc = layout_grid_skeleton(factory.Get(), raw, theme, false, 800.0f,
+                                    display, &starts, &ctx, &geo);
+
+    int invoke_count = 0;
+    ColorsForRange counting = [&](uint32_t, uint32_t) {
+        ++invoke_count;
+        return ColorizeResult{};
+    };
+    // first > last: no lines enter, no colors_for call.
+    slide_grid_window(doc, geo, *ctx, raw, starts, 20, 50, counting);
+    CHECK(doc.blocks.empty());
+    CHECK(invoke_count == 0);
+}

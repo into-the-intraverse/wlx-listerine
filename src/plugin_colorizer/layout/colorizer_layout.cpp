@@ -586,6 +586,9 @@ wlx::runtime::layout::LayoutDocument layout_source(
     // (CreateTextLayout + decorations) is deferred to first paint of each
     // visible block via doc.materialize_block, UNLESS word-wrap is on (which
     // needs real measured heights, so we build eagerly).
+    // Tool-only path since M2: the plugin's no-wrap route uses layout_grid_skeleton;
+    // the eager tool route (whole-file colorize bench/smokes) still lands here with
+    // word_wrap=false.
     const bool lazy = !display.word_wrap;
 
     auto mctx = std::make_shared<MaterializeCtx>();
@@ -733,154 +736,6 @@ wlx::runtime::layout::LayoutDocument layout_source(
     }
 
     return doc;
-}
-
-// ---- viewport -> byte range (shared host + tool) ----------------------------
-
-ByteRange viewport_byte_range(
-    const std::vector<LayoutBlock>& blocks,
-    const std::vector<int>& line_byte_starts,
-    int raw_size,
-    float scroll_y, float viewport_h, float overscan) {
-    if (blocks.empty() || line_byte_starts.empty()) return {};
-
-    const float over_top    = scroll_y - overscan;
-    const float over_bottom = scroll_y + viewport_h + overscan;
-
-    const int block_count = static_cast<int>(blocks.size());
-    const int n = std::min(block_count, static_cast<int>(line_byte_starts.size()));
-    if (n == 0) return {};
-
-    // Blocks are stacked top-to-bottom (rect.top and rect.bottom both
-    // ascending), so binary-search the window edges instead of scanning every
-    // block: first = first block whose bottom reaches over_top; last = last
-    // block whose top is at or above over_bottom.
-    const auto bbegin = blocks.begin();
-    const int first = static_cast<int>(
-        std::lower_bound(bbegin, bbegin + n, over_top,
-                         [](const LayoutBlock& b, float y) {
-                             return b.rect.bottom < y;
-                         }) - bbegin);
-    const int last = static_cast<int>(
-        std::upper_bound(bbegin, bbegin + n, over_bottom,
-                         [](float y, const LayoutBlock& b) {
-                             return y < b.rect.top;
-                         }) - bbegin) - 1;
-    if (first >= n || last < first) return {};
-
-    ByteRange out;
-    out.empty = false;
-    out.lo = static_cast<uint32_t>(line_byte_starts[first]);
-    out.hi = (last + 1 < static_cast<int>(line_byte_starts.size()))
-                 ? static_cast<uint32_t>(line_byte_starts[last + 1])
-                 : static_cast<uint32_t>(raw_size);
-    return out;
-}
-
-ColoredDecision colored_interval_update(uint32_t vlo, uint32_t vhi,
-                                        uint32_t clo, uint32_t chi) {
-    ColoredDecision d;
-    // Already colored? (window inside the contiguous colored interval). Skip.
-    if (chi > clo && vlo >= clo && vhi <= chi) {
-        d.skip = true;
-        return d;
-    }
-    // Highlight, then update the interval: union when contiguous/overlapping with
-    // the existing one, else (a disjoint jump) reset to the new window.
-    if (chi <= clo) {
-        d.new_lo = vlo;
-        d.new_hi = vhi;
-    } else if (vlo <= chi && vhi >= clo) {
-        d.new_lo = std::min(clo, vlo);
-        d.new_hi = std::max(chi, vhi);
-    } else {
-        d.new_lo = vlo;
-        d.new_hi = vhi;
-    }
-    return d;
-}
-
-// ---- incremental (viewport-scoped) recoloring -------------------------------
-
-void apply_spans_to_range(
-    LayoutDocument& doc,
-    const std::string& raw_utf8,
-    const std::vector<int>& line_byte_starts,
-    const wlx::core::colorizer::ColorizeResult& spans,
-    uint32_t byte_lo, uint32_t byte_hi,
-    int tab_width) {
-    const int block_count = static_cast<int>(doc.blocks.size());
-    const int line_count = static_cast<int>(line_byte_starts.size());
-    if (block_count == 0 || line_count == 0) return;
-    // Defensive: line_byte_starts is parallel to blocks (1 line == 1 block).
-    const int n = std::min(block_count, line_count);
-    const int raw_size = static_cast<int>(raw_utf8.size());
-
-    // Map the byte window [byte_lo, byte_hi) to the inclusive block range it
-    // touches. Block i covers bytes [line_byte_starts[i], next_start). The
-    // starts are sorted ascending, so binary-search both edges: line_first =
-    // last block whose byte start <= byte_lo, line_last = last block whose
-    // byte start < byte_hi (both bounded to the parallel range [0, n)).
-    const auto sbegin = line_byte_starts.begin();
-    const int line_first = static_cast<int>(
-        std::upper_bound(sbegin, sbegin + n, byte_lo,
-                         [](uint32_t lo, int s) {
-                             return lo < static_cast<uint32_t>(s);
-                         }) - sbegin) - 1;
-    const int line_last = static_cast<int>(
-        std::lower_bound(sbegin, sbegin + n, byte_hi,
-                         [](int s, uint32_t hi) {
-                             return static_cast<uint32_t>(s) < hi;
-                         }) - sbegin) - 1;
-    if (line_first < 0 || line_last < line_first) return;  // window touches no block
-    // line_first's block can still end at/before byte_lo (no actual overlap).
-    const uint32_t first_end = (line_first + 1 < line_count)
-                                   ? static_cast<uint32_t>(line_byte_starts[line_first + 1])
-                                   : static_cast<uint32_t>(raw_size) + 1;
-    if (first_end <= byte_lo) return;
-
-    // Distribute only the spans overlapping the window onto those lines
-    // (window-relative: index 0 == line_first).
-    std::vector<std::vector<PerLineSpan>> line_spans(
-        static_cast<size_t>(line_last - line_first + 1));
-    distribute_spans_to_lines(raw_utf8, line_byte_starts, raw_size, spans,
-                              line_first, line_last, line_spans);
-
-    for (int i = line_first; i <= line_last; ++i) {
-        LayoutBlock& lb = doc.blocks[static_cast<size_t>(i)];
-        if (lb.text_runs.empty()) continue;
-        TextRun& run = lb.text_runs[0];
-
-        // Re-derive this line's tab-expansion map from the source (the same
-        // input the whole-doc build used) so byte->expanded offsets match.
-        int line_byte_start = line_byte_starts[i];
-        int content_end = (i + 1 < line_count) ? (line_byte_starts[i + 1] - 1)
-                                               : raw_size;
-        if (content_end < line_byte_start) content_end = line_byte_start;
-        std::wstring orig_line = decode_line(raw_utf8, line_byte_start, content_end);
-        std::vector<int> source_to_expanded;
-        std::wstring expanded = expand_tabs(orig_line, tab_width, &source_to_expanded);
-
-        // REPLACE this block's syntax color_ranges (idempotent re-color). Blocks
-        // in-window with no covering span get an empty vector (clean re-color).
-        run.color_ranges =
-            build_color_ranges(line_spans[static_cast<size_t>(i - line_first)],
-                               source_to_expanded, expanded);
-
-        // If the block was already materialized, its run.color_ranges had URL
-        // ranges appended and its decorations (markers/guides/spans) are set.
-        // Replacing color_ranges wiped the URL ranges; drop the per-line layout
-        // and decoration state so the next paint re-materializes cleanly (rebuilds
-        // the layout + re-appends URL ranges + markers). Unmaterialized blocks
-        // (layout == null) get URLs on their first materialize as usual.
-        if (run.layout) {
-            run.layout.Reset();
-            lb.spans.clear();
-            lb.ws_markers.clear();
-            lb.indent_guides.clear();
-            lb.has_trailing_ws = false;
-        }
-    }
 }
 
 }  // namespace wlx::plugin_colorizer::layout

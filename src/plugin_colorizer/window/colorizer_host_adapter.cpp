@@ -124,16 +124,10 @@ struct ColorViewState {
     // ViewStates leak on DLL_PROCESS_DETACH and workers are detached).
     std::shared_ptr<WlxTree> tree;
     // Per-block (== per-source-line) UTF-8 byte start, parallel to layout->blocks.
-    // From layout_source's out-param; maps a viewport byte range -> the blocks it
-    // touches for apply_spans_to_range.
+    // From layout_source's out-param; used by ensure_search_index + selection.
     std::vector<int> line_byte_starts;
     // Language the tree was parsed with (tracing only).
     std::string tree_language;
-    // Contiguous already-colored byte interval [colored_lo, colored_hi). 0,0 =
-    // nothing colored yet. colorize_viewport unions newly-colored windows into
-    // this (or resets it on a disjoint jump) to avoid per-paint re-highlight churn.
-    uint32_t colored_lo = 0;
-    uint32_t colored_hi = 0;
     // Whole-file span table (sweep output). Once complete, scroll coloring
     // reads this instead of the tree, and the tree is freed.
     wlx::plugin_colorizer::colorize::SpanTable span_table;
@@ -436,13 +430,6 @@ static void do_layout(ColorViewState* vs, const std::string& raw_utf8,
     vs->interaction = std::make_unique<InteractionEngine>(*vs->layout);
     update_scrollbar(vs);
     vs->index_dirty = true;
-    // A fresh layout has new blocks not yet viewport-colored; invalidate the
-    // colored byte interval so colorize_viewport re-highlights against the cached
-    // tree on the next paint. (Covers every rebuild path: load, relang, DPI,
-    // wrap resize — not just the one that remembers to reset it.) Unused by the
-    // grid path (ensure_grid_window keys off the span table / live tree), but
-    // kept so the classic wrap path + the dark-flip fast path's contract hold.
-    vs->colored_lo = vs->colored_hi = 0;
 }
 
 // Resolve the grammar id for this view: an explicit force-language override wins
@@ -459,64 +446,17 @@ static std::string resolve_language(ColorViewState* vs) {
     return language;
 }
 
-// Highlight the visible byte range against the cached tree and merge the spans
-// into the layout's per-line blocks. Called from WM_PAINT (before paint) and once
-// after load. No-op when there is no cached tree (the whole-doc fallback already
-// colored everything) or no layout. Cheap on scroll: re-highlights only the
-// newly-exposed range against the cached tree (no re-parse), and skips entirely
-// when the viewport is already within the colored interval.
-static void colorize_viewport(ColorViewState* vs) {
-    if (!vs || !vs->layout) return;
-    const bool table_ready =
-        vs->span_table.complete(static_cast<uint32_t>(vs->cached_raw_utf8.size()));
-    if (!vs->tree && !table_ready) return;   // wrap/unsupported fallback already colored
-    auto& doc = *vs->layout;
-    if (doc.blocks.empty() || vs->line_byte_starts.empty()) return;
-
-    const float viewport_h = vs->renderer ? vs->renderer->dip_height() : 100.0f;
-    const int raw_size = static_cast<int>(vs->cached_raw_utf8.size());
-    // One screenful of overscan on each side so a small scroll doesn't re-trigger.
-    ByteRange vr = viewport_byte_range(doc.blocks, vs->line_byte_starts, raw_size,
-                                       vs->scroll_y, viewport_h, /*overscan=*/viewport_h);
-    if (vr.empty) return;
-    const uint32_t vlo = vr.lo;
-    const uint32_t vhi = vr.hi;
-
-    // Already colored? (window inside the contiguous colored interval). Skip.
-    ColoredDecision cd = colored_interval_update(vlo, vhi, vs->colored_lo, vs->colored_hi);
-    if (cd.skip) return;
-
-    ColorizeResult result;
-    if (table_ready) {
-        result = vs->span_table.slice(vlo, vhi);       // tree already freed
-    } else {
-        WlxColorSpan* spans = nullptr;
-        uint32_t count = 0;
-        if (wlx_core_highlight_range(g_colorizer_handle, vs->tree.get(),
-                                     vs->dark_mode ? 1 : 0, vlo, vhi,
-                                     &spans, &count) != 0)
-            return;  // highlight failed — leave existing colors as-is
-        result = wlx_core::abi_spans_to_result(spans, count);
-    }
-
-    apply_spans_to_range(doc, vs->cached_raw_utf8, vs->line_byte_starts,
-                         result, vlo, vhi, g_display_cfg.tab_width);
-
-    // Update the colored interval: union when contiguous/overlapping with the
-    // existing one, else (a disjoint jump) reset to the new window. Previously
-    // colored blocks keep their color_ranges, which is harmless.
-    vs->colored_lo = cd.new_lo;
-    vs->colored_hi = cd.new_hi;
-}
-
 // Pre-paint (grid mode): slide the materialized window over the viewport.
 // Colors come from the span table once complete (sweep done or whole-doc
 // fallback fed it), else from the live tree (mid-sweep), else plain text
-// (unsupported language). Classic docs (wrap mode) fall back to the old
-// whole-file colorize_viewport.
+// (unsupported language). Wrap docs (classic whole-file layout_source) have
+// their colors baked in at layout time — nothing to do per-paint.
 static void ensure_grid_window(ColorViewState* vs) {
     if (!vs || !vs->layout) return;
-    if (!vs->layout->is_grid()) { colorize_viewport(vs); return; }
+    if (!vs->layout->is_grid()) {
+        // wrap mode: whole-doc colors applied at layout; nothing per-paint
+        return;
+    }
     if (!vs->grid_ctx) return;
     const float viewport_h = vs->renderer ? vs->renderer->dip_height() : 100.0f;
     auto [first, last] = wlx::plugin_colorizer::layout::grid_window_lines(
@@ -549,7 +489,8 @@ static void ensure_grid_window(ColorViewState* vs) {
 // failure — byte->line mapping is unreliable with wrap, Invariant B3.4). This is
 // the exact fallback the old synchronous reparse_and_colorize ran; it stays on
 // the UI thread per the design's decided default. tree stays null, so
-// colorize_viewport is a no-op in WM_PAINT.
+// For the no-tree grid path, do_layout feeds the fallback colors into
+// span_table so ensure_grid_window serves them like sweep output.
 static void apply_whole_doc_fallback(ColorViewState* vs, const std::string& language) {
     vs->cached_colors = {};
     const bool supported = !language.empty() && g_colorizer_handle &&
@@ -690,12 +631,10 @@ static void begin_async_recolor(ColorViewState* vs) {
     if (!vs || vs->cached_raw_utf8.empty()) return;   // nothing loaded -> no-op
     begin_load_reset(vs, /*reset_force=*/false);
 
-    // Drop the stale tree + colored interval + span table up front: a Loading
-    // paint then can't touch the old tree (colorize_viewport bails on null tree
-    // and an incomplete table), and the old tree is freed here on the UI thread
+    // Drop the stale tree + span table up front: a Loading paint then can't
+    // touch the old tree, and the old tree is freed here on the UI thread
     // (off the loader lock).
     vs->tree.reset();
-    vs->colored_lo = vs->colored_hi = 0;
     vs->span_table.clear();
 
     const std::string language = resolve_language(vs);   // pure, UI-side
@@ -811,9 +750,14 @@ static void resize_widths_nowrap(ColorViewState* vs) {
     // FUTURE materializations (ensure_grid_window after a scroll) build against
     // grid_ctx — update its code width to the new viewport. Must run regardless
     // of doc.blocks emptiness (a pre-first-paint resize leaves the window empty,
-    // so the loop is skipped). right_margin == 8.0f mirrors layout_grid_skeleton.
+    // so the loop is skipped).
     if (vs->grid_ctx) {
-        const float code_right = new_vw - 8.0f;            // right_margin
+        // Same margin the rect-stretch above used; falls back to the skeleton's
+        // 8 DIP right margin when the window is empty (pre-first-paint resize).
+        const float right_margin = !doc.blocks.empty()
+            ? (doc.viewport_width - doc.blocks.front().rect.right)
+            : 8.0f;
+        const float code_right = new_vw - right_margin;
         vs->grid_ctx->max_code_width =
             std::max(1.0f, code_right - vs->grid_ctx->code_left);
     }
@@ -969,7 +913,6 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
             v->cached_raw_utf8.clear();
             v->cached_colors = {};
             v->tree.reset();                          // unpin old grammar on a failed reload
-            v->colored_lo = v->colored_hi = 0;
             v->span_table.clear();                    // dead file's table must not survive
             // update_scrollbar early-returns on a null layout, so collapse the
             // scrollbar explicitly — it would otherwise keep the dead file's range.
@@ -991,7 +934,6 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
             v->tree = std::shared_ptr<WlxTree>(raw_tree, wlx_core::TreeDeleter{g_colorizer_handle});
         else
             v->tree.reset();                          // free old tree; no new tree
-        v->colored_lo = v->colored_hi = 0;
         v->span_table.clear();                        // a new file's table must not survive adoption
         // Wrap toggled while this load was in flight (lc_newparams can't recolor
         // before the first adoption — no cached source yet — so the worker was
@@ -1044,7 +986,7 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
                 vs->renderer->create_device_resources(hwnd);
             // Grid mode: slide the materialized window over the viewport and
             // color the entering lines (from span table / live tree). Wrap mode:
-            // ensure_grid_window falls back to the old whole-file colorize_viewport.
+            // whole-doc colors are baked at layout; ensure_grid_window is a no-op.
             // Scroll/goto/anchor paths InvalidateRect -> WM_PAINT -> here, so no
             // other call site is needed.
             ensure_grid_window(vs);
@@ -1154,6 +1096,10 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
                                     : static_cast<float>(GET_X_LPARAM(lp));
             float py = vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(GET_Y_LPARAM(lp)))
                                     : static_cast<float>(GET_Y_LPARAM(lp));
+            // Slide the grid window to the current scroll position before hit-testing;
+            // the autoscroll timer may have moved the viewport since the last slide.
+            // No-op for wrap docs.
+            ensure_grid_window(vs);
             float doc_x = px;
             float doc_y = py + vs->scroll_y;
 
@@ -1403,6 +1349,10 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
             float client_y = vs->renderer ? vs->renderer->pixel_to_dip_y(static_cast<float>(pt.y))
                                           : static_cast<float>(pt.y);
             handle_scroll(vs, client_y < 0 ? -line : line);
+            // Slide the grid window to the new scroll position before hit-testing;
+            // otherwise the hit-test runs against the pre-scroll window and may
+            // miss lines that just entered the viewport. No-op for wrap docs.
+            ensure_grid_window(vs);
 
             if (vs->layout) {
                 float doc_x = vs->renderer ? vs->renderer->pixel_to_dip_x(static_cast<float>(pt.x))
@@ -1803,10 +1753,10 @@ int __stdcall ListSendCommand(HWND ListWin, int Command, int Parameter) {
             } else if (!wrap_changed && vs->tree) {
                 // Dark-only flip on the tree path: the tree is theme-independent
                 // (colors resolve at highlight time), so skip the worker re-parse.
-                // Rebuild the layout against the new palette with empty colors;
-                // do_layout resets the colored interval, so the next paint
-                // re-highlights the viewport from the cached tree with the new
-                // dark flag. Selection/matches stay valid (same block structure).
+                // Rebuild the grid skeleton against the new palette with empty
+                // colors; ensure_grid_window on the next WM_PAINT slides a fresh
+                // window from the cached tree with the new dark flag.
+                // Selection/matches stay valid (same block structure).
 
                 // Cancel any in-flight sweep (it highlights with the OLD dark flag;
                 // adopting its table would bake stale colors + free the tree). The
