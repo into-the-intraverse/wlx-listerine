@@ -50,8 +50,11 @@ add_subdirectory(tests)
 # deliberately not listed. C4251 (std member of a dllexported class needs
 # dll-interface) is disabled: the core DLL, both plugins, and the tools ship
 # as one lockstep bundle built with a single toolchain/CRT, which is exactly
-# the case where that warning is noise.
+# the case where that warning is noise. /utf-8: sources are UTF-8 without BOM
+# and carry non-ASCII string literals (test inputs like L"café"); without the
+# flag MSVC falls back to the host ACP, so the same commit compiles to
+# different bytes depending on the machine/runner image.
 foreach(t wlx-core wlx-listerine-core wlx-listerine-md wlx-listerine-colorizer
           screenshot_tool tests colorizer-tests)
-    target_compile_options(${t} PRIVATE /W4 /WX /wd4251)
+    target_compile_options(${t} PRIVATE /W4 /WX /wd4251 /utf-8)
 endforeach()
