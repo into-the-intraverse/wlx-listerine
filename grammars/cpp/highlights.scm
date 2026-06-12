@@ -176,6 +176,3 @@
 ; Strings
 
 (raw_string_literal) @string
-
-; Syntax errors
-(ERROR) @diagnostic.error

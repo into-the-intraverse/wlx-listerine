@@ -164,5 +164,3 @@
 ;; Misc
 
 (Comment) @comment
-
-(ERROR) @error

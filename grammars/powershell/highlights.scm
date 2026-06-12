@@ -126,5 +126,3 @@
 
 (assignment_expression
   value: (pipeline) @assignvalue)
-; Syntax errors
-(ERROR) @diagnostic.error

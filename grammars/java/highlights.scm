@@ -147,6 +147,3 @@
   "with"
   "yield"
 ] @keyword
-
-; Syntax errors
-(ERROR) @diagnostic.error

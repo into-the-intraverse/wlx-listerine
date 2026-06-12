@@ -219,6 +219,3 @@
   .
   (line_comment) @keyword.directive @nospell)
   (#lua-match? @keyword.directive "^#!/"))
-
-; Syntax errors
-(ERROR) @diagnostic.error

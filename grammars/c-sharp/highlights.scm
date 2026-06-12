@@ -210,6 +210,3 @@
 ;; Method calls
 
 (invocation_expression (member_access_expression name: (identifier) @function))
-
-; Syntax errors
-(ERROR) @diagnostic.error

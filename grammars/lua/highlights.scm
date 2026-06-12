@@ -221,6 +221,3 @@
 (string) @string
 
 (escape_sequence) @string.escape
-
-; Syntax errors
-(ERROR) @diagnostic.error
