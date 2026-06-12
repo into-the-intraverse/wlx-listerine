@@ -17,6 +17,7 @@
 #include <dwrite.h>
 #include <wrl/client.h>
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <thread>
 #include <unordered_map>
@@ -152,6 +153,10 @@ struct ColorViewState {
 
     bool wrap_text = false;
 
+    // Set when a mid-sweep paint skipped coloring because a sweep chunk held
+    // the core mutex; the retry timer / sweep-done adopt recolors the window.
+    bool sweep_recolor_pending = false;
+
     // Force-language override (session-only). Empty = auto-detect from extension.
     // Set by the right-click "Force Language" submenu; reset on file reload.
     // Note: when non-empty, the value is taken as-is — apply_cpp_variant is
@@ -253,6 +258,15 @@ static WlxCore*   g_colorizer_handle = nullptr;
 static ColorizerDisplayConfig g_display_cfg;
 static std::unordered_map<HWND, ColorViewState*> g_views;
 static ATOM g_window_class = 0;
+
+// Count of sweep chunks currently inside wlx_core_highlight_range (any view,
+// any worker). The UI-thread viewport painter checks this instead of blocking
+// on the core mutex behind a chunk — see colors_for in ensure_grid_window.
+static std::atomic<int> g_sweep_chunks_inflight{0};
+
+// Timer id for the mid-sweep recolor retry (TIMER_AUTOSCROLL = 1 lives below,
+// next to the selection autoscroll code that owns it).
+static constexpr UINT_PTR TIMER_SWEEP_RECOLOR = 2;
 
 // Forward decl so the HostView<ColorViewState> concept is satisfied at the
 // point where HostIntegration<ColorViewState> is instantiated (below).
@@ -481,6 +495,16 @@ static void ensure_grid_window(ColorViewState* vs) {
         if (vs->span_table.complete(raw_size))
             return vs->span_table.slice(lo, hi);
         if (vs->tree) {
+            if (g_sweep_chunks_inflight.load(std::memory_order_acquire) > 0) {
+                // A sweep chunk holds the (unfair) core mutex right now —
+                // blocking here freezes the paint for the chunk's whole
+                // duration (worst ~0.5 s on query-pathological files, and the
+                // tight sweep loop can starve a waiter for the WHOLE sweep).
+                // Paint these lines plain; the retry timer / sweep-done adopt
+                // recolors the window.
+                vs->sweep_recolor_pending = true;
+                return {};
+            }
             WlxColorSpan* spans = nullptr;
             uint32_t count = 0;
             if (wlx_core_highlight_range(g_colorizer_handle, vs->tree.get(),
@@ -498,6 +522,8 @@ static void ensure_grid_window(ColorViewState* vs) {
         // scrollbar honest. No-op when nothing changed.
         update_scrollbar(vs);
     }
+    if (vs->sweep_recolor_pending && vs->hwnd)
+        SetTimer(vs->hwnd, TIMER_SWEEP_RECOLOR, 150, nullptr);
 }
 
 // UI-thread whole-doc fallback: color the entire cached source with `language`
@@ -596,6 +622,7 @@ static void begin_load_reset(ColorViewState* vs, bool reset_force) {
     vs->current_match = -1;
     vs->last_query = SearchQuery{};
     vs->index_dirty = true;
+    vs->sweep_recolor_pending = false;   // stale mid-sweep skip from the old file
     vs->goto_prompt = {};
     // The renderer's search_matches_ still holds SearchMatch objects whose
     // block_index values point into the previous layout; clear them so a repaint
@@ -757,8 +784,13 @@ static void begin_sweep(ColorViewState* vs) {
                 WlxColorSpan* spans = nullptr;
                 uint32_t count = 0;
                 auto c0 = _clk::now();
-                if (wlx_core_highlight_range(core, tree.get(), dark ? 1 : 0,
-                                             lo, hi, &spans, &count) != 0) {
+                // Flag the chunk so the UI-thread viewport painter paints
+                // plain instead of blocking on the core mutex behind us.
+                g_sweep_chunks_inflight.fetch_add(1, std::memory_order_acq_rel);
+                const int hl_rc = wlx_core_highlight_range(
+                    core, tree.get(), dark ? 1 : 0, lo, hi, &spans, &count);
+                g_sweep_chunks_inflight.fetch_sub(1, std::memory_order_acq_rel);
+                if (hl_rc != 0) {
                     r->aborted = true;   // keep the tree; today's behavior is the fallback
                     return r;
                 }
@@ -1063,6 +1095,17 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         v->span_table = std::move(res->table);
         v->tree.reset();                               // free tree + unpin grammar
         WLX_TRACE(L"sweep adopted: %zu spans, tree freed", v->span_table.size());
+        if (v->sweep_recolor_pending) {
+            // Some window lines were painted plain while sweep chunks held the
+            // core mutex — rebuild the window from the now-complete table.
+            v->sweep_recolor_pending = false;
+            KillTimer(hwnd, TIMER_SWEEP_RECOLOR);
+            if (v->layout) {
+                v->layout->blocks.clear();
+                v->layout->first_block_line = 0;
+            }
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
         return 0;
     }
 
@@ -1452,6 +1495,21 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
     }
 
     case WM_TIMER: {
+        if (wp == TIMER_SWEEP_RECOLOR) {
+            KillTimer(hwnd, TIMER_SWEEP_RECOLOR);
+            // Retry the mid-sweep recolor: drop the (partially plain) window
+            // and repaint. If a chunk is STILL in flight, colors_for skips
+            // again and ensure_grid_window re-arms this timer — converges
+            // when the sweep finishes (its adopt also forces a recolor).
+            if (vs && vs->layout &&
+                vs->state == wlx::runtime::host::LoadState::Ready) {
+                vs->sweep_recolor_pending = false;
+                vs->layout->blocks.clear();
+                vs->layout->first_block_line = 0;
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }
+            return 0;
+        }
         if (wp == TIMER_AUTOSCROLL && vs && vs->selecting) {
             float line = g_theme.fonts().code_size * g_theme.spacing().line_height_factor;
             POINT pt;

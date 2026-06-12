@@ -84,15 +84,19 @@ TEST_CASE("span table: completeness watermark") {
     CHECK(t.size() == 0);
 }
 
-TEST_CASE("adaptive sweep chunk targets ~25ms of highlight per chunk") {
+TEST_CASE("adaptive sweep chunk targets ~25ms, growth-capped against density jumps") {
     // pathological language: 64 KB took 480 ms -> shrink hard, clamped at 16 KB
     CHECK(next_chunk_bytes(64 * 1024, 480.0) == 16 * 1024);
-    // fast language: 64 KB took 1 ms -> grow 25x, clamped at 1 MB
-    CHECK(next_chunk_bytes(64 * 1024, 1.0) == 1024 * 1024);
+    // fast language: 64 KB took 1 ms -> growth capped at kSweepMaxChunkBytes
+    // (64 KB), NOT 25x — cheap regions must not size a chunk that lands in an
+    // expensive one (json.hpp's 4 s single-chunk mutex hold).
+    CHECK(next_chunk_bytes(64 * 1024, 1.0) == 64 * 1024);
+    // a small fast chunk grows at most 2x per step
+    CHECK(next_chunk_bytes(16 * 1024, 1.0) == 32 * 1024);
     // on-target stays put (within clamps)
-    CHECK(next_chunk_bytes(256 * 1024, 25.0) == 256 * 1024);
-    // degenerate timing -> max growth, no div-by-zero
-    CHECK(next_chunk_bytes(64 * 1024, 0.0) == 1024 * 1024);
+    CHECK(next_chunk_bytes(32 * 1024, 25.0) == 32 * 1024);
+    // degenerate timing -> capped growth, no div-by-zero
+    CHECK(next_chunk_bytes(64 * 1024, 0.0) == 64 * 1024);
 }
 
 TEST_CASE("sweep abort: generation bump / close flag cancel between chunks") {
