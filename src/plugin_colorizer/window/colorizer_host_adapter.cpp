@@ -18,6 +18,7 @@
 #include <wrl/client.h>
 #include <algorithm>
 #include <chrono>
+#include <thread>
 #include <unordered_map>
 #include <optional>
 #include <string>
@@ -765,6 +766,13 @@ static void begin_sweep(ColorViewState* vs) {
                 const double chunk_ms = std::chrono::duration<double, std::milli>(
                     _clk::now() - c0).count();
                 chunk = next_chunk_bytes(hi - lo, chunk_ms);
+                // The registry mutex is unfair and this loop would reacquire it
+                // instantly — a UI-thread viewport highlight (scroll paint
+                // mid-sweep) can starve for the WHOLE sweep on query-heavy
+                // files (json.hpp: measured 6.8 s frozen). One millisecond of
+                // slack per chunk hands the mutex to any blocked waiter; the
+                // sweep stretches by ~chunk-count ms (negligible).
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
             r->table.seal();  // drop vector growth slack before the UI adopts it
             return r;
