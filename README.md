@@ -74,35 +74,23 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the full reference.
 
 ## 📈 Performance
 
-Both plugins only do work for the visible part of a file — parse once on a background thread, then lay out and color just what's on screen. The colorizer first colors the viewport straight from the syntax tree, while a background sweep extracts *all* colors into a compact span table within ~1–2 s and **frees the tree** (the single biggest retained object); scrolling thereafter re-colors from the table. The no-wrap layout holds only a viewport-sized window of blocks, so memory stays roughly flat as you scroll. The **worst case** rows instead force whole-file processing; you only hit them with `word_wrap = true` or an unsupported language (`json.hpp` is a deliberately brutal stress file).
+Both plugins only do work for the visible part of a file — parse once on a background thread, then lay out and color just what's on screen. The colorizer first colors the viewport straight from the syntax tree, while a background sweep extracts *all* colors into a compact span table within a second or two and **frees the tree** (the single biggest retained object); scrolling thereafter re-colors from the table. Both wrap modes share the same windowed grid — the layout holds only a viewport-sized slice of lines — so memory stays roughly flat as you scroll. The markdown renderer likewise evicts the text layouts of blocks scrolled far off-screen (rebuilding them byte-for-byte on return), so a large document's held memory stays bounded too. The **worst case** rows force whole-file processing instead: for the colorizer that is the fallback it takes only on an unsupported language or a parse failure, and for markdown it is the eager (non-lazy) layout the plugin no longer uses — both kept as regression sentinels (`json.hpp` is a deliberately brutal stress file for the syntax-query engine).
 
 <!-- bench:begin -->
 Measured on: AMD Ryzen 7 9800X3D 8-Core Processor, 62 GB RAM, Windows build 10.0.26200
-Baseline: commit `bcaf847-dirty`, 2026-06-11, median of 5 runs (`scripts/bench.py`)
+Baseline: commit `21f6660-dirty`, 2026-06-14, median of 5 runs (`scripts/bench.py`)
 
 | Scenario | Open (ms) | Peak memory (MB) | Memory held (MB) |
 |----------|-----------|------------------|------------------|
-| markdown — [big.md](test_data/bench/big.md) (1.0 MB) | 166 | — | 123.1 |
-| C++ header [json.hpp](https://raw.githubusercontent.com/nlohmann/json/v3.11.3/single_include/nlohmann/json.hpp) (0.9 MB) | 159 | 62.8 | 28.8 |
-| C file [sqlite3.c](https://www.sqlite.org/2025/sqlite-amalgamation-3500100.zip) (8.8 MB) | 893 | 270.8 | 74.2 |
-| post-scroll [sqlite3.c](https://www.sqlite.org/2025/sqlite-amalgamation-3500100.zip) (20 screens) (8.8 MB) | 897 | 270.7 | 78.1 |
-| worst case: markdown full layout — [big.md](test_data/bench/big.md) (1.0 MB) | 313 | — | 169.9 |
-| worst case: whole-file highlight [json.hpp](https://raw.githubusercontent.com/nlohmann/json/v3.11.3/single_include/nlohmann/json.hpp) (0.9 MB) | 7113 | 52.6 | 45.2 |
-| worst case: whole-file highlight [sqlite3.c](https://www.sqlite.org/2025/sqlite-amalgamation-3500100.zip) (8.8 MB) | 2062 | 336.2 | 250.5 |
+| markdown — [big.md](test_data/bench/big.md) (1.0 MB) | 181 | — | 61.5 |
+| C++ header [json.hpp](https://raw.githubusercontent.com/nlohmann/json/v3.11.3/single_include/nlohmann/json.hpp) (0.9 MB) | 160 | 57.0 | 28.7 |
+| C file [sqlite3.c](https://www.sqlite.org/2025/sqlite-amalgamation-3500100.zip) (8.8 MB) | 892 | 266.3 | 74.5 |
+| post-scroll [sqlite3.c](https://www.sqlite.org/2025/sqlite-amalgamation-3500100.zip) (20 screens) (8.8 MB) | 891 | 266.2 | 78.7 |
+| worst case: markdown full layout — [big.md](test_data/bench/big.md) (1.0 MB) | 315 | — | 169.9 |
+| worst case: whole-file highlight [json.hpp](https://raw.githubusercontent.com/nlohmann/json/v3.11.3/single_include/nlohmann/json.hpp) (0.9 MB) | 7343 | 52.5 | 45.1 |
+| worst case: whole-file highlight [sqlite3.c](https://www.sqlite.org/2025/sqlite-amalgamation-3500100.zip) (8.8 MB) | 2049 | 336.2 | 250.2 |
 
 <!-- bench:end -->
-
-## 🚧 TODO
-
-- **Manual TC soak of the 2026-06-11 memory work** — the sweep/grid async paths (generation/token discipline under a real message pump) have no automated coverage by design. Run the 9-point checklist from `docs/superpowers/plans/2026-06-11-memory-optimization.md` Task 18 in a live Total Commander: rapid tabbing / dark-flip / close mid-sweep, scroll-during-sweep on sqlite3.c, Ctrl+Q reuse, force-language mid-sweep, F7 + Ctrl+G + Ctrl+A/C post-settle, wrap toggle, Task-Manager working-set observation; two-phase open (open sqlite3.c: text readable in well under 100 ms, colors arrive ~1 s later with scroll/selection preserved; F2 and dark-flip inside the gap behave).
-- **Stage-2b: markdown skeleton memory** — a 1&nbsp;MB markdown file still holds ~123&nbsp;MB; per-phase instrumentation attributes ~84&nbsp;MB to the lazy skeleton itself (19.6k blocks, each with its own heap-allocated wstrings/vectors/recipes — only ~8&nbsp;MB is payload). Fix = the md analog of the colorizer grid: make list/quote/table blocks recipe-deferrable and/or slim the skeleton to shared buffers + offsets. Deliberately deferred from the memory project (spec'd the decision, not the work).
-- **CPP highlighting on GHA windows-2025 (dormant, watching)** — in 2026-04 the upstream tree-sitter-cpp v0.23.4 grammar (ABI 14) emitted no named-node spans on the GitHub Actions windows-2025 image (plain `.cpp` files rendered only keyword tokens; local builds with the same MSVC 14.44 toolset were fine; root cause never pinned, though parser.c is compiled with MSVC optimization off, so suspicion falls on scanner.cc / the tree-sitter runtime / the image itself). Not reproducible since: every CI run from 2026-05-06 on — including the strict `sample.cpp` token-golden diff — is green, so the `Grammar: unreal-cpp` "highlights query loads" subcase was re-enabled 2026-06-11. If it reds out again, capture the run URL and report upstream (no matching issue exists). Upstream still has no ABI 15 release (v0.23.4, Nov 2024, is the latest; master is ABI 15 but unreleased and carries the [#357](https://github.com/tree-sitter/tree-sitter-cpp/issues/357) regen regression).
-
-Deferred from the 2026-06 code review (verified real, fix postponed):
-
-- **Cancellable parses in the core DLL** — the process-wide registry mutex is held for the duration of every `colorize()`/`parse()`, and a superseded worker parse runs to completion, so opening a small file while a 100&nbsp;MB parse is in flight blocks `WM_PAINT` until the dead parse finishes. Needs cancellation plumbed through the C ABI (`ts_parser_set_cancellation_flag`) and/or a try-lock viewport highlight.
-- **Incremental line index for lazy markdown** — `materialize_viewport` rebuilds the whole `line_tops` index per paint that materializes anything; block shifts are batched now, the index rebuild is not. Needs an incremental index design. (`apply_height_delta` is kept alive only by tests since the batching.)
-- **Known limitation (accepted)** — on FAT/exFAT volumes the parse cache can serve a stale document for a same-size save within the 2-second mtime granularity window (`ParseCacheKey` is path+size+mtime; no content hash).
 
 ## 📄 License
 
