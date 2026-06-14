@@ -162,12 +162,17 @@ std::wstring run_markdown_pipeline(const Options& opts) {
         ? layout_engine.layout(*doc, viewport_width, /*wrap_code=*/false,
                                /*gutter_width=*/0.0f, /*lazy=*/true)
         : layout_engine.layout(*doc, viewport_width);
+    // Retained so the bench can pass &recipes to materialize_viewport (mirroring
+    // the host, which evicts off-screen layouts). The materialize_block closure
+    // also holds the ctx, but only this handle exposes the recipes.
+    std::shared_ptr<MdMaterializeCtx> md_ctx;
     if (lazy) {
         // Lifetime guard: the materialize_block closure captured the ctx; the ctx
         // must own the Document so its recipe inline pointers stay valid until the
         // layout (and the ctx) is destroyed. Skipping this is a use-after-free.
-        if (auto ctx = layout_engine.take_md_ctx())
-            ctx->document = doc;
+        md_ctx = layout_engine.take_md_ctx();
+        if (md_ctx)
+            md_ctx->document = doc;
     }
 
     double t_layout = now_ms();
@@ -204,7 +209,8 @@ std::wstring run_markdown_pipeline(const Options& opts) {
     // Use the same scroll_y / viewport height paint will use (DIPs == pixels at
     // the bitmap target's default 96 DPI).
     if (lazy)
-        wlx::runtime::layout::materialize_viewport(layout, scroll_y, renderer.dip_height());
+        wlx::runtime::layout::materialize_viewport(layout, scroll_y, renderer.dip_height(),
+                                                   md_ctx ? &md_ctx->recipes : nullptr);
 
     double t_materialize = now_ms();
     if (opts.bench) ws_materialize = sample_working_set().current;

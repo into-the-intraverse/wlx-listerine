@@ -59,6 +59,16 @@ private:
     bool emit_lazy_block(const parser::BlockNode& block, float& y, float left, float right);
     float code_unit_line_height();
 
+    // Lazy only: tag the just-pushed eager inline block (list item / table cell /
+    // quoted paragraph/heading) with an InlineFixed recipe so the viewport
+    // eviction can drop its off-screen layout and rebuild it byte-identically.
+    // No-op when eager. Call right after result_.blocks.push_back, only when the
+    // block has a text layout. `max_width`/`alignment` must match the eager build.
+    void set_eager_inline_recipe(const std::vector<parser::InlineNode>* inlines,
+                                 float max_width, uint32_t default_color, bool force_bold,
+                                 ComPtr<IDWriteTextFormat> format,
+                                 DWRITE_TEXT_ALIGNMENT alignment);
+
     // Create a text layout from inline nodes, collecting interactive spans
     using TextLayoutResult = InlineLayoutResult;
 

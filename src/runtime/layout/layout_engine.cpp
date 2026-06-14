@@ -322,6 +322,23 @@ bool LayoutEngine::emit_lazy_block(const BlockNode& block, float& y, float left,
     return false;  // List / BlockQuote / Table / HR -> eager
 }
 
+void LayoutEngine::set_eager_inline_recipe(const std::vector<InlineNode>* inlines,
+        float max_width, uint32_t default_color, bool force_bold,
+        ComPtr<IDWriteTextFormat> format, DWRITE_TEXT_ALIGNMENT alignment) {
+    if (!lazy_ || !md_ctx_) return;
+    // The block was just pushed; recipes.back() is its index-aligned slot. resize
+    // fills any preceding eager blocks that took no recipe (no layout) with None.
+    md_ctx_->recipes.resize(result_.blocks.size());
+    BlockRecipe& rcp = md_ctx_->recipes.back();
+    rcp.kind = BlockRecipe::Kind::InlineFixed;
+    rcp.inlines = inlines;
+    rcp.max_width = max_width;
+    rcp.default_color = default_color;
+    rcp.force_bold = force_bold;
+    rcp.format = std::move(format);
+    rcp.alignment = alignment;
+}
+
 // ---------- heading ----------
 
 void LayoutEngine::layout_heading(const BlockNode& node, float& y, float left, float right) {
@@ -380,6 +397,9 @@ void LayoutEngine::layout_heading(const BlockNode& node, float& y, float left, f
 
     y += tlr.height + spacing_.heading_spacing_below;
     result_.blocks.push_back(std::move(lb));
+    // Eager (nested) heading inside a lazy doc -> make it evictable.
+    set_eager_inline_recipe(&node.inlines, max_width, colors_.heading, /*force_bold=*/true,
+                            fmt, DWRITE_TEXT_ALIGNMENT_LEADING);
 }
 
 // ---------- paragraph ----------
@@ -413,6 +433,9 @@ void LayoutEngine::layout_paragraph(const BlockNode& node, float& y, float left,
 
     y += tlr.height + spacing_.paragraph_spacing;
     result_.blocks.push_back(std::move(lb));
+    // Eager (nested) paragraph inside a lazy doc -> make it evictable.
+    set_eager_inline_recipe(&node.inlines, max_width, colors_.text, /*force_bold=*/false,
+                            nullptr, DWRITE_TEXT_ALIGNMENT_LEADING);
 }
 
 // ---------- list ----------
@@ -493,6 +516,11 @@ void LayoutEngine::layout_list_item(const BlockNode& node, float& y, float left,
 
     y += item_height + spacing_.paragraph_spacing * 0.5f;
     result_.blocks.push_back(std::move(lb));
+    // Eager list item -> make its (off-screen) layout evictable. Only blocks that
+    // actually built a run carry a recipe; the bullet line uses the body format.
+    if (tlr.layout)
+        set_eager_inline_recipe(first_inlines, max_width, colors_.text, /*force_bold=*/false,
+                                nullptr, DWRITE_TEXT_ALIGNMENT_LEADING);
 
     // Layout children (nested lists, continuation paragraphs, code fences,
     // quotes, tables, …) — everything except the child consumed as the bullet
@@ -622,7 +650,15 @@ void LayoutEngine::layout_table(const BlockNode& node, float& y, float left, flo
         if (row.type != BlockType::TableRow) continue;
 
         float row_height = 0;
-        std::vector<TextLayoutResult> cell_layouts;
+        // Carry each cell's recipe inputs (inlines / header / alignment) from the
+        // measuring pass into the emit pass so the eager cell can be made evictable.
+        struct CellBuild {
+            TextLayoutResult tlr;
+            const std::vector<InlineNode>* inlines;
+            bool is_header;
+            DWRITE_TEXT_ALIGNMENT alignment;
+        };
+        std::vector<CellBuild> cells_built;
 
         int col = 0;
         for (auto& cell : row.children) {
@@ -642,7 +678,7 @@ void LayoutEngine::layout_table(const BlockNode& node, float& y, float left, flo
                                           cell_alignment);
 
             if (tlr.height > row_height) row_height = tlr.height;
-            cell_layouts.push_back(std::move(tlr));
+            cells_built.push_back({std::move(tlr), &cell.inlines, cell.is_header, cell_alignment});
             col++;
         }
 
@@ -653,7 +689,8 @@ void LayoutEngine::layout_table(const BlockNode& node, float& y, float left, flo
 
         // Emit cell blocks
         col = 0;
-        for (auto& tlr : cell_layouts) {
+        for (auto& cb : cells_built) {
+            auto& tlr = cb.tlr;
             float cell_left = left + col * col_width;
             float cell_x = cell_left + spacing_.code_padding;
             float cell_y = y + spacing_.code_padding;
@@ -688,6 +725,11 @@ void LayoutEngine::layout_table(const BlockNode& node, float& y, float left, flo
             }
 
             result_.blocks.push_back(std::move(lb));
+            // Eager cell -> make its layout evictable (alignment must match the
+            // measuring-pass build, hence carried via CellBuild).
+            if (tlr.layout)
+                set_eager_inline_recipe(cb.inlines, col_width - spacing_.code_padding * 2,
+                                        colors_.text, cb.is_header, nullptr, cb.alignment);
             col++;
         }
 

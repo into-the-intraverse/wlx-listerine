@@ -254,8 +254,8 @@ TEST_CASE("materialize_viewport is a no-op on an eager document") {
 
 TEST_CASE("md eviction: far-off materialized blocks drop layouts but keep exact geometry") {
     // Build a lazy document tall enough for >5 "screens" (viewport_h = 50 DIPs).
-    // Mix: paragraphs, a code fence, and a list item (recipe-less, eager, must
-    // never be evicted).
+    // Mix: paragraphs, a code fence, and a list item (eager, but InlineFixed-backed
+    // since Stage-2b, so it evicts and re-materializes like the rest).
     auto factory = dwf2();
     REQUIRE(factory);
     MarkdownParser p;
@@ -268,7 +268,7 @@ TEST_CASE("md eviction: far-off materialized blocks drop layouts but keep exact 
         "Paragraph six of many.\n\n"
         "Paragraph seven of many.\n\n"
         "Paragraph eight of many.\n\n"
-        "- list item (eager, recipe-less)\n\n"
+        "- list item (eager, now InlineFixed-backed)\n\n"
         "```\nint x = 0;\nint y = 1;\n```\n\n"
         "Paragraph nine of many.\n\n"
         "Paragraph ten of many.";
@@ -317,7 +317,6 @@ TEST_CASE("md eviction: far-off materialized blocks drop layouts but keep exact 
     // Step 3: verify early recipe-backed blocks that had layouts now have them
     // evicted, but geometry and text are unchanged.
     bool saw_evicted_recipe = false;
-    bool saw_eager_kept = false;
     for (size_t bi = 0; bi < lazy.blocks.size(); ++bi) {
         auto& b = lazy.blocks[bi];
         if (!snaps[bi].had_layout) continue;  // was not materialized before -> skip
@@ -325,34 +324,28 @@ TEST_CASE("md eviction: far-off materialized blocks drop layouts but keep exact 
         bool recipe_backed = bi < ctx->recipes.size() &&
                              ctx->recipes[bi].kind != BlockRecipe::Kind::None;
         bool is_far = b.rect.bottom < (far_scroll - vp_h * kEvictScreens);
+        if (!recipe_backed || !is_far) continue;
 
-        if (!recipe_backed) {
-            // Eager (list item): must keep its layout regardless of position.
-            if (!b.text_runs.empty())
-                CHECK(b.text_runs[0].layout != nullptr);
-            saw_eager_kept = true;
-        } else if (is_far) {
-            // Recipe-backed and far away: must be evicted.
-            REQUIRE_FALSE(b.text_runs.empty());
-            CHECK(b.text_runs[0].layout == nullptr);
-            CHECK(b.text_runs[0].color_ranges.empty());
-            CHECK(b.text_runs[0].code_bg_rects.empty());
-            CHECK(b.spans.empty());
-            CHECK(b.ws_markers.empty());
-            CHECK_FALSE(b.has_trailing_ws);
+        // Recipe-backed and far away: must be evicted (paragraphs, code fence, and
+        // — since Stage-2b — the list item all qualify).
+        REQUIRE_FALSE(b.text_runs.empty());
+        CHECK(b.text_runs[0].layout == nullptr);
+        CHECK(b.text_runs[0].color_ranges.empty());
+        CHECK(b.text_runs[0].code_bg_rects.empty());
+        CHECK(b.spans.empty());
+        CHECK(b.ws_markers.empty());
+        CHECK_FALSE(b.has_trailing_ws);
 
-            // Geometry and text MUST be unchanged.
-            CHECK(b.rect.top    == doctest::Approx(snaps[bi].block_rect.top));
-            CHECK(b.rect.bottom == doctest::Approx(snaps[bi].block_rect.bottom));
-            CHECK(b.text_runs[0].rect.top    == doctest::Approx(snaps[bi].run_rect.top));
-            CHECK(b.text_runs[0].rect.bottom == doctest::Approx(snaps[bi].run_rect.bottom));
-            CHECK(b.text_runs[0].text == snaps[bi].run_text);
+        // Geometry and text MUST be unchanged.
+        CHECK(b.rect.top    == doctest::Approx(snaps[bi].block_rect.top));
+        CHECK(b.rect.bottom == doctest::Approx(snaps[bi].block_rect.bottom));
+        CHECK(b.text_runs[0].rect.top    == doctest::Approx(snaps[bi].run_rect.top));
+        CHECK(b.text_runs[0].rect.bottom == doctest::Approx(snaps[bi].run_rect.bottom));
+        CHECK(b.text_runs[0].text == snaps[bi].run_text);
 
-            saw_evicted_recipe = true;
-        }
+        saw_evicted_recipe = true;
     }
     CHECK(saw_evicted_recipe);    // at least one block must have been evicted
-    CHECK(saw_eager_kept);        // the list item keeps its layout
 
     // line_tops must be identical (eviction must not rebuild the index).
     REQUIRE(lazy.line_tops.size() == line_tops_before.size());
@@ -422,5 +415,85 @@ TEST_CASE("md eviction: nullptr recipes disables eviction entirely") {
         if (!had_layout[bi]) continue;
         REQUIRE_FALSE(lazy.blocks[bi].text_runs.empty());
         CHECK(lazy.blocks[bi].text_runs[0].layout != nullptr);  // no eviction: layout kept
+    }
+}
+
+TEST_CASE("InlineFixed: evicted table cells re-materialize with alignment + geometry intact") {
+    // Stage-2b: eager table cells get an InlineFixed recipe so they evict. The
+    // re-materialized layout must reproduce the eager one byte-for-byte — most
+    // critically the column ALIGNMENT (a bug the plain Inline recipe would drop).
+    auto factory = dwf2();
+    REQUIRE(factory);
+    MarkdownParser p;
+    std::string md;
+    for (int i = 0; i < 40; ++i) md += "Filler paragraph number " + std::to_string(i) + ".\n\n";
+    md += "| Left | Center | Right |\n|:-----|:------:|------:|\n| a | bb | ccc |\n| dd | e | f |\n\n";
+    for (int i = 0; i < 40; ++i) md += "Trailing paragraph number " + std::to_string(i) + ".\n\n";
+    auto doc = std::make_shared<Document>(p.parse(md.c_str(), md.size()));
+    ThemeService theme;
+    LayoutEngine eng(factory.Get(), theme, false);
+    auto lazy = eng.layout(*doc, 800.0f, /*wrap_code=*/false, /*gutter=*/0.0f, /*lazy=*/true);
+    auto ctx = eng.take_md_ctx();
+    REQUIRE(static_cast<bool>(ctx));
+    ctx->document = doc;
+
+    // Materialize the whole document once so every block is at its final
+    // (measured, reflowed) position — removes the estimate->measured confound.
+    materialize_viewport(lazy, 0.0f, 1.0e6f, &ctx->recipes);
+
+    struct CellSnap {
+        size_t idx;
+        DWRITE_TEXT_ALIGNMENT align;
+        D2D1_RECT_F run_rect;
+        float metric_w, metric_h;
+        size_t spans;
+    };
+    std::vector<CellSnap> snaps;
+    for (size_t i = 0; i < lazy.blocks.size(); ++i) {
+        auto& b = lazy.blocks[i];
+        if (b.type != BlockType::TableCell || b.text_runs.empty() || !b.text_runs[0].layout)
+            continue;
+        REQUIRE(i < ctx->recipes.size());
+        CHECK(ctx->recipes[i].kind == BlockRecipe::Kind::InlineFixed);  // cells are evictable now
+        DWRITE_TEXT_METRICS m{};
+        b.text_runs[0].layout->GetMetrics(&m);
+        snaps.push_back({i, b.text_runs[0].layout->GetTextAlignment(),
+                         b.text_runs[0].rect, m.width, m.height, b.spans.size()});
+    }
+    REQUIRE(snaps.size() >= 6);  // 2 rows x 3 cols
+    // The center and right columns must actually be non-default, or the test
+    // would not exercise the alignment-preservation path.
+    bool saw_center = false, saw_trailing = false;
+    for (auto& s : snaps) {
+        saw_center   |= (s.align == DWRITE_TEXT_ALIGNMENT_CENTER);
+        saw_trailing |= (s.align == DWRITE_TEXT_ALIGNMENT_TRAILING);
+    }
+    CHECK(saw_center);
+    CHECK(saw_trailing);
+
+    // Evict: scroll to the very top with a tiny viewport so the mid-document
+    // table falls far outside the keep zone.
+    const float vp_h = 60.0f;
+    materialize_viewport(lazy, 0.0f, vp_h, &ctx->recipes);
+    for (auto& s : snaps)
+        CHECK(lazy.blocks[s.idx].text_runs[0].layout == nullptr);  // evicted
+
+    // Scroll back onto the table and re-materialize.
+    float table_top = lazy.blocks[snaps.front().idx].rect.top;
+    materialize_viewport(lazy, table_top - 20.0f, 400.0f, &ctx->recipes);
+
+    for (auto& s : snaps) {
+        auto& run = lazy.blocks[s.idx].text_runs[0];
+        REQUIRE(run.layout != nullptr);  // re-materialized
+        CHECK(run.layout->GetTextAlignment() == s.align);  // alignment preserved
+        DWRITE_TEXT_METRICS m{};
+        run.layout->GetMetrics(&m);
+        CHECK(m.width  == doctest::Approx(s.metric_w));
+        CHECK(m.height == doctest::Approx(s.metric_h));
+        CHECK(run.rect.left   == doctest::Approx(s.run_rect.left));
+        CHECK(run.rect.top    == doctest::Approx(s.run_rect.top));
+        CHECK(run.rect.right  == doctest::Approx(s.run_rect.right));
+        CHECK(run.rect.bottom == doctest::Approx(s.run_rect.bottom));
+        CHECK(lazy.blocks[s.idx].spans.size() == s.spans);
     }
 }

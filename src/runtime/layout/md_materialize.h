@@ -33,14 +33,22 @@ float estimate_code_fence_height(int line_count, float code_line_height, float p
 // --- deferred materialization ---
 
 struct BlockRecipe {
-    enum class Kind { None, Inline, CodeFence } kind = Kind::None;
+    // None       : eager, non-evictable (blockquote container, HR, nested code fence).
+    // Inline     : lazy paragraph/heading — replay recomputes rect/run geometry from
+    //              the estimate→measured transition (and may reflow later blocks).
+    // InlineFixed: eager list item / table cell / quoted paragraph/heading — replay
+    //              rebuilds ONLY the layout/colors/spans and keeps the already-exact
+    //              rect/run geometry (delta 0, no reflow). Carries `alignment` for
+    //              table-cell columns. See 2026-06-14-md-skeleton-stage2b-design.md.
+    enum class Kind { None, Inline, InlineFixed, CodeFence } kind = Kind::None;
 
-    // Kind::Inline (Paragraph / Heading)
+    // Kind::Inline / Kind::InlineFixed (Paragraph / Heading / list item / table cell)
     const std::vector<parser::InlineNode>* inlines = nullptr;  // into ctx.document
     float max_width = 0;
     uint32_t default_color = 0;
     Microsoft::WRL::ComPtr<IDWriteTextFormat> format;  // null => ctx.body_format
     bool force_bold = false;
+    DWRITE_TEXT_ALIGNMENT alignment = DWRITE_TEXT_ALIGNMENT_LEADING;  // InlineFixed only
     float left = 0;     // doc-space x of the run (for span offsetting)
     float right = 0;
 

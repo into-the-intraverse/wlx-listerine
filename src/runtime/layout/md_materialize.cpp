@@ -52,6 +52,27 @@ void md_materialize(MdMaterializeCtx& ctx, LayoutBlock& lb, int idx) {
             s.rect.top  += top;      s.rect.bottom += top;
             lb.spans.push_back(std::move(s));
         }
+    } else if (rcp.kind == BlockRecipe::Kind::InlineFixed) {
+        // Eager block re-entering after eviction: rect/run geometry is already
+        // exact (built eagerly, kept through eviction), so rebuild ONLY the
+        // layout/colors/spans and leave geometry untouched. max_width comes from
+        // the recipe (not run.rect) to stay bit-identical to the eager build.
+        auto& run = lb.text_runs[0];
+        IDWriteTextFormat* fmt = rcp.format ? rcp.format.Get() : ctx.body_format.Get();
+        auto r = build_inline_layout(ctx.dwrite.Get(), *rcp.inlines, rcp.max_width,
+                                     rcp.default_color, fmt, rcp.force_bold,
+                                     ctx.fonts, ctx.colors, rcp.alignment);
+        if (!r.layout) return;
+        run.layout = r.layout;
+        run.color_ranges = std::move(r.color_ranges);
+        run.code_bg_rects = std::move(r.code_bg_rects);
+        const float rx = run.rect.left, ry = run.rect.top;
+        lb.spans.clear();
+        for (auto& s : r.spans) {
+            s.rect.left += rx; s.rect.right += rx;
+            s.rect.top  += ry; s.rect.bottom += ry;
+            lb.spans.push_back(std::move(s));
+        }
     } else {  // CodeFence
         CodeFenceInput in;
         in.code_text = rcp.code_text;
