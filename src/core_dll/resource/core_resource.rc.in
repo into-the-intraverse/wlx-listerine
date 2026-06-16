@@ -1,0 +1,35 @@
+// Generated from core_resource.rc.in — do not edit. Source of truth: WLX_VERSION (CMakeLists.txt).
+//
+// The two plugin .wlx64 files also carry a VERSIONINFO resource, but Windows
+// Explorer only renders the "File version" row in the Details tab for
+// extensions registered to the PE version property handler (.dll/.exe/.sys/…);
+// .wlx64 is not, so its embedded version is invisible in Explorer. This DLL has
+// a real .dll extension, so its Details tab DOES show the version — and since
+// the core DLL ships lockstep with both plugins, it is the bundle version.
+#include <winver.h>
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION @WLX_VERSION_MAJOR@,@WLX_VERSION_MINOR@,@WLX_VERSION_PATCH@,0
+PRODUCTVERSION @WLX_VERSION_MAJOR@,@WLX_VERSION_MINOR@,@WLX_VERSION_PATCH@,0
+FILEFLAGSMASK 0x3fL
+FILEFLAGS 0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_DLL
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "FileDescription", "Listerine Syntax Highlighting Engine (shared by both Total Commander plugins)"
+            VALUE "FileVersion", "@WLX_VERSION_MAJOR@.@WLX_VERSION_MINOR@.@WLX_VERSION_PATCH@.0"
+            VALUE "InternalName", "wlx-listerine-core"
+            VALUE "OriginalFilename", "wlx-listerine-core.dll"
+            VALUE "ProductName", "WLX Listerine"
+            VALUE "ProductVersion", "@WLX_VERSION_MAJOR@.@WLX_VERSION_MINOR@.@WLX_VERSION_PATCH@.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

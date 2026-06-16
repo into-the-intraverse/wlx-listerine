@@ -11,6 +11,7 @@ add_library(wlx-listerine-core SHARED
     theme/helix_theme.cpp
     registry/core_registry.cpp
     registry/core_config.cpp
+    "${CMAKE_BINARY_DIR}/generated/core_resource.rc"
 )
 
 target_include_directories(wlx-listerine-core

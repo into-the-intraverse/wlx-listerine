@@ -25,6 +25,11 @@ configure_file(
     "${CMAKE_BINARY_DIR}/generated/colorizer_resource.rc"
     @ONLY
 )
+configure_file(
+    "${CMAKE_SOURCE_DIR}/src/core_dll/resource/core_resource.rc.in"
+    "${CMAKE_BINARY_DIR}/generated/core_resource.rc"
+    @ONLY
+)
 
 option(WLX_TRACE_ENABLE "Emit OutputDebugStringW traces from WLX entry points and WndProc (capture with DebugView)" OFF)
 
