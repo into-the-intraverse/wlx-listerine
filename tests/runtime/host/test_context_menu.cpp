@@ -111,7 +111,7 @@ TEST_CASE("build_menu_items: empty config_path hides EditConfig") {
     for (const auto& i : items) CHECK(i.kind != MenuItemKind::EditConfig);
 }
 
-TEST_CASE("build_menu_items: languages add Force Language root with separator before") {
+TEST_CASE("build_menu_items: languages add Select Language root with separator before") {
     MenuContext ctx;
     ctx.config_path = L"C:\\plugin.toml";
     ctx.languages = { {"cpp", L"C++"}, {"python", L"Python"} };
@@ -206,9 +206,10 @@ TEST_CASE("build_md_menu_context: cursor outside any code block leaves it absent
 TEST_CASE("build_colorizer_menu_context: marks auto-detect when no force_grammar_id") {
     FakeColorizerView vs;
     auto ctx = build_colorizer_menu_context(vs,
-        std::vector<LanguageOption>{ {"cpp", L"C++"} }, 0.0f, 0.0f);
+        std::vector<LanguageOption>{ {"cpp", L"C++"} }, "cpp", 0.0f, 0.0f);
     CHECK(ctx.auto_detect_active == true);
     CHECK(ctx.active_grammar_id.empty());
+    CHECK(ctx.detected_grammar_id == "cpp");
     CHECK(ctx.languages.size() == 1);
 }
 
@@ -216,9 +217,12 @@ TEST_CASE("build_colorizer_menu_context: forwards force_grammar_id to active") {
     FakeColorizerView vs;
     vs.force_grammar_id = "python";
     auto ctx = build_colorizer_menu_context(vs,
-        std::vector<LanguageOption>{ {"cpp", L"C++"}, {"python", L"Python"} }, 0.0f, 0.0f);
+        std::vector<LanguageOption>{ {"cpp", L"C++"}, {"python", L"Python"} },
+        "cpp", 0.0f, 0.0f);
     CHECK(ctx.auto_detect_active == false);
     CHECK(ctx.active_grammar_id == "python");
+    // Detected stays independent of the force override.
+    CHECK(ctx.detected_grammar_id == "cpp");
 }
 
 TEST_CASE("build_colorizer_menu_context: surfaces ExternalUrl hit on ctx.link") {
@@ -242,7 +246,7 @@ TEST_CASE("build_colorizer_menu_context: surfaces ExternalUrl hit on ctx.link") 
 
     auto ctx = build_colorizer_menu_context(vs,
         std::vector<LanguageOption>{ {"cpp", L"C++"} },
-        50.0f, 10.0f);
+        "", 50.0f, 10.0f);
 
     CHECK(ctx.link.present  == true);
     CHECK(ctx.link.url      == L"https://example.com/x");
@@ -273,7 +277,7 @@ TEST_CASE("build_colorizer_menu_context: ignores InternalAnchor hits") {
 
     auto ctx = build_colorizer_menu_context(vs,
         std::vector<LanguageOption>{ {"cpp", L"C++"} },
-        50.0f, 10.0f);
+        "", 50.0f, 10.0f);
 
     CHECK(ctx.link.present == false);
 }

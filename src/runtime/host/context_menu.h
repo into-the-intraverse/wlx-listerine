@@ -38,6 +38,10 @@ struct MenuContext {
     std::vector<LanguageOption>   languages;
     std::string                   active_grammar_id;
     bool                          auto_detect_active = false;
+    // Language auto-detect resolves to from the file path, independent of any
+    // force override. Empty = unsupported/plain. Drives the "Select Language"
+    // root label (when auto-detect is active) and the "Auto-detect" entry hint.
+    std::string                   detected_grammar_id;
     std::wstring                  config_path;
 };
 
@@ -154,6 +158,7 @@ MenuContext build_md_menu_context(V& vs, float doc_x, float doc_y) {
 
 template <ColorizerViewLike V>
 MenuContext build_colorizer_menu_context(V& vs, std::vector<LanguageOption> langs,
+                                         std::string detected_grammar_id,
                                          float doc_x, float doc_y) {
     using namespace wlx::runtime::parser;
 
@@ -161,8 +166,9 @@ MenuContext build_colorizer_menu_context(V& vs, std::vector<LanguageOption> lang
     ctx.has_selection = vs.sel_anchor.valid()
                      && vs.sel_anchor != vs.sel_active;
     ctx.languages = std::move(langs);
-    ctx.active_grammar_id  = vs.force_grammar_id;
-    ctx.auto_detect_active = vs.force_grammar_id.empty();
+    ctx.active_grammar_id   = vs.force_grammar_id;
+    ctx.auto_detect_active  = vs.force_grammar_id.empty();
+    ctx.detected_grammar_id = std::move(detected_grammar_id);
 
     if (vs.layout && vs.interaction) {
         auto hit = vs.interaction->hit_test(doc_x, doc_y);

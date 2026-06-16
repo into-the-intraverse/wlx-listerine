@@ -158,7 +158,7 @@ struct ColorViewState {
     bool sweep_recolor_pending = false;
 
     // Force-language override (session-only). Empty = auto-detect from extension.
-    // Set by the right-click "Force Language" submenu; reset on file reload.
+    // Set by the right-click "Select Language" submenu; reset on file reload.
     // Note: when non-empty, the value is taken as-is — apply_cpp_variant is
     // bypassed (an explicit user pick should not be re-routed through the
     // cpp_grammar config). Read via resolve_language, which the load funnels
@@ -459,18 +459,21 @@ static void do_layout(ColorViewState* vs, const std::string& raw_utf8,
     vs->index_dirty = true;
 }
 
+// Auto-detect the grammar id from the file path: extension -> filename ->
+// cpp_variant. Empty = unsupported/plain. Independent of any force override.
+static std::string detect_language(ColorViewState* vs) {
+    std::string language = ext_to_language(vs->file_path);
+    if (language.empty())
+        language = filename_to_language(vs->file_path);
+    return apply_cpp_variant(language, g_display_cfg.cpp_grammar, g_colorizer_handle);
+}
+
 // Resolve the grammar id for this view: an explicit force-language override wins
 // (taken as-is, NOT re-routed through apply_cpp_variant — see force_grammar_id
-// doc), else extension -> filename -> cpp_variant. Empty = unsupported/plain.
+// doc), else the auto-detected language. Empty = unsupported/plain.
 static std::string resolve_language(ColorViewState* vs) {
-    std::string language = vs->force_grammar_id;
-    if (language.empty()) {
-        language = ext_to_language(vs->file_path);
-        if (language.empty())
-            language = filename_to_language(vs->file_path);
-        language = apply_cpp_variant(language, g_display_cfg.cpp_grammar, g_colorizer_handle);
-    }
-    return language;
+    if (!vs->force_grammar_id.empty()) return vs->force_grammar_id;
+    return detect_language(vs);
 }
 
 // Pre-paint (grid mode, both wrap and no-wrap): slide the materialized window
@@ -1434,7 +1437,8 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         }
 
         auto langs = available_grammars(g_colorizer_handle);
-        auto ctx = build_colorizer_menu_context(*vs, std::move(langs), ctx_doc_x, ctx_doc_y);
+        auto ctx = build_colorizer_menu_context(*vs, std::move(langs),
+                                                detect_language(vs), ctx_doc_x, ctx_doc_y);
         ctx.config_path = get_module_dir() + L"wlx-listerine-colorizer.toml";
 
         auto result = show_context_menu(hwnd, screen_pt, ctx);

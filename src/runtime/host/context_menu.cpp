@@ -81,7 +81,17 @@ HMENU build_language_submenu(const MenuContext& ctx) {
 
     UINT auto_flags = MF_STRING;
     if (ctx.auto_detect_active) auto_flags |= MF_CHECKED;
-    AppendMenuW(sub, auto_flags, kIdLangAuto, L"Auto-detect");
+    // Surface what auto-detect resolves to, e.g. "Auto-detect (C++)", so the
+    // user can see the result without selecting it. Bare "Auto-detect" when
+    // the file maps to no grammar.
+    std::wstring auto_label = L"Auto-detect";
+    std::wstring detected = grammar_display_name(ctx.detected_grammar_id);
+    if (!detected.empty()) {
+        auto_label += L" (";
+        auto_label += detected;
+        auto_label += L")";
+    }
+    AppendMenuW(sub, auto_flags, kIdLangAuto, auto_label.c_str());
     AppendMenuW(sub, MF_SEPARATOR, 0, nullptr);
 
     for (size_t i = 0; i < ctx.languages.size(); ++i) {
@@ -125,11 +135,23 @@ void append_label(HMENU menu, MenuItemKind kind, bool enabled,
         case MenuItemKind::LanguageSubmenuRoot: {
             HMENU sub = build_language_submenu(ctx);
             if (sub) {
+                // Show the currently active language in the root label, e.g.
+                // "Select Language: C++" — forced id when set, else the
+                // auto-detected one. Bare "Select Language" if neither resolves.
+                std::wstring label = L"Se&lect Language";
+                const std::string& active = ctx.auto_detect_active
+                                          ? ctx.detected_grammar_id
+                                          : ctx.active_grammar_id;
+                std::wstring active_name = grammar_display_name(active);
+                if (!active_name.empty()) {
+                    label += L": ";
+                    label += active_name;
+                }
                 // On AppendMenuW failure the submenu was never adopted by
                 // `menu`, so DestroyMenu(menu) wouldn't reach it — free it here.
                 if (!AppendMenuW(menu, MF_STRING | MF_POPUP,
                                  reinterpret_cast<UINT_PTR>(sub),
-                                 L"&Force Language"))
+                                 label.c_str()))
                     DestroyMenu(sub);
             }
             return;
