@@ -1034,13 +1034,19 @@ static LRESULT CALLBACK ColorViewWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
             // GEOMETRY (lc_newparams already re-ran do_layout with the new mode).
             // The tree is byte-space and stays valid under both modes.
             if (v->tree) {
-                // Window blocks were built plain — drop them; the next paint's
-                // ensure_grid_window rebuilds the visible window through
-                // colors_for (tree highlight). Everything else stays put.
+                // Window blocks were built plain — drop them and recolor the
+                // visible window from the tree NOW, before begin_sweep. Doing it
+                // here (rather than deferring to the next WM_PAINT) is what keeps
+                // the first page colored immediately: once begin_sweep launches,
+                // its chunks hold the core mutex and the viewport painter bails to
+                // plain (g_sweep_chunks_inflight guard), so a deferred paint would
+                // stay plain until the whole sweep finishes. Mirrors the single-
+                // phase path below. Everything else stays put.
                 if (v->layout) {
                     v->layout->blocks.clear();
                     v->layout->first_block_line = 0;
                 }
+                ensure_grid_window(v);
                 begin_sweep(v);
             } else {
                 // Unsupported language -> apply_whole_doc_fallback traces and
