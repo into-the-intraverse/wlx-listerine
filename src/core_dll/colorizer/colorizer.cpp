@@ -1,27 +1,20 @@
 #include "core_dll/colorizer/colorizer.h"
-#include "core_dll/grammar/grammar_registry.h"
-#include "core_dll/highlighting/query_highlighter.h"
+#include "core_dll/lexilla/lexer_registry.h"
 
-#include <tree_sitter/api.h>
 #include <chrono>
 #include <filesystem>
 
 namespace wlx::core::colorizer {
 
-using namespace wlx::core::grammar;
-using namespace wlx::core::highlighting;
 using namespace wlx::core::theme;
 
-Colorizer::Colorizer(const std::wstring& grammar_dir,
+Colorizer::Colorizer(const std::wstring& /*grammar_dir*/,
                      const std::wstring& theme_dir,
                      const std::string& theme_name,
                      const std::string& theme_light_name,
-                     uint32_t grammar_cap,
-                     uint32_t grammar_ttl_minutes)
-    : grammar_registry_(std::make_unique<GrammarRegistry>(
-          grammar_dir, grammar_cap,
-          std::chrono::seconds(grammar_ttl_minutes * 60)))
-    , theme_dir_(theme_dir)
+                     uint32_t /*grammar_cap*/,
+                     uint32_t /*grammar_ttl_minutes*/)
+    : theme_dir_(theme_dir)
     , theme_name_(theme_name)
     , theme_light_name_(theme_light_name)
 {
@@ -49,47 +42,11 @@ HelixTheme Colorizer::load_theme_for(bool dark_mode) const {
 }
 
 bool Colorizer::supports(const std::string& language) const {
-    return grammar_registry_->supports(language);
-}
-
-void Colorizer::prewarm(const std::string& language) {
-    // Trigger the cold path now: get_grammar maps the DLL (LoadLibrary) and
-    // get_query compiles the query (ts_query_new ~50ms). Both cache in the
-    // GrammarCache, so the subsequent real colorize() of this language is warm.
-    if (grammar_registry_->get_grammar(language))
-        grammar_registry_->get_query(language);
-}
-
-WlxTree* Colorizer::parse_tree(std::string_view source, const std::string& language) {
-    if (!grammar_registry_->get_grammar(language)) return nullptr;  // unknown/failed load
-    std::string copy(source);
-    TSTree* tree = grammar_registry_->parse(language, copy);        // parse the OWNED copy
-    if (!tree) return nullptr;                                      // no pin on failure
-    grammar_registry_->pin(language);                              // keep TSLanguage alive
-    return new WlxTree{tree, language, std::move(copy)};
-}
-
-ColorizeResult Colorizer::highlight_tree_range(WlxTree* t, bool dark_mode,
-                                               uint32_t range_start, uint32_t range_end) {
-    ColorizeResult result;
-    if (!t || !t->tree) return result;
-    const TSQuery* query = grammar_registry_->get_query(t->language); // grammar pinned => loaded
-    if (!query) return result;
-    const auto& styles = capture_styles_for(t->language, query, dark_mode);
-    result.spans = QueryHighlighter::highlight(
-        t->tree, query, styles, t->source_copy, range_start, range_end);
-    return result;
-}
-
-void Colorizer::free_tree(WlxTree* t) {
-    if (!t) return;
-    if (t->tree) ts_tree_delete(t->tree);
-    grammar_registry_->unpin(t->language);
-    delete t;
+    return lexilla::lexer_spec_for(language) != nullptr;
 }
 
 std::vector<std::string> Colorizer::available_languages() const {
-    return grammar_registry_->available_languages();
+    return lexilla::registered_languages();
 }
 
 const HelixTheme& Colorizer::theme(bool dark_mode) const {
@@ -100,16 +57,6 @@ const HelixTheme& Colorizer::theme(bool dark_mode) const {
         ready = true;
     }
     return slot;
-}
-
-const std::vector<ResolvedStyle>& Colorizer::capture_styles_for(
-    const std::string& language, const TSQuery* query, bool dark_mode) const {
-    auto& memo = style_memo_[dark_mode ? 1 : 0][language];
-    if (memo.query != query) {
-        memo.styles = QueryHighlighter::resolve_capture_styles(query, theme(dark_mode));
-        memo.query = query;
-    }
-    return memo.styles;
 }
 
 ColorizeResult Colorizer::colorize(std::string_view source,
@@ -128,40 +75,21 @@ ColorizeResult Colorizer::colorize(std::string_view source,
                                    uint32_t range_end) {
     ColorizeResult result;
 
+    const lexilla::LexerSpec* spec = lexilla::lexer_spec_for(language);
+    if (!spec) return result;  // unknown language -> plain text (no spans)
+
     using clock = std::chrono::steady_clock;
-    auto ms = [](clock::time_point a, clock::time_point b) {
-        return std::chrono::duration<double, std::milli>(b - a).count();
-    };
-
-    // Load the grammar first so its (cold) LoadLibrary cost is attributed to
-    // grammar_load rather than folded into parse. The get_grammar call inside
-    // parse() below is then a warm map lookup.
     auto t0 = clock::now();
-    const TSLanguage* tslang = grammar_registry_->get_grammar(language);
+    result.spans = lexilla::highlight(*spec, source, theme(dark_mode),
+                                      range_start, range_end);
     auto t1 = clock::now();
-    if (!tslang) return result;
-
-    // RAII over the parse tree so a throw from highlight (e.g. bad_alloc)
-    // can't leak it.
-    std::unique_ptr<TSTree, decltype(&ts_tree_delete)> tree(
-        grammar_registry_->parse(language, source), ts_tree_delete);
-    auto t2 = clock::now();
-    if (!tree) return result;
-
-    auto* query = grammar_registry_->get_query(language);
-    auto t3 = clock::now();
-    if (!query) return result;
-
-    const auto& styles = capture_styles_for(language, query, dark_mode);
-    result.spans = QueryHighlighter::highlight(tree.get(), query, styles, source,
-                                               range_start, range_end);
-    auto t4 = clock::now();
 
     if (timings) {
-        timings->grammar_load_ms  = ms(t0, t1);
-        timings->parse_ms         = ms(t1, t2);
-        timings->query_compile_ms = ms(t2, t3);
-        timings->highlight_ms     = ms(t3, t4);
+        timings->grammar_load_ms  = 0;
+        timings->parse_ms         = 0;
+        timings->query_compile_ms = 0;
+        timings->highlight_ms =
+            std::chrono::duration<double, std::milli>(t1 - t0).count();
     }
     return result;
 }

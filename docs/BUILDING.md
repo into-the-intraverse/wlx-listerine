@@ -16,15 +16,14 @@ cmake --preset conan-default
 cmake --build --preset conan-release
 ```
 
-The first CMake configure downloads all tree-sitter grammar sources via FetchContent (takes a few minutes; progress is printed). Build outputs land in `output/`:
+Build outputs land in `output/`:
 - `wlx-listerine-md.wlx64` — Markdown renderer plugin
 - `wlx-listerine-colorizer.wlx64` — Syntax colorizer plugin
-- `wlx-listerine-core.dll` — Shared core DLL (tree-sitter engine, themes, grammar cache)
+- `wlx-listerine-core.dll` — Shared core DLL (Lexilla engine, themes)
 - `wlx-listerine-md.toml` — Markdown plugin config
 - `wlx-listerine-colorizer.toml` — Colorizer plugin config
-- `wlx-listerine-core.toml` — Shared core config (grammar cache + theme selection)
+- `wlx-listerine-core.toml` — Shared core config (theme selection)
 - `themes/default.toml`, `themes/default_light.toml` — Default syntax color themes
-- `grammars/<lang>/` — Tree-sitter grammar DLLs + `highlights.scm` per language
 
 The build produces three DLL artifacts in `output/`: `wlx-listerine-md.wlx64`,
 `wlx-listerine-colorizer.wlx64`, and `wlx-listerine-core.dll` (shared by both
@@ -64,17 +63,13 @@ uv run scripts/bench.py --update   # re-measure and rewrite the README baseline
 
 Requires a Release build of `screenshot_tool.exe`. Baselines are machine-specific — see the README "Performance" section.
 
-## Building grammars
-
-Grammar DLLs build automatically as part of the normal CMake build: `cmake/grammars.cmake` fetches each pinned grammar repo at configure time and compiles it to `grammars/<lang>/tree-sitter-<lang>.dll` (27 DLLs covering 26 languages). No separate script is needed. See [Adding Languages](LANGUAGES.md) for how to add more.
-
 ## Packaging
 
 ```powershell
 ./scripts/package.ps1 -Version 1.2.3
 ```
 
-Produces two self-contained release ZIPs (one per plugin), both targeting the same `wlx-listerine\` TC plugin directory. Each carries the full shared payload (core DLL, themes, grammars, `.toml.sample` configs) plus its own `pluginst.inf` — TC's installer only auto-registers one WLX plugin per ZIP.
+Produces two self-contained release ZIPs (one per plugin), both targeting the same `wlx-listerine\` TC plugin directory. Each carries the full shared payload (core DLL, themes, `.toml.sample` configs) plus its own `pluginst.inf` — TC's installer only auto-registers one WLX plugin per ZIP.
 
 ## CI
 

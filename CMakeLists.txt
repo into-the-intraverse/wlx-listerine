@@ -38,10 +38,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(md4c REQUIRED)
 find_package(tomlplusplus REQUIRED)
-find_package(tree-sitter REQUIRED)
 find_package(doctest REQUIRED)
 
-include(${CMAKE_SOURCE_DIR}/cmake/grammars.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/lexilla.cmake)
 
 add_subdirectory(src/runtime)
 add_subdirectory(src/core_dll)

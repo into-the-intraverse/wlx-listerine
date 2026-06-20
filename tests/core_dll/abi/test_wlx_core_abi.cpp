@@ -6,8 +6,9 @@
 #include <thread>
 #include <vector>
 
+// Lexilla needs no per-grammar files — the engine is always available.
 static bool has_grammars() {
-    return std::filesystem::exists("grammars/c/tree-sitter-c.dll");
+    return true;
 }
 
 TEST_CASE("ABI version constant matches DLL export") {
@@ -40,7 +41,7 @@ TEST_CASE("singleton initialized once across threads") {
 TEST_CASE("supports returns 1 for known languages"
     * doctest::skip(!has_grammars())) {
     auto* core = wlx_core_acquire();
-    CHECK(wlx_core_supports(core, "c") == 1);
+    CHECK(wlx_core_supports(core, "cpp") == 1);
     CHECK(wlx_core_supports(core, "definitely-not-a-language") == 0);
     wlx_core_release(core);
 }
@@ -52,7 +53,7 @@ TEST_CASE("colorize round-trips a tiny C source"
     WlxColorSpan* spans = nullptr;
     uint32_t count = 0;
     int rc = wlx_core_colorize(core, src, (uint32_t)strlen(src),
-                               "c", /*dark=*/1, 0, 0, &spans, &count);
+                               "cpp", /*dark=*/1, 0, 0, &spans, &count);
     CHECK(rc == 0);
     CHECK(count > 0);
     CHECK(spans != nullptr);
@@ -60,77 +61,8 @@ TEST_CASE("colorize round-trips a tiny C source"
     wlx_core_release(core);
 }
 
-TEST_CASE("ABI version is 5") {
-    CHECK(wlx_core_abi_version() == 5);
-}
-
-TEST_CASE("wlx_core_parse returns a non-null tree for valid C source"
-    * doctest::skip(!has_grammars())) {
-    auto* core = wlx_core_acquire();
-    const char* src = "int main(){return 0;}";
-    WlxTree* t = wlx_core_parse(core, src, (uint32_t)strlen(src), "c");
-    CHECK(t != nullptr);
-    wlx_core_free_tree(core, t);
-    wlx_core_release(core);
-}
-
-TEST_CASE("wlx_core_highlight_range full-range equals wlx_core_colorize byte-for-byte"
-    * doctest::skip(!has_grammars())) {
-    auto* core = wlx_core_acquire();
-    const char* src = "int main(){return 0;}";
-    uint32_t len = (uint32_t)strlen(src);
-    for (int dark = 0; dark <= 1; ++dark) {
-        WlxTree* t = wlx_core_parse(core, src, len, "c");
-        REQUIRE(t != nullptr);
-
-        WlxColorSpan* a = nullptr; uint32_t na = 0;
-        CHECK(wlx_core_highlight_range(core, t, dark, 0, 0, &a, &na) == 0);
-
-        WlxColorSpan* b = nullptr; uint32_t nb = 0;
-        CHECK(wlx_core_colorize(core, src, len, "c", dark, 0, 0, &b, &nb) == 0);
-
-        REQUIRE(na == nb);
-        for (uint32_t i = 0; i < na; ++i) {
-            CHECK(a[i].start     == b[i].start);
-            CHECK(a[i].length    == b[i].length);
-            CHECK(a[i].color     == b[i].color);
-            CHECK(a[i].bg_color  == b[i].bg_color);
-            CHECK(a[i].has_bg    == b[i].has_bg);
-            CHECK(a[i].modifiers == b[i].modifiers);
-        }
-
-        wlx_core_free_spans(a);
-        wlx_core_free_spans(b);
-        wlx_core_free_tree(core, t);
-    }
-    wlx_core_release(core);
-}
-
-TEST_CASE("wlx_core_highlight_range sub-range yields a subset of full spans"
-    * doctest::skip(!has_grammars())) {
-    auto* core = wlx_core_acquire();
-    const char* src = "int main(){return 0;}";
-    uint32_t len = (uint32_t)strlen(src);
-    WlxTree* t = wlx_core_parse(core, src, len, "c");
-    REQUIRE(t != nullptr);
-
-    WlxColorSpan* full = nullptr; uint32_t nfull = 0;
-    CHECK(wlx_core_highlight_range(core, t, 1, 0, 0, &full, &nfull) == 0);
-
-    const uint32_t S = 4, E = 11;  // a window over "main(){"
-    WlxColorSpan* sub = nullptr; uint32_t nsub = 0;
-    CHECK(wlx_core_highlight_range(core, t, 1, S, E, &sub, &nsub) == 0);
-
-    CHECK(nsub <= nfull);
-    for (uint32_t i = 0; i < nsub; ++i) {
-        CHECK(sub[i].start >= S);
-        CHECK(sub[i].start < E);
-    }
-
-    wlx_core_free_spans(full);
-    wlx_core_free_spans(sub);
-    wlx_core_free_tree(core, t);
-    wlx_core_release(core);
+TEST_CASE("ABI version is 6") {
+    CHECK(wlx_core_abi_version() == 6);
 }
 
 TEST_CASE("abi_spans_to_result: null spans yield an empty result") {
@@ -147,10 +79,10 @@ TEST_CASE("abi_spans_to_result converts colorize output field-by-field"
     // Two identical colorize calls: one is converted (and freed) by the helper,
     // the other stays raw for the field-by-field comparison.
     WlxColorSpan* raw = nullptr; uint32_t nraw = 0;
-    REQUIRE(wlx_core_colorize(core, src, len, "c", 1, 0, 0, &raw, &nraw) == 0);
+    REQUIRE(wlx_core_colorize(core, src, len, "cpp", 1, 0, 0, &raw, &nraw) == 0);
     REQUIRE(nraw > 0);
     WlxColorSpan* conv = nullptr; uint32_t nconv = 0;
-    REQUIRE(wlx_core_colorize(core, src, len, "c", 1, 0, 0, &conv, &nconv) == 0);
+    REQUIRE(wlx_core_colorize(core, src, len, "cpp", 1, 0, 0, &conv, &nconv) == 0);
     REQUIRE(nconv == nraw);
 
     auto result = wlx_core::abi_spans_to_result(conv, nconv);
@@ -164,47 +96,6 @@ TEST_CASE("abi_spans_to_result converts colorize output field-by-field"
         CHECK(result.spans[i].modifiers == raw[i].modifiers);
     }
     wlx_core_free_spans(raw);
-    wlx_core_release(core);
-}
-
-TEST_CASE("wlx_core_free_tree is a safe no-op on a null tree") {
-    WlxCore* core = wlx_core_acquire();
-    wlx_core_free_tree(core, nullptr);  // must not crash
-    wlx_core_free_tree(nullptr, nullptr);  // null core too
-    wlx_core_release(core);
-}
-
-TEST_CASE("wlx_core_parse / wlx_core_highlight_range reject bad args") {
-    WlxCore* core = wlx_core_acquire();
-    CHECK(wlx_core_parse(nullptr, "x", 1, "c") == nullptr);
-    CHECK(wlx_core_parse(core, nullptr, 0, "c") == nullptr);
-    CHECK(wlx_core_parse(core, "x", 1, nullptr) == nullptr);
-
-    WlxColorSpan* sp = nullptr; uint32_t n = 0;
-    CHECK(wlx_core_highlight_range(nullptr, nullptr, 1, 0, 0, &sp, &n) < 0);
-    CHECK(wlx_core_highlight_range(core, nullptr, 1, 0, 0, &sp, &n) < 0);
-    wlx_core_release(core);
-}
-
-TEST_CASE("wlx_core_prewarm is a safe no-op on null args") {
-    wlx_core_prewarm(nullptr, "c");   // must not crash
-    WlxCore* core = wlx_core_acquire();
-    wlx_core_prewarm(core, nullptr);  // must not crash
-    wlx_core_release(core);
-}
-
-TEST_CASE("wlx_core_prewarm warms a grammar so a later colorize succeeds"
-    * doctest::skip(!has_grammars())) {
-    WlxCore* core = wlx_core_acquire();
-    wlx_core_prewarm(core, "c");  // load grammar + compile query up front
-    CHECK(wlx_core_supports(core, "c") == 1);
-    const char* src = "int main(){return 0;}";
-    WlxColorSpan* spans = nullptr;
-    uint32_t count = 0;
-    CHECK(wlx_core_colorize(core, src, (uint32_t)strlen(src),
-                            "c", /*dark=*/1, 0, 0, &spans, &count) == 0);
-    CHECK(count > 0);
-    wlx_core_free_spans(spans);
     wlx_core_release(core);
 }
 

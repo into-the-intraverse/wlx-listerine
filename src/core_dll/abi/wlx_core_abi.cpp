@@ -43,20 +43,9 @@ wlx_core_supports(WlxCore* h, const char* language) {
     }
 }
 
-extern "C" WLX_CORE_API void
-wlx_core_prewarm(WlxCore* h, const char* language) {
-    if (!h || !language) return;
-    try {
-        reinterpret_cast<wlx::core::registry::CoreRegistry*>(h)->prewarm(language);
-    } catch (...) {
-        // Best-effort warm-up; swallow.
-    }
-}
-
 // Marshal colored spans into a freshly malloc'd C array (caller frees with
 // wlx_core_free_spans). Returns 0 on success (incl. empty -> null/0), -2 on
-// allocation failure. Shared by wlx_core_colorize and wlx_core_highlight_range
-// so the two paths can never drift in how they pack the C span struct.
+// allocation failure.
 static int marshal_spans(const wlx::core::colorizer::ColorizeResult& result,
                          WlxColorSpan** out_spans, uint32_t* out_count) {
     if (result.spans.empty()) {
@@ -106,41 +95,6 @@ wlx_core_colorize(WlxCore* h,
 
 extern "C" WLX_CORE_API void wlx_core_free_spans(WlxColorSpan* spans) {
     std::free(spans);
-}
-
-extern "C" WLX_CORE_API WlxTree*
-wlx_core_parse(WlxCore* h, const char* source, uint32_t len, const char* language) {
-    if (!h || !source || !language) return nullptr;
-    try {
-        auto& reg = *reinterpret_cast<wlx::core::registry::CoreRegistry*>(h);
-        return reg.parse_tree(std::string_view(source, len), language);
-    } catch (...) {
-        return nullptr;
-    }
-}
-
-extern "C" WLX_CORE_API int
-wlx_core_highlight_range(WlxCore* h, WlxTree* t, int dark_mode,
-                         uint32_t range_start, uint32_t range_end,
-                         WlxColorSpan** out_spans, uint32_t* out_count) {
-    if (!h || !t || !out_spans || !out_count) return -1;
-    try {
-        auto& reg = *reinterpret_cast<wlx::core::registry::CoreRegistry*>(h);
-
-        auto result = reg.highlight_tree_range(t, dark_mode != 0, range_start, range_end);
-        return marshal_spans(result, out_spans, out_count);
-    } catch (...) {
-        return -2;
-    }
-}
-
-extern "C" WLX_CORE_API void wlx_core_free_tree(WlxCore* h, WlxTree* t) {
-    if (!h) return;
-    try {
-        reinterpret_cast<wlx::core::registry::CoreRegistry*>(h)->free_tree(t);
-    } catch (...) {
-        // Nothing the caller can do; swallow.
-    }
 }
 
 extern "C" WLX_CORE_API int

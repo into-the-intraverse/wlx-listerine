@@ -24,11 +24,8 @@ struct Options {
     // here so the Options header stays stable across the next several stages.
     bool         colorizer        = false;
     std::wstring lang;            // empty = infer from extension
-    std::wstring cpp_grammar;     // "standard" | "unreal" | empty
     bool         dump_tokens      = false;
     std::wstring display_config;  // optional TOML override path
-    bool         cached_tree     = false;  // colorizer: parse once + viewport highlight_range
-    int          scroll_screens  = 0;     // colorizer cached-tree: scroll N viewport heights after sweep
 };
 
 }  // namespace wlx::tools::screenshot

@@ -77,30 +77,11 @@ jobs:
           path: ~/.conan2/p
           key: conan-${{ runner.os }}-${{ env.CONAN_VERSION }}-msvc${{ steps.msvc.outputs.version }}-${{ hashFiles('conanfile.txt', 'conan.lock') }}
 
-      # Exact-key only, no restore-keys: a stale _deps with different pins must
-      # be a clean miss (FULLY_DISCONNECTED would silently build old sources).
-      - name: Restore grammar sources
-        id: grammar-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: build/_deps
-          key: grammars-${{ runner.os }}-${{ hashFiles('cmake/grammars.cmake') }}
-
-      # On a cache hit FETCHCONTENT_FULLY_DISCONNECTED skips population entirely;
-      # CMP0170=NEW turns a missing source dir into a hard configure error and
-      # WLX_REQUIRE_ALL_GRAMMARS catches anything less than all 27 grammars.
       - name: Configure CMake
         # Run under bash: PowerShell's expression parser mangles dotted args
         # like `-DWLX_VERSION=1.2.0` (it sees `1.2.0` as member-access on a decimal).
         shell: bash
-        run: cmake --preset conan-default -DWLX_VERSION=${{ steps.version.outputs.version }} -DWLX_REQUIRE_ALL_GRAMMARS=ON ${{ steps.grammar-cache.outputs.cache-hit == 'true' && '-DFETCHCONTENT_FULLY_DISCONNECTED=ON -DCMAKE_POLICY_DEFAULT_CMP0170=NEW' || '' }}
-
-      - name: Save grammar sources
-        if: steps.grammar-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: build/_deps
-          key: grammars-${{ runner.os }}-${{ hashFiles('cmake/grammars.cmake') }}
+        run: cmake --preset conan-default -DWLX_VERSION=${{ steps.version.outputs.version }}
 
       - name: Build
         run: cmake --build --preset conan-release

@@ -104,12 +104,6 @@ Same keys as the markdown plugin (see above).
 Theme selection lives in the shared `wlx-listerine-core.toml` — see
 [wlx-listerine-core.toml](#wlx-listerine-coretoml) below.
 
-### [colorizer]
-
-| Key            | Type     | Default      | Description |
-|----------------|----------|--------------|-------------|
-| `cpp_grammar`  | string   | `"standard"` | Which tree-sitter grammar handles `.c/.h/.cpp/.cc/.cxx/.hpp/.hxx`. `"standard"` uses upstream tree-sitter-cpp; `"unreal"` uses the taku25 Unreal-aware fork. See [LANGUAGES.md → Switching to Unreal C++](LANGUAGES.md#switching-to-unreal-c). |
-
 ## Syntax Color Themes
 
 Theme files live in the `themes/` directory. The install ships `themes/default.toml.sample` and `themes/default_light.toml.sample`; they are *not* loaded as-is. If no `themes/<name>.toml` exists, the plugin falls back to a built-in default that's close to `default.toml.sample` (the same VS Code Dark+/Light+ palette, with hierarchical-fallback covering most scope variants). To customize, rename a sample file (drop the `.sample` suffix) or copy it to a new name.
@@ -132,20 +126,10 @@ Shared by both plugins. Lives next to `wlx-listerine-core.dll` in the install
 directory. All values optional — defaults shown.
 
 ```toml
-[grammar_cache]
-cap = 8              # soft LRU cap on loaded grammar DLLs
-ttl_minutes = 5      # entries idle longer than this are eviction candidates
-
 [theme]
 dark  = "default"    # Helix-format theme used in dark mode
 light = ""           # optional light-mode override; "" auto-detects "<dark>_light.toml"
 ```
-
-`cap` is a *soft* cap: the cache may briefly exceed it if every entry on
-the LRU tail is younger than `ttl_minutes`. The eviction sweep runs only
-on a miss that pushes the cache above `cap`, and stops at the first fresh
-entry from the LRU tail. This means a busy session never thrashes; an
-idle session releases stale grammars on the next miss.
 
 Themes live in the shared `wlx-listerine/themes/` directory. Drop additional
 Helix-compatible `.toml` files there and reference them by name (without

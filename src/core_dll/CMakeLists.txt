@@ -5,9 +5,9 @@ add_library(wlx-listerine-core SHARED
     abi/wlx_core_abi.cpp
     abi/dllmain.cpp
     colorizer/colorizer.cpp
-    grammar/grammar_registry.cpp
-    grammar/grammar_cache.cpp
-    highlighting/query_highlighter.cpp
+    lexilla/lex_document.cpp
+    lexilla/lexilla_highlighter.cpp
+    lexilla/lexer_registry.cpp
     theme/helix_theme.cpp
     registry/core_registry.cpp
     registry/core_config.cpp
@@ -21,9 +21,8 @@ target_include_directories(wlx-listerine-core
 )
 
 target_link_libraries(wlx-listerine-core
-    PUBLIC
-        tree-sitter::tree-sitter
     PRIVATE
+        lexilla
         tomlplusplus::tomlplusplus
 )
 
@@ -33,17 +32,6 @@ set_target_properties(wlx-listerine-core PROPERTIES
     PREFIX ""
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/output"
 )
-
-# The POST_BUILD mirrors below copy the whole grammars/ directory, which the
-# tree-sitter-* targets are still linking into when MSBuild schedules them
-# concurrently with this DLL. cmake -E copy_directory then hits a half-written
-# DLL and fails the build — the intermittent CI "Error copying directory"
-# failure at ~34s into the Build step. Depend on every grammar target so the
-# mirror runs only after they all exist.
-get_property(_wlx_grammar_targets GLOBAL PROPERTY WLX_GRAMMAR_TARGETS)
-if(_wlx_grammar_targets)
-    add_dependencies(wlx-listerine-core ${_wlx_grammar_targets})
-endif()
 
 # Mirror the DLL alongside test exes / screenshot_tool so they can find it on
 # the loader search path. Tests live in ${CMAKE_BINARY_DIR}/tests/<cfg>/;
@@ -57,20 +45,14 @@ add_custom_command(TARGET wlx-listerine-core POST_BUILD
         "${CMAKE_BINARY_DIR}/tests/$<CONFIG>/wlx-listerine-core.dll"
 )
 
-# After Task 3, the CoreRegistry singleton derives its install dir from the
-# core DLL's actual filesystem location (GetModuleFileNameW). Mirror grammars
-# and themes alongside the DLL so the test rig running from build/<cfg>/ finds
-# them at the same DLL-relative paths the production install uses.
+# The CoreRegistry singleton derives its install dir from the core DLL's actual
+# filesystem location (GetModuleFileNameW). Mirror themes alongside the DLL so
+# the test rig running from build/<cfg>/ finds them at the same DLL-relative
+# paths the production install uses. (Lexilla needs no per-grammar files.)
 add_custom_command(TARGET wlx-listerine-core POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-        "${CMAKE_SOURCE_DIR}/grammars"
-        "${CMAKE_BINARY_DIR}/$<CONFIG>/grammars"
     COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
         "${CMAKE_SOURCE_DIR}/config/themes"
         "${CMAKE_BINARY_DIR}/$<CONFIG>/themes"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-        "${CMAKE_SOURCE_DIR}/grammars"
-        "${CMAKE_BINARY_DIR}/tests/$<CONFIG>/grammars"
     COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
         "${CMAKE_SOURCE_DIR}/config/themes"
         "${CMAKE_BINARY_DIR}/tests/$<CONFIG>/themes"

@@ -38,13 +38,7 @@ target_link_libraries(tests PRIVATE
 
 add_executable(colorizer-tests
     ${CMAKE_SOURCE_DIR}/tests/test_main.cpp
-    core_dll/colorizer/test_colorizer.cpp
-    core_dll/colorizer/test_error_node_highlighting.cpp
     core_dll/theme/test_colorizer_helix_theme.cpp
-    core_dll/grammar/test_colorizer_grammar.cpp
-    core_dll/highlighting/test_colorizer_query_highlighter.cpp
-    core_dll/grammar/test_colorizer_grammars.cpp
-    plugin_colorizer/language/test_colorizer_routing.cpp
     plugin_colorizer/language/test_path_to_language.cpp
     plugin_colorizer/layout/test_colorizer_layout.cpp
     plugin_colorizer/layout/test_grid_geometry.cpp
@@ -52,10 +46,10 @@ add_executable(colorizer-tests
     plugin_colorizer/layout/test_wrap_estimate.cpp
     plugin_colorizer/test_colorizer_smoke.cpp
     plugin_colorizer/colorize/test_span_table.cpp
-    plugin_colorizer/colorize/test_sweep_parity.cpp
     core_dll/abi/test_wlx_core_abi.cpp
     core_dll/registry/test_core_config.cpp
-    core_dll/grammar/test_grammar_cache.cpp
+    core_dll/lexilla/test_lexilla_highlighter.cpp
+    core_dll/lexilla/test_lexer_registry.cpp
     tools/test_token_json_writer.cpp
     ${CMAKE_SOURCE_DIR}/src/plugin_colorizer/layout/colorizer_layout.cpp
     ${CMAKE_SOURCE_DIR}/src/plugin_colorizer/layout/grid_window.cpp
@@ -63,6 +57,10 @@ add_executable(colorizer-tests
     ${CMAKE_SOURCE_DIR}/src/plugin_colorizer/colorize/span_table.cpp
 )
 
+# Lexilla itself lives inside wlx-listerine-core.dll (which statically links it);
+# the lexilla::* helpers are WLX_CORE_API-exported, so colorizer-tests reaches
+# them through the core DLL — it must NOT link the lexilla static lib directly
+# (that would duplicate Lexilla's exported CreateLexer with the DLL's copy).
 target_link_libraries(colorizer-tests PRIVATE
     wlx-core
     wlx-listerine-core

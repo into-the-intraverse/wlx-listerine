@@ -47,16 +47,11 @@ COMMON_ARGS = ["--bench", "--width", "1000", "--height", "1200", "--dark"]
 
 # (scenario key, input path, extra args). Keys are stable identifiers — the
 # README rows and compare output match on them (startswith), don't rename
-# without regenerating the baseline. First three rows = what opening a file
-# actually costs (the plugins' real paths: lazy markdown layout, cached-tree
-# viewport highlight). "worst case" rows = the whole-file paths the plugins
-# only hit as fallbacks (word wrap / unsupported language); kept as
-# regression sentinels.
+# without regenerating the baseline. "worst case" rows = the whole-file paths
+# the plugins only hit as fallbacks (word wrap / unsupported language); kept
+# as regression sentinels.
 SCENARIOS = [
     ("markdown",                                   BENCH_DIR / "big.md",      ["--lazy"]),
-    ("C++ header json.hpp",                        FETCHED_DIR / "json.hpp",  ["--colorizer", "--cached-tree"]),
-    ("C file sqlite3.c",                           FETCHED_DIR / "sqlite3.c", ["--colorizer", "--cached-tree"]),
-    ("post-scroll sqlite3.c (20 screens)",         FETCHED_DIR / "sqlite3.c", ["--colorizer", "--cached-tree", "--scroll-screens", "20"]),
     ("worst case: markdown full layout",           BENCH_DIR / "big.md",      []),
     ("worst case: whole-file highlight json.hpp",  FETCHED_DIR / "json.hpp",  ["--colorizer"]),
     ("worst case: whole-file highlight sqlite3.c", FETCHED_DIR / "sqlite3.c", ["--colorizer"]),

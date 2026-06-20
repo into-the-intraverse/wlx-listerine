@@ -52,16 +52,3 @@ rule = "#404040"
 selection = "#264F78"
 search_highlight = "#A87800"
 search_highlight_current = "#E89820"
-
-# C++ grammar selection.
-#
-# "standard" (default) — use tree-sitter/tree-sitter-cpp for all .c/.h/.cpp/.cc/.cxx/.hpp/.hxx.
-# "unreal"             — use the taku25/tree-sitter-unreal-cpp fork, which adds
-#                        dedicated parsing and highlighting for UCLASS, UPROPERTY,
-#                        UFUNCTION, GENERATED_BODY, PROJECTNAME_API export macros,
-#                        and Blueprint property specifiers.
-#
-# The "unreal" variant is a strict superset of plain C++: non-Unreal files still
-# parse correctly, they just have nothing extra to highlight.
-[colorizer]
-cpp_grammar = "standard"
